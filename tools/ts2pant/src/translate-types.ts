@@ -1321,6 +1321,15 @@ export function mapTsType(
   // the unsupported string reflects the source rather than an internal
   // sentinel. Null handling for unions happens in the union branch.
 
+  const iteratorElem = getBuiltinIteratorElementType(type, checker);
+  if (iteratorElem !== null) {
+    const elem = mapTsType(iteratorElem, checker, strategy, synthCell, opts);
+    if (isUnsupportedUnknown(elem)) {
+      return UNSUPPORTED_UNKNOWN;
+    }
+    return `[${elem}]`;
+  }
+
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
@@ -1448,6 +1457,24 @@ export function mapTsType(
   }
 
   return checker.typeToString(type);
+}
+
+function getBuiltinIteratorElementType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): ts.Type | null {
+  const symbolName = type.getSymbol()?.getName();
+  if (
+    symbolName !== "MapIterator" &&
+    symbolName !== "ArrayIterator" &&
+    symbolName !== "SetIterator" &&
+    symbolName !== "IterableIterator" &&
+    symbolName !== "IteratorObject"
+  ) {
+    return null;
+  }
+  const args = checker.getTypeArguments(type as ts.TypeReference);
+  return args.length === 1 ? args[0]! : null;
 }
 
 /**

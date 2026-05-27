@@ -28,6 +28,7 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
   tryBuildL1Cardinality,
+  tryBuildBuiltinCall,
   tryBuildL1PureSubExpression,
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
@@ -112,6 +113,7 @@ import type { PantDeclaration, PropResult } from "./types.js";
 export interface UniqueSupply {
   n: number;
   synthCell?: SynthCell | undefined;
+  program?: ts.Program | undefined;
   /**
    * Side-channel registry of fresh hygienic names that bind a
    * pre-built `OpaqueExpr` value. Populated by the mutating-body
@@ -127,8 +129,11 @@ export interface UniqueSupply {
    */
   opaqueAliases?: Map<string, OpaqueExpr>;
 }
-function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
-  return { n: 0, synthCell };
+function makeUniqueSupply(
+  synthCell?: SynthCell,
+  program?: ts.Program,
+): UniqueSupply {
+  return { n: 0, synthCell, program };
 }
 
 /**
@@ -1070,6 +1075,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
     paramNameMap,
   } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+  const program = sourceFile.getProject().getProgram().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
   const baseName = toPantTermName(
@@ -1175,6 +1181,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       strategy,
       paramNames,
       synthCell,
+      program,
     );
   } else {
     return translateMutatingBody(
@@ -1185,6 +1192,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       paramNames,
       declarations ?? [],
       synthCell,
+      program,
     );
   }
 }
@@ -1197,6 +1205,7 @@ function translatePureBody(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): PropResult[] {
   const ast = getAst();
 
@@ -1210,7 +1219,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const supply = makeUniqueSupply(synthCell);
+  const supply = makeUniqueSupply(synthCell, program);
 
   // M4 Patch 5: functor-lift on the if-conversion shape
   //   `if (x == null) return []; return [f(x)];`
@@ -3963,6 +3972,19 @@ export function translateCallExpr(
   supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
+  const builtin = tryBuildBuiltinCall(expr, {
+    checker,
+    strategy,
+    paramNames,
+    state,
+    supply,
+  });
+  if (builtin !== null) {
+    if (isL1Unsupported(builtin)) {
+      return { unsupported: builtin.unsupported };
+    }
+    return { expr: lowerL1ToOpaque(builtin) };
+  }
 
   // Method calls: obj.method(args)
   if (ts.isPropertyAccessExpression(expr.expression)) {
@@ -4687,6 +4709,7 @@ function translateMutatingBody(
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): PropResult[] {
   if (!node.body) {
     return [];
@@ -4699,7 +4722,7 @@ function translateMutatingBody(
       strategy,
       paramNames,
       state: makeSymbolicState(),
-      supply: makeUniqueSupply(synthCell),
+      supply: makeUniqueSupply(synthCell, program),
       initialPropertyValues: new Map(),
       helperNameBase: functionName,
       declarations,

@@ -18,11 +18,10 @@
  * typecheck automatically.
  *
  * Const-binding SSA deliberately moved several fixtures from prelude
- * rejection into emitted Pant that can fail later at the free-call-decl
- * boundary. Keep those entries only while the emitted document really
- * fails the wasm typecheck because a surviving call lacks a Pant
- * declaration; outputs that now typecheck, including parseable
- * `> UNSUPPORTED:` comments, should not stay on this list.
+ * rejection into emitted Pant that can fail later. The stdlib-dispatchable
+ * call fixtures have been wired through qualified imports, so no
+ * free-call-decl entries should remain here; bare-identifier ambient and
+ * non-builtin free calls get synthesized EUF heads.
  *
  * Failure classes:
  *   - "$-binder-leak"     hygienic `$N` names reach the emitted text
@@ -40,11 +39,6 @@
  *                         wasm checker path.
  *   - "list-literal"      emits `[a, b]` for tuple/array initializers
  *                         where Pant has no list literal target.
- *   - "free-call-decl"    surviving M2 gaps where a method/stdlib or
- *                         dispatch-incomplete call reaches Pant without
- *                         the needed declaration/import. Bare-identifier
- *                         ambient and non-builtin free calls should not
- *                         appear here; they get synthesized EUF heads.
  *   - "var-rejected"      local `var` binding fixture; `var` remains out of
  *                         scope and should keep a dedicated diagnostic.
  *   - "closure-captured-reassignment"
@@ -59,17 +53,8 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-array.ts > nameLengths", "$-binder-leak"],
   ["expressions-boolean.ts > and", "$-binder-leak"],
   ["expressions-boolean.ts > or", "$-binder-leak"],
-  ["expressions-calls.ts > methodCall", "free-call-decl"],
-  ["expressions-const-chained-impure.ts > chainedArrayCount", "free-call-decl"],
-  ["expressions-const-pure-calls.ts > constMathMax", "free-call-decl"],
-  ["expressions-const-pure-calls.ts > constStringMethod", "free-call-decl"],
-  ["expressions-const-pure-calls.ts > constChainedPure", "free-call-decl"],
-  ["expressions-const-side-effectful.ts > constReplaceLiteral", "free-call-decl"],
-  ["expressions-const-side-effectful.ts > constArrayFromMap", "free-call-decl"],
-  ["expressions-const-side-effectful.ts > constMapEntries", "free-call-decl"],
   ["expressions-let-closure-captured.ts > letForEachCapturedTotal", "closure-captured-reassignment"],
   ["expressions-let-closure-captured.ts > letMapCapturedCount", "closure-captured-reassignment"],
-  ["expressions-let-immutable.ts > letMathMax", "free-call-decl"],
   ["expressions-var-rejected.ts > varBinding", "var-rejected"],
   ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],

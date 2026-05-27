@@ -883,7 +883,7 @@ describe("translateCallExpr", () => {
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "(to-upper-case s)");
+      assert.equal(ast.strExpr(prop.rhs), "JS_STRING::to-upper-case s");
     }
   });
 
