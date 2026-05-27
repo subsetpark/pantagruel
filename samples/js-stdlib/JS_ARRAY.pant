@@ -1,0 +1,24 @@
+module JS_ARRAY.
+
+> EUF rule heads for JavaScript Array.* materialization helpers.
+> ts2pant emits imports of this module from consumer specs that
+> call Array.from on built-in iterable-like values; the dispatch
+> index in tools/ts2pant/src/builtins.ts maps TS surface forms to
+> qualified references against these rules.
+>
+> Reference: Kroening & Strichman, *Decision Procedures* Ch. 4
+> (Equality with Uninterpreted Functions; congruence is the only
+> built-in axiom for opaque calls).
+>
+> No body axioms — Array.from is modeled at the EUF floor by
+> collapsing the input iterator to its materialized list. Structural
+> relationships such as cardinality are deferred to milestone 4.
+>
+> Naming: Pantagruel rules are monomorphic at a fixed arity, so the
+> fixture-required entries-list instantiation uses a sort-specific
+> head rather than overloading `from`.
+
+from xs: [Int] => [Int].
+from-entries xs: [String * Int] => [String * Int].
+
+---

@@ -21,7 +21,12 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 /** Module name of a hand-written js-stdlib dependency module. */
-export type DepModuleName = "JS_MATH" | "JS_STRING" | "TS_PRELUDE";
+export type DepModuleName =
+  | "JS_MATH"
+  | "JS_STRING"
+  | "TS_PRELUDE"
+  | "JS_ARRAY"
+  | "JS_MAP";
 
 /**
  * Dispatch entry: `rule` is the qualified Pantagruel rule reference a
