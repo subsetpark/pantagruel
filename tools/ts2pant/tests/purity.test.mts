@@ -7,7 +7,12 @@ import {
   createSourceFileFromSource,
   getChecker,
 } from "../src/extract.js";
-import { isEffectFree, isKnownPureCall } from "../src/purity.js";
+import {
+  isEffectFree,
+  isKnownPureCall,
+  isPureUserCall,
+  isPureUserFunction,
+} from "../src/purity.js";
 
 /**
  * Find the first CallExpression in a source file's function body.
@@ -56,6 +61,49 @@ function findReturnExpression(
     ts.forEachChild(node, visit);
   }
   ts.forEachChild(sourceFile, visit);
+  return result;
+}
+
+function findFunctionDeclaration(
+  sourceFile: ts.SourceFile,
+  name: string,
+): ts.FunctionDeclaration {
+  let result: ts.FunctionDeclaration | undefined;
+  function visit(node: ts.Node) {
+    if (result) return;
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
+      result = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile, visit);
+  if (!result) {
+    throw new Error(`No function declaration found for ${name}`);
+  }
+  return result;
+}
+
+function findCallInNamedFunction(
+  sourceFile: ts.SourceFile,
+  name: string,
+): ts.CallExpression {
+  const fn = findFunctionDeclaration(sourceFile, name);
+  let result: ts.CallExpression | undefined;
+  function visit(node: ts.Node) {
+    if (result) return;
+    if (ts.isCallExpression(node)) {
+      result = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  if (fn.body) {
+    ts.forEachChild(fn.body, visit);
+  }
+  if (!result) {
+    throw new Error(`No CallExpression found in function ${name}`);
+  }
   return result;
 }
 
@@ -365,6 +413,120 @@ describe("isEffectFree", () => {
 
   it.skip(
     "guard extraction over a builtin-call condition uses the checker-aware oracle",
+    () => {},
+  );
+});
+
+describe("isPureUserFunction", () => {
+  it("classifies a pure helper and its direct call as pure", () => {
+    const sf = createSourceFileFromSource(`
+      function isPositive(n: number): boolean {
+        const limit = Math.max(0, n);
+        return limit > 0;
+      }
+      function f(n: number): boolean {
+        return isPositive(n);
+      }
+    `);
+    const checker = getChecker(sf);
+
+    assert.equal(
+      isPureUserFunction(
+        findFunctionDeclaration(sf.compilerNode, "isPositive"),
+        checker,
+      ),
+      true,
+    );
+    assert.equal(
+      isPureUserCall(findCallInNamedFunction(sf.compilerNode, "f"), checker),
+      true,
+    );
+  });
+
+  it("classifies mutating, throwing, and async helpers as effectful", () => {
+    const sf = createSourceFileFromSource(`
+      let counter = 0;
+      function mutates(n: number): number {
+        counter = n;
+        return n;
+      }
+      function throws(n: number): number {
+        if (n < 0) throw new Error("bad");
+        return n;
+      }
+      async function awaits(p: Promise<number>): Promise<number> {
+        return await p;
+      }
+    `);
+    const checker = getChecker(sf);
+
+    for (const name of ["mutates", "throws", "awaits"]) {
+      assert.equal(
+        isPureUserFunction(
+          findFunctionDeclaration(sf.compilerNode, name),
+          checker,
+        ),
+        false,
+      );
+    }
+  });
+
+  it("bails to effectful on recursive helper calls", () => {
+    const sf = createSourceFileFromSource(`
+      function isEven(n: number): boolean {
+        if (n === 0) return true;
+        return isOdd(n - 1);
+      }
+      function isOdd(n: number): boolean {
+        if (n === 0) return false;
+        return isEven(n - 1);
+      }
+      function f(n: number): boolean {
+        return isEven(n);
+      }
+    `);
+    const checker = getChecker(sf);
+
+    assert.equal(
+      isPureUserFunction(
+        findFunctionDeclaration(sf.compilerNode, "isEven"),
+        checker,
+      ),
+      false,
+    );
+    assert.equal(
+      isPureUserCall(findCallInNamedFunction(sf.compilerNode, "f"), checker),
+      false,
+    );
+  });
+
+  it("bails to effectful for node_modules call targets", () => {
+    const sf = createSourceFileFromSource(
+      `
+        function helper(n: number): boolean {
+          return n > 0;
+        }
+        function f(n: number): boolean {
+          return helper(n);
+        }
+      `,
+      "/project/node_modules/pkg/index.ts",
+    );
+    const checker = getChecker(sf);
+
+    assert.equal(
+      isPureUserCall(findCallInNamedFunction(sf.compilerNode, "f"), checker),
+      false,
+    );
+  });
+
+  it.skip(
+    "PENDING Patch 4: pure user call in early-return predicate lowers to its EUF rule",
+    () => {},
+  );
+
+  it.skip(
+    "PENDING Patch 4: pure user call in mutating if-condition lowers to its EUF rule",
     () => {},
   );
 });

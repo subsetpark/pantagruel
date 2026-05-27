@@ -686,6 +686,18 @@ exports[`expressions-property.ts > getOwnerName 1`] = `
 "module GET_OWNER_NAME.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\nget-owner-name a: Account => String.\\n\\n---\\n\\nget-owner-name a = user--name (account--owner a).\\n"
 `;
 
+exports[`expressions-pure-call-predicate.ts > effectfulCallPredicate 1`] = `
+"module EFFECTFUL_CALL_PREDICATE.\\n\\nrecords-observation n1: Int => Bool.\\neffectful-call-predicate n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectful-call-predicate — early-return predicate has side effects.\\n"
+`;
+
+exports[`expressions-pure-call-predicate.ts > pureCallEarlyReturn 1`] = `
+"module PURE_CALL_EARLY_RETURN.\\n\\nis-positive n1: Int => Bool.\\npure-call-early-return n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: pure-call-early-return — early-return predicate has side effects.\\n"
+`;
+
+exports[`expressions-pure-call-predicate.ts > pureCallMutatingIf 1`] = `
+"module PURE_CALL_MUTATING_IF.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Pure-call-mutating-if @ account: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
+`;
+
 exports[`expressions-readonly-set.ts > cardinalityReadonly 1`] = `
 "module CARDINALITY_READONLY.\\n\\ncardinality-readonly xs: [String] => Int.\\n\\n---\\n\\ncardinality-readonly xs = #xs.\\n"
 `;

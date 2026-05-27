@@ -537,6 +537,70 @@ function isKnownPureCallInner(
 }
 
 /**
+ * Conservatively classify a direct user-function call as pure.
+ *
+ * Dormant in Patch 3: this is intentionally not consulted by
+ * `isKnownPureCall`/`isEffectFree` yet. Patch 4 wires it into the canonical
+ * oracle once the behavior change is enabled.
+ */
+export function isPureUserCall(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  try {
+    if (call.arguments.some(ts.isSpreadElement)) {
+      return false;
+    }
+    if (!call.arguments.every((arg) => userExpressionIsPure(arg, checker))) {
+      return false;
+    }
+    const decl = resolveUserCallTarget(call, checker);
+    return decl !== null && isPureUserFunction(decl, checker);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Conservative whole-body, interprocedural purity classifier for user code.
+ *
+ * Unknown syntax, dynamic dispatch, unresolved callees, node_modules targets,
+ * recursion, mutation, throw, await, IO, and higher-order calls all bail to
+ * effectful. Returning true is therefore positive evidence only.
+ */
+export function isPureUserFunction(
+  decl: ts.FunctionLikeDeclaration,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node> = new Set(),
+): boolean {
+  try {
+    if (declarationIsFromNodeModules(decl)) {
+      return false;
+    }
+    if (
+      !parameterInitializersArePureForUserAnalysis(decl.parameters, checker)
+    ) {
+      return false;
+    }
+
+    const body = getBlockBody(decl);
+    if (!body) {
+      return false;
+    }
+    if (visited.has(body)) {
+      return false;
+    }
+
+    visited.add(body);
+    const result = blockIsPureForUserAnalysis(body, checker, visited);
+    visited.delete(body);
+    return result;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Canonical checker-aware effect oracle for TypeScript expressions.
  *
  * Returns true only when evaluating `expr` is known not to produce observable
@@ -618,9 +682,372 @@ function unwrapEffectExpression(expr: ts.Expression): ts.Expression {
 }
 
 function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
-  return (
-    kind >= ts.SyntaxKind.EqualsToken && kind <= ts.SyntaxKind.CaretEqualsToken
+  return ASSIGNMENT_OPERATORS.has(kind);
+}
+
+const ASSIGNMENT_OPERATORS: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
+  ts.SyntaxKind.MinusEqualsToken,
+  ts.SyntaxKind.AsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken,
+  ts.SyntaxKind.PercentEqualsToken,
+  ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+  ts.SyntaxKind.LessThanLessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.AmpersandEqualsToken,
+  ts.SyntaxKind.BarEqualsToken,
+  ts.SyntaxKind.CaretEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+type AnalyzableFunctionLike =
+  | ts.FunctionDeclaration
+  | ts.MethodDeclaration
+  | ts.ConstructorDeclaration
+  | ts.FunctionExpression
+  | ts.ArrowFunction;
+
+function resolveUserCallTarget(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+): AnalyzableFunctionLike | null {
+  // Match guard-following discipline: direct calls only. Property access is
+  // dynamic dispatch and may need `this`, so it bails.
+  if (!ts.isIdentifier(call.expression)) {
+    return null;
+  }
+
+  const calleeSymbol = checker.getSymbolAtLocation(call.expression);
+  const calleeDecl = calleeSymbol?.valueDeclaration;
+  if (calleeDecl && ts.isParameter(calleeDecl)) {
+    return null;
+  }
+
+  let decl = asAnalyzableFunctionLike(
+    checker.getResolvedSignature(call)?.declaration,
   );
+  if (!decl || !getBlockBody(decl)) {
+    const resolved = resolveFunctionLikeFromSymbol(calleeSymbol, checker);
+    if (resolved) {
+      decl = resolved;
+    }
+  }
+
+  if (!decl) {
+    return null;
+  }
+  if (declarationIsFromNodeModules(decl)) {
+    return null;
+  }
+  if (!getBlockBody(decl)) {
+    return null;
+  }
+
+  return decl;
+}
+
+function resolveFunctionLikeFromSymbol(
+  symbol: ts.Symbol | undefined,
+  checker: ts.TypeChecker,
+): AnalyzableFunctionLike | null {
+  if (!symbol) {
+    return null;
+  }
+
+  let resolved = symbol;
+  if (resolved.flags & ts.SymbolFlags.Alias) {
+    resolved = checker.getAliasedSymbol(resolved);
+  }
+
+  const declarations = resolved.getDeclarations() ?? [];
+  for (const decl of declarations) {
+    const functionDecl = asAnalyzableFunctionLike(decl);
+    if (functionDecl && getBlockBody(functionDecl)) {
+      return functionDecl;
+    }
+    if (ts.isVariableDeclaration(decl) && decl.initializer) {
+      const init = decl.initializer;
+      if (
+        (ts.isFunctionExpression(init) || ts.isArrowFunction(init)) &&
+        getBlockBody(init)
+      ) {
+        return init;
+      }
+    }
+  }
+
+  return null;
+}
+
+function asAnalyzableFunctionLike(
+  node: ts.Node | undefined,
+): AnalyzableFunctionLike | null {
+  if (!node) {
+    return null;
+  }
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node)
+  ) {
+    return node;
+  }
+  return null;
+}
+
+function getBlockBody(decl: ts.FunctionLikeDeclaration): ts.Block | undefined {
+  if (
+    ts.isFunctionDeclaration(decl) ||
+    ts.isMethodDeclaration(decl) ||
+    ts.isFunctionExpression(decl) ||
+    ts.isConstructorDeclaration(decl)
+  ) {
+    return decl.body;
+  }
+  if (ts.isArrowFunction(decl)) {
+    return ts.isBlock(decl.body) ? decl.body : undefined;
+  }
+  return undefined;
+}
+
+function declarationIsFromNodeModules(decl: ts.Node): boolean {
+  return /(?:^|[/\\])node_modules(?:[/\\]|$)/u.test(
+    decl.getSourceFile().fileName,
+  );
+}
+
+function blockIsPureForUserAnalysis(
+  block: ts.Block,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node>,
+): boolean {
+  return block.statements.every((stmt) =>
+    statementIsPureForUserAnalysis(stmt, checker, visited),
+  );
+}
+
+function statementIsPureForUserAnalysis(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node>,
+): boolean {
+  if (ts.isBlock(stmt)) {
+    return blockIsPureForUserAnalysis(stmt, checker, visited);
+  }
+  if (ts.isEmptyStatement(stmt) || ts.isFunctionDeclaration(stmt)) {
+    return true;
+  }
+  if (ts.isReturnStatement(stmt)) {
+    return (
+      !stmt.expression ||
+      userExpressionIsPure(stmt.expression, checker, visited)
+    );
+  }
+  if (ts.isExpressionStatement(stmt)) {
+    return userExpressionIsPure(stmt.expression, checker, visited);
+  }
+  if (ts.isVariableStatement(stmt)) {
+    return stmt.declarationList.declarations.every((decl) => {
+      if (!bindingNameIsSimpleLocal(decl.name)) {
+        return false;
+      }
+      return (
+        decl.initializer === undefined ||
+        userExpressionIsPure(decl.initializer, checker, visited)
+      );
+    });
+  }
+  if (ts.isIfStatement(stmt)) {
+    return (
+      userExpressionIsPure(stmt.expression, checker, visited) &&
+      statementIsPureForUserAnalysis(stmt.thenStatement, checker, visited) &&
+      (stmt.elseStatement === undefined ||
+        statementIsPureForUserAnalysis(stmt.elseStatement, checker, visited))
+    );
+  }
+
+  // Loops, switch, try/catch/finally, throw, debugger, imports/exports, and
+  // unknown statements are effectful until proven otherwise by a later patch.
+  return false;
+}
+
+function bindingNameIsSimpleLocal(name: ts.BindingName): boolean {
+  if (ts.isIdentifier(name)) {
+    return true;
+  }
+  return name.elements.every((element) => {
+    if (ts.isOmittedExpression(element)) {
+      return true;
+    }
+    return bindingNameIsSimpleLocal(element.name);
+  });
+}
+
+function parameterInitializersArePureForUserAnalysis(
+  params: ts.NodeArray<ts.ParameterDeclaration>,
+  checker: ts.TypeChecker,
+): boolean {
+  for (const param of params) {
+    if (param.dotDotDotToken) {
+      return false;
+    }
+    if (
+      param.initializer &&
+      !userExpressionIsPure(param.initializer, checker)
+    ) {
+      return false;
+    }
+    if (
+      (ts.isObjectBindingPattern(param.name) ||
+        ts.isArrayBindingPattern(param.name)) &&
+      !bindingPatternInitializersArePureForUserAnalysis(param.name, checker)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bindingPatternInitializersArePureForUserAnalysis(
+  pattern: ts.BindingPattern,
+  checker: ts.TypeChecker,
+): boolean {
+  for (const element of pattern.elements) {
+    if (ts.isOmittedExpression(element)) {
+      continue;
+    }
+    if (
+      element.initializer &&
+      !userExpressionIsPure(element.initializer, checker)
+    ) {
+      return false;
+    }
+    if (
+      (ts.isObjectBindingPattern(element.name) ||
+        ts.isArrayBindingPattern(element.name)) &&
+      !bindingPatternInitializersArePureForUserAnalysis(element.name, checker)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function userExpressionIsPure(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node> = new Set(),
+): boolean {
+  expr = unwrapEffectExpression(expr);
+
+  if (
+    ts.isIdentifier(expr) ||
+    ts.isNumericLiteral(expr) ||
+    ts.isStringLiteral(expr) ||
+    ts.isNoSubstitutionTemplateLiteral(expr) ||
+    expr.kind === ts.SyntaxKind.TrueKeyword ||
+    expr.kind === ts.SyntaxKind.FalseKeyword ||
+    expr.kind === ts.SyntaxKind.NullKeyword ||
+    expr.kind === ts.SyntaxKind.UndefinedKeyword ||
+    expr.kind === ts.SyntaxKind.ThisKeyword
+  ) {
+    return true;
+  }
+
+  if (ts.isPropertyAccessExpression(expr)) {
+    return userExpressionIsPure(expr.expression, checker, visited);
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return (
+      expr.argumentExpression !== undefined &&
+      userExpressionIsPure(expr.expression, checker, visited) &&
+      userExpressionIsPure(expr.argumentExpression, checker, visited)
+    );
+  }
+  if (ts.isArrayLiteralExpression(expr)) {
+    return expr.elements.every((element) => {
+      if (ts.isSpreadElement(element)) {
+        return false;
+      }
+      return userExpressionIsPure(element, checker, visited);
+    });
+  }
+  if (ts.isObjectLiteralExpression(expr)) {
+    return expr.properties.every((prop) => {
+      if (ts.isPropertyAssignment(prop)) {
+        return (
+          (!ts.isComputedPropertyName(prop.name) ||
+            userExpressionIsPure(prop.name.expression, checker, visited)) &&
+          userExpressionIsPure(prop.initializer, checker, visited)
+        );
+      }
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        return true;
+      }
+      if (ts.isSpreadAssignment(prop)) {
+        return false;
+      }
+      return false;
+    });
+  }
+  if (ts.isTemplateExpression(expr)) {
+    return expr.templateSpans.every((span) =>
+      userExpressionIsPure(span.expression, checker, visited),
+    );
+  }
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    if (
+      expr.operator === ts.SyntaxKind.PlusPlusToken ||
+      expr.operator === ts.SyntaxKind.MinusMinusToken
+    ) {
+      return false;
+    }
+    return userExpressionIsPure(expr.operand, checker, visited);
+  }
+  if (ts.isBinaryExpression(expr)) {
+    return (
+      !isAssignmentOperator(expr.operatorToken.kind) &&
+      userExpressionIsPure(expr.left, checker, visited) &&
+      userExpressionIsPure(expr.right, checker, visited)
+    );
+  }
+  if (ts.isConditionalExpression(expr)) {
+    return (
+      userExpressionIsPure(expr.condition, checker, visited) &&
+      userExpressionIsPure(expr.whenTrue, checker, visited) &&
+      userExpressionIsPure(expr.whenFalse, checker, visited)
+    );
+  }
+  if (ts.isCallExpression(expr)) {
+    if (isKnownPureCall(expr, checker)) {
+      return (
+        userExpressionIsPure(expr.expression, checker, visited) &&
+        expr.arguments.every((arg) =>
+          userExpressionIsPure(arg, checker, visited),
+        )
+      );
+    }
+    if (expr.arguments.some(ts.isSpreadElement)) {
+      return false;
+    }
+    if (
+      !expr.arguments.every((arg) =>
+        userExpressionIsPure(arg, checker, visited),
+      )
+    ) {
+      return false;
+    }
+    const decl = resolveUserCallTarget(expr, checker);
+    return decl !== null && isPureUserFunction(decl, checker, visited);
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
