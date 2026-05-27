@@ -10,13 +10,16 @@ import {
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { emptyNameRegistry, registerName } from "../src/name-registry.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
+import { emitDocument } from "../src/emit.js";
 import {
   cellEmitSynth,
   cellLookupOpaqueValue,
   cellRegisterOpaqueValue,
+  cellRegisterDiscriminatedUnion,
   cellRegisterTupleConstructor,
   cellTupleShapes,
   depModuleNameForFile,
+  detectDiscriminatedUnion,
   emitTupleCtorModule,
   IntStrategy,
   mapTsType,
@@ -38,6 +41,15 @@ function extractAndTranslate(source: string, strategy = IntStrategy) {
   const checker = getChecker(sourceFile);
   const decls = translateTypes(extracted, checker, strategy);
   return { decls, extracted, checker, sourceFile };
+}
+
+function extractFirstAlias(source: string) {
+  const sourceFile = createSourceFileFromSource(source);
+  const extracted = extractAllTypes(sourceFile);
+  const checker = getChecker(sourceFile);
+  const alias = extracted.aliases[0];
+  assert.ok(alias);
+  return { alias, checker, sourceFile };
 }
 
 describe("numeric strategy", () => {
@@ -211,6 +223,101 @@ describe("recursive type following", () => {
     assert.ok(names.includes("Order"));
     assert.ok(names.includes("User"));
     assert.ok(names.includes("Address"));
+  });
+});
+
+describe("detectDiscriminatedUnion", () => {
+  it("accepts structural discriminants and picks sorted first on ties", () => {
+    const { alias, checker } = extractFirstAlias(`
+      type Shape =
+        | { kind: "circle"; tag: "c"; r: number }
+        | { kind: "square"; tag: "s"; s: number };
+    `);
+
+    const detected = detectDiscriminatedUnion(alias.type, checker);
+
+    assert.ok(detected);
+    assert.equal(detected.discriminant, "kind");
+    assert.deepEqual(
+      detected.variants.map((variant) => variant.literal),
+      [
+        { kind: "string", value: "circle" },
+        { kind: "string", value: "square" },
+      ],
+    );
+    assert.deepEqual(
+      detected.variants.map((variant) =>
+        variant.fields.map((field) => field.name).sort(),
+      ),
+      [
+        ["kind", "r", "tag"],
+        ["kind", "s", "tag"],
+      ],
+    );
+  });
+
+  it("rejects unions without a qualifying distinct literal field", () => {
+    for (const source of [
+      `type U = { a: "one"; x: number } | { b: "two"; y: number };`,
+      `type U = { kind: string; x: number } | { kind: string; y: number };`,
+      `type U = { kind: "same"; x: number } | { kind: "same"; y: number };`,
+    ]) {
+      const { alias, checker } = extractFirstAlias(source);
+      assert.equal(detectDiscriminatedUnion(alias.type, checker), null);
+    }
+  });
+});
+
+describe("emitDiscriminatedUnionSynthDecls", () => {
+  it("emits one domain, an unguarded discriminant, and guarded fields", async () => {
+    await loadAst();
+    const { alias, checker } = extractFirstAlias(`
+      type Shape =
+        | { kind: "circle"; r: number; shared: string }
+        | { kind: "square"; s: number; shared: string };
+    `);
+    const detected = detectDiscriminatedUnion(alias.type, checker);
+    assert.ok(detected);
+    const cell = newSynthCell();
+    assert.equal(
+      cellRegisterDiscriminatedUnion(
+        cell,
+        detected,
+        checker,
+        IntStrategy,
+        "Shape",
+      ),
+      "Shape",
+    );
+
+    const output = emitDocument({
+      moduleName: "TEST",
+      imports: [],
+      declarations: cellEmitSynth(cell),
+      propositions: [],
+      checks: [],
+      bundleModules: new Map(),
+    });
+
+    assert.match(output, /^Shape\.$/mu);
+    assert.match(output, /^shape--kind s: Shape => String\.$/mu);
+    assert.match(
+      output,
+      /^shape--r s: Shape, shape--kind s = "circle" => Int\.$/mu,
+    );
+    assert.match(
+      output,
+      /^shape--s s: Shape, shape--kind s = "square" => Int\.$/mu,
+    );
+    assert.match(
+      output,
+      /^shape--shared s: Shape, shape--kind s = "circle" or shape--kind s = "square" => String\.$/mu,
+    );
+  });
+
+  it("leaves field-access wiring pending for Patch 2", { skip: true }, () => {
+    // PENDING Patch 2: mapTsType and field-owner resolution will consume
+    // this synth so `x.kind`, `x.r`, and shared fields resolve.
   });
 });
 
