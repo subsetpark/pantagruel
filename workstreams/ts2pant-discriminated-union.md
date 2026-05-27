@@ -101,7 +101,14 @@ the shape this workstream generalizes.
 
 ## Milestones
 
-### Milestone 1: du-tagged-encoding
+### Milestone 1: du-tagged-encoding — planned (`gameplans/ts2pant-du-tagged-encoding.json`)
+
+> **Being executed now**, ahead of further guard-analysis work: M1 is independent
+> of guard-analysis (it is the encoding, not narrowing) and unblocks M2 and — with
+> guard-analysis M3a — M3. Gameplan: INFRA detection + dormant tagged-encoding synth
+> (mirrors the Map guarded-rule encoding), then a BEHAVIOR patch wiring detection
+> into `mapTsType` + `collectFieldOwners`. Sound-by-guard (guards undischarged until
+> M3), conservative-by-bail (non-discriminated unions keep the `+`-encoding).
 
 **Definition of Done**:
 - A TypeScript union detected as **discriminated** — structurally: a field
@@ -309,3 +316,4 @@ Precedents`.
 | M3 narrowing depends on (consumes) the guard-analysis workstream's flow-narrowing layer | Chosen over a bespoke DU-only narrowing mechanism: narrowing is shared infrastructure, and ts2pant has none today. This introduces a cross-workstream dependency (M3 gates on guard-analysis), accepted to avoid duplicating flow-narrowing machinery that the guard-analysis roadmap must build anyway. |
 | Encoding migration staged (M1 introduces tagged encoding for discriminated unions; M4 retires `+`-records) | The tagged encoding is a behavior change to currently-emitted output, including the currently-"working" unique-field case. Staging the cutover into M4 bounds regression risk and keeps every milestone a safe pause point. |
 | Standalone workstream (not part of free-call-decl) | Discriminated-union handling is an independent capability; free-call-decl is complete at M2. |
+| Multi-discriminant tie-break: pick the first qualifying field by **sorted field name** (deterministic) | Decided while planning M1's gameplan. When >1 field is a distinct literal on every member, a deterministic pick keeps detection total and stable (every discriminated union encodes); requiring exactly one would refuse legitimate multi-discriminant unions. Non-chosen qualifying fields still become per-variant guarded rules. |
