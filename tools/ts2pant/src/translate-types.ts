@@ -557,7 +557,7 @@ function literalPantType(
       return "Bool";
     default: {
       const _exhaustive: never = lit;
-      throw new Error(`Unhandled discriminant literal: ${_exhaustive}`);
+      return _exhaustive;
     }
   }
 }
@@ -575,7 +575,7 @@ function literalExpr(lit: DiscriminantLiteral): OpaqueExpr | null {
       return ast.litBool(lit.value);
     default: {
       const _exhaustive: never = lit;
-      throw new Error(`Unhandled discriminant literal: ${_exhaustive}`);
+      return _exhaustive;
     }
   }
 }
