@@ -54,6 +54,7 @@ import {
   lowerScalarSsaEarlyExitMerge,
   type ScalarSsaEarlyExitPropertyInput,
 } from "./ir1-ssa-scalars.js";
+import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -95,6 +96,10 @@ import {
   toPantTermName,
   UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
+import {
+  type ExtractedBlockConstBinding,
+  extractBlockReturn,
+} from "./ts-ast-block-return.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
@@ -270,6 +275,7 @@ type PreludeStmt =
       kind: "earlyReturn";
       predicateExpr: ts.Expression;
       valueExpr: ts.Expression;
+      blockBindings: readonly ExtractedBlockConstBinding[];
     };
 
 /** Names a binding introduces into scope (none for an early-return arm). */
@@ -1713,9 +1719,11 @@ function recognizeLetWhilePair(
  * branch shapes. An if with an `else` falls through to the existing
  * terminal-position handling unchanged.
  */
-function recognizeEarlyReturnArm(
-  stmt: ts.Statement,
-): { predicateExpr: ts.Expression; valueExpr: ts.Expression } | null {
+function recognizeEarlyReturnArm(stmt: ts.Statement): {
+  predicateExpr: ts.Expression;
+  valueExpr: ts.Expression;
+  blockBindings: readonly ExtractedBlockConstBinding[];
+} | null {
   if (!ts.isIfStatement(stmt)) {
     return null;
   }
@@ -1723,20 +1731,28 @@ function recognizeEarlyReturnArm(
     return null;
   }
   const body = stmt.thenStatement;
-  let returnStmt: ts.Statement | null = null;
   if (ts.isReturnStatement(body)) {
-    returnStmt = body;
-  } else if (ts.isBlock(body) && body.statements.length === 1) {
-    returnStmt = body.statements[0]!;
+    if (body.expression === undefined) {
+      return null;
+    }
+    return {
+      predicateExpr: stmt.expression,
+      valueExpr: body.expression,
+      blockBindings: [],
+    };
   }
-  if (
-    !returnStmt ||
-    !ts.isReturnStatement(returnStmt) ||
-    !returnStmt.expression
-  ) {
+  if (!ts.isBlock(body)) {
     return null;
   }
-  return { predicateExpr: stmt.expression, valueExpr: returnStmt.expression };
+  const extracted = extractBlockReturn(body);
+  if (extracted === null) {
+    return null;
+  }
+  return {
+    predicateExpr: stmt.expression,
+    valueExpr: extracted.returnExpr,
+    blockBindings: extracted.bindings,
+  };
 }
 
 function extractReturnExpression(
@@ -1890,7 +1906,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         if (stmt.elseStatement) {
           return "if-with-else only supported as the final statement";
         }
-        return "if-with-return body must be a single return statement";
+        return "if-with-return block must contain only const bindings followed by a return";
       }
       // A let; while pair where recognizeLetWhilePair failed — probably a
       // compound while body or non-`i++` body.
@@ -2397,6 +2413,28 @@ function lowerPreludeBindings(
       if (expressionHasSideEffects(binding.predicateExpr, checker)) {
         return { error: "early-return predicate has side effects" };
       }
+      for (const [blockIdx, blockBinding] of binding.blockBindings.entries()) {
+        if (expressionHasSideEffects(blockBinding.initializer, checker)) {
+          return { error: "early-return block const has side effects" };
+        }
+        const blockBlockedNames = new Set(
+          binding.blockBindings.slice(blockIdx).map((b) => b.tsName),
+        );
+        if (
+          expressionReferencesNames(blockBinding.initializer, blockBlockedNames)
+        ) {
+          return {
+            error:
+              "early-return block const initializer references a later binding",
+          };
+        }
+        if (expressionReferencesNames(blockBinding.initializer, blockedNames)) {
+          return {
+            error:
+              "early-return block const initializer references a later binding",
+          };
+        }
+      }
       if (expressionHasSideEffects(binding.valueExpr, checker)) {
         return { error: "early-return value has side effects" };
       }
@@ -2439,14 +2477,27 @@ function lowerPreludeBindings(
         if ("error" in predRes) {
           return { tag: "error", error: predRes.error };
         }
-        const valRes = translateBindingInit(
-          binding.valueExpr,
-          checker,
-          strategy,
-          acc.scopedParams,
-          state,
-          supply,
-        );
+        const valRes =
+          binding.blockBindings.length === 0
+            ? translateBindingInit(
+                binding.valueExpr,
+                checker,
+                strategy,
+                acc.scopedParams,
+                state,
+                supply,
+              )
+            : translateEarlyReturnBlockValue(
+                binding.blockBindings,
+                binding.valueExpr,
+                {
+                  checker,
+                  strategy,
+                  scopedParams: acc.scopedParams,
+                  state: state ?? makeSymbolicState(),
+                  supply,
+                },
+              );
         if ("error" in valRes) {
           return { tag: "error", error: valRes.error };
         }
@@ -2592,6 +2643,62 @@ function lowerPreludeBindings(
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
+
+function translateEarlyReturnBlockValue(
+  bindings: readonly ExtractedBlockConstBinding[],
+  valueExpr: ts.Expression,
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    scopedParams: ReadonlyMap<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+  },
+): BindingInitResult {
+  let scopedParams: ReadonlyMap<string, string> = new Map(ctx.scopedParams);
+  const substitutions: Array<{
+    localName: string;
+    value: IR1Expr;
+  }> = [];
+
+  for (const binding of bindings) {
+    const localName = allocLocalBindingName(
+      ctx.supply,
+      toPantTermName(binding.tsName),
+      scopedParams,
+    );
+    const initExpr = buildL1SubExpr(binding.initializer, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: scopedParams,
+      state: ctx.state,
+      supply: ctx.supply,
+    });
+    if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
+      return { error: initExpr.unsupported };
+    }
+    substitutions.push({ localName, value: initExpr });
+    scopedParams = withParam(scopedParams, binding.tsName, localName);
+  }
+
+  const value = buildL1SubExpr(valueExpr, {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: scopedParams,
+    state: ctx.state,
+    supply: ctx.supply,
+  });
+  if (isUnsupported(value) || isL1Unsupported(value)) {
+    return { error: value.unsupported };
+  }
+
+  const inlined = substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    value,
+  );
+  return { value: applyOpaqueAliases(lowerL1ToOpaque(inlined), ctx.supply) };
+}
 
 function translateBindingInit(
   initializer: ts.Expression,

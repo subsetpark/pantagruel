@@ -571,9 +571,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it.skip("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
-    // PENDING Patch 2: recognize block arms containing const bindings
-    // ending in `return`, inline the bindings, and feed the existing cond.
+  it("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
     const source = `
       export function f(n: number): number {
         if (n < 0) {
@@ -622,11 +620,11 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects an if-with-multi-statement body in prelude position", () => {
+  it("rejects a block early-return arm with non-const local bindings", () => {
     const source = `
       export function f(n: number): number {
         if (n < 0) {
-          const x = 1;
+          let x = 1;
           return x;
         }
         return n;
@@ -641,7 +639,7 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
-      assert.match(props[0].reason, /single return statement/u);
+      assert.match(props[0].reason, /only const bindings followed by a return/u);
     }
   });
 
@@ -874,9 +872,7 @@ describe("if-early-return prelude arms", () => {
 });
 
 describe("body-lowering completeness pending stubs", () => {
-  it.skip("mutating block-bodied arm lowers to cond post-state with inlined binding", () => {
-    // PENDING Patch 2: buildL1MutationBody accepts guarded blocks with
-    // const bindings before terminal property assignments.
+  it("mutating block-bodied arm lowers to cond post-state with inlined binding", () => {
     const source = `
       interface Account { balance: number; }
       export function f(a: Account, g: boolean, amount: number): void {
