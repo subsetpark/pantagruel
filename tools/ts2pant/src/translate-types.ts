@@ -7,6 +7,7 @@ import {
   registerName,
 } from "./name-registry.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "./opaque.js";
+import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
@@ -495,6 +496,384 @@ export function emitRecordSynthDecls(
   };
 }
 
+export type DiscriminantLiteral =
+  | { kind: "string"; value: string }
+  | { kind: "number"; value: number }
+  | { kind: "boolean"; value: boolean };
+
+export interface DiscriminatedUnionField {
+  name: string;
+  type: ts.Type;
+}
+
+export interface DiscriminatedUnionVariant {
+  literal: DiscriminantLiteral;
+  fields: DiscriminatedUnionField[];
+}
+
+export interface DiscriminatedUnionDetection {
+  discriminant: string;
+  variants: DiscriminatedUnionVariant[];
+}
+
+export interface DiscriminatedUnionSynthField {
+  name: string;
+  type: string;
+  variantKeys: string[];
+}
+
+export interface DiscriminatedUnionSynthEntry {
+  domain: string;
+  binder: string;
+  discriminant: string;
+  discriminantType: string;
+  variants: Array<{ key: string; literal: DiscriminantLiteral }>;
+  fields: DiscriminatedUnionSynthField[];
+}
+
+export interface DiscriminatedUnionSynth {
+  readonly byShape: ReadonlyMap<string, DiscriminatedUnionSynthEntry>;
+  readonly emitted: ReadonlySet<string>;
+}
+
+export function emptyDiscriminatedUnionSynth(): DiscriminatedUnionSynth {
+  return { byShape: new Map(), emitted: new Set() };
+}
+
+function literalKey(lit: DiscriminantLiteral): string {
+  return `${lit.kind}:${String(lit.value)}`;
+}
+
+function literalPantType(
+  lit: DiscriminantLiteral,
+  strategy: NumericStrategy,
+): string {
+  switch (lit.kind) {
+    case "string":
+      return "String";
+    case "number":
+      return strategy.mapNumber();
+    case "boolean":
+      return "Bool";
+    default: {
+      const _exhaustive: never = lit;
+      throw new Error(`Unhandled discriminant literal: ${_exhaustive}`);
+    }
+  }
+}
+
+function literalExpr(lit: DiscriminantLiteral): OpaqueExpr | null {
+  const ast = getAst();
+  switch (lit.kind) {
+    case "string":
+      return ast.litString(lit.value);
+    case "number":
+      return Number.isInteger(lit.value) && lit.value >= 0
+        ? ast.litNat(lit.value)
+        : null;
+    case "boolean":
+      return ast.litBool(lit.value);
+    default: {
+      const _exhaustive: never = lit;
+      throw new Error(`Unhandled discriminant literal: ${_exhaustive}`);
+    }
+  }
+}
+
+function literalCanEmit(lit: DiscriminantLiteral): boolean {
+  return (
+    lit.kind !== "number" || (Number.isInteger(lit.value) && lit.value >= 0)
+  );
+}
+
+function literalFromType(type: ts.Type): DiscriminantLiteral | null {
+  if (type.flags & ts.TypeFlags.StringLiteral) {
+    return { kind: "string", value: (type as ts.StringLiteralType).value };
+  }
+  if (type.flags & ts.TypeFlags.NumberLiteral) {
+    return { kind: "number", value: (type as ts.NumberLiteralType).value };
+  }
+  if (type.flags & ts.TypeFlags.BooleanLiteral) {
+    const intrinsicName = (type as unknown as { intrinsicName?: string })
+      .intrinsicName;
+    if (intrinsicName === "true") {
+      return { kind: "boolean", value: true };
+    }
+    if (intrinsicName === "false") {
+      return { kind: "boolean", value: false };
+    }
+  }
+  return null;
+}
+
+function getPropertyType(
+  prop: ts.Symbol,
+  checker: ts.TypeChecker,
+): ts.Type | null {
+  const decl = prop.getDeclarations()?.[0];
+  if (decl) {
+    return checker.getTypeOfSymbolAtLocation(prop, decl);
+  }
+  return (prop as unknown as { type?: ts.Type }).type ?? null;
+}
+
+/**
+ * Structural TypeScript discriminated-union detection. A union qualifies
+ * when some field is present on every member and has a distinct literal
+ * type on each member. The chosen discriminant is deterministic: the first
+ * qualifying field in sorted field-name order.
+ */
+export function detectDiscriminatedUnion(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): DiscriminatedUnionDetection | null {
+  if (!type.isUnion() || type.types.length < 2) {
+    return null;
+  }
+  const members = type.types.filter((t) => !isTsNullish(t));
+  if (members.length < 2 || members.length !== type.types.length) {
+    return null;
+  }
+  const memberFields = members.map((member) => {
+    const fields = new Map<string, { symbol: ts.Symbol; type: ts.Type }>();
+    for (const prop of member.getProperties()) {
+      const propType = getPropertyType(prop, checker);
+      if (propType) {
+        fields.set(prop.getName(), { symbol: prop, type: propType });
+      }
+    }
+    return fields;
+  });
+  if (memberFields.some((fields) => fields.size === 0)) {
+    return null;
+  }
+  const [firstFields, ...restFields] = memberFields;
+  const commonNames = [...firstFields!.keys()]
+    .filter((name) => restFields.every((fields) => fields.has(name)))
+    .sort((a, b) => a.localeCompare(b));
+
+  for (const name of commonNames) {
+    const literals: DiscriminantLiteral[] = [];
+    const seen = new Set<string>();
+    let qualifies = true;
+    for (const fields of memberFields) {
+      const lit = literalFromType(fields.get(name)!.type);
+      if (!lit) {
+        qualifies = false;
+        break;
+      }
+      const key = literalKey(lit);
+      if (seen.has(key)) {
+        qualifies = false;
+        break;
+      }
+      seen.add(key);
+      literals.push(lit);
+    }
+    if (!qualifies) {
+      continue;
+    }
+    return {
+      discriminant: name,
+      variants: memberFields.map((fields, i) => ({
+        literal: literals[i]!,
+        fields: [...fields.entries()].map(([fieldName, entry]) => ({
+          name: fieldName,
+          type: entry.type,
+        })),
+      })),
+    };
+  }
+  return null;
+}
+
+function disjunction(exprs: OpaqueExpr[]): OpaqueExpr | null {
+  if (exprs.length === 0) {
+    return null;
+  }
+  const ast = getAst();
+  return exprs
+    .slice(1)
+    .reduce((acc, expr) => ast.binop(ast.opOr(), acc, expr), exprs[0]!);
+}
+
+function discriminatedUnionShapeKey(
+  discriminant: string,
+  variants: ReadonlyArray<{
+    key: string;
+    fields: ReadonlyArray<RecordSynthField>;
+  }>,
+): string {
+  const variantKeys = variants
+    .map(
+      (variant) =>
+        `${variant.key}{${variant.fields.map(recordFieldShapeKey).join("|")}}`,
+    )
+    .sort();
+  return `${discriminant}::${variantKeys.join("||")}`;
+}
+
+export function cellRegisterDiscriminatedUnion(
+  cell: SynthCell,
+  detection: DiscriminatedUnionDetection,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  preferredDomain = "DiscriminatedUnion",
+): string | null {
+  const variants: Array<{
+    key: string;
+    literal: DiscriminantLiteral;
+    fields: RecordSynthField[];
+  }> = [];
+  const fieldVariants = new Map<
+    string,
+    { variantKeys: string[]; types: string[] }
+  >();
+  let discriminantType: string | null = null;
+
+  for (const variant of detection.variants) {
+    const key = literalKey(variant.literal);
+    if (!literalCanEmit(variant.literal)) {
+      return null;
+    }
+    const litType = literalPantType(variant.literal, strategy);
+    discriminantType ??= litType;
+    if (discriminantType !== litType) {
+      return null;
+    }
+    const fields: RecordSynthField[] = [];
+    for (const field of variant.fields) {
+      if (field.name === detection.discriminant) {
+        continue;
+      }
+      const mapped = mapTsType(field.type, checker, strategy, cell);
+      if (
+        isUnsupportedUnknown(mapped) ||
+        mapped === UNSUPPORTED_ANONYMOUS_RECORD ||
+        !isValidPantFieldType(mapped) ||
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(field.name)
+      ) {
+        return null;
+      }
+      fields.push({ name: field.name, type: mapped });
+      const slot = fieldVariants.get(field.name) ?? {
+        variantKeys: [],
+        types: [],
+      };
+      slot.variantKeys.push(key);
+      if (!slot.types.includes(mapped)) {
+        slot.types.push(mapped);
+      }
+      fieldVariants.set(field.name, slot);
+    }
+    fields.sort((a, b) => a.name.localeCompare(b.name));
+    variants.push({ key, literal: variant.literal, fields });
+  }
+  if (!discriminantType) {
+    return null;
+  }
+
+  const key = discriminatedUnionShapeKey(
+    detection.discriminant,
+    variants.map((variant) => ({ key: variant.key, fields: variant.fields })),
+  );
+  const cached = cell.discriminatedUnionSynth.byShape.get(key);
+  if (cached) {
+    return cached.domain;
+  }
+
+  const reg1 = registerName(cell.registry, preferredDomain);
+  const bReg = registerName(reg1.registry, "s");
+  const entry: DiscriminatedUnionSynthEntry = {
+    domain: reg1.name,
+    binder: bReg.name,
+    discriminant: detection.discriminant,
+    discriminantType,
+    variants: variants.map((variant) => ({
+      key: variant.key,
+      literal: variant.literal,
+    })),
+    fields: [...fieldVariants.entries()]
+      .map(([name, info]) => ({
+        name,
+        type: info.types.join(" + "),
+        variantKeys: info.variantKeys,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+  const newByShape = new Map(cell.discriminatedUnionSynth.byShape);
+  newByShape.set(key, entry);
+  cell.discriminatedUnionSynth = {
+    byShape: newByShape,
+    emitted: cell.discriminatedUnionSynth.emitted,
+  };
+  cell.registry = bReg.registry;
+  return entry.domain;
+}
+
+export function emitDiscriminatedUnionSynthDecls(
+  synth: DiscriminatedUnionSynth,
+  registry: NameRegistry,
+): {
+  decls: PantDeclaration[];
+  synth: DiscriminatedUnionSynth;
+  registry: NameRegistry;
+} {
+  const decls: PantDeclaration[] = [];
+  const ast = getAst();
+  const newEmitted = new Set(synth.emitted);
+  for (const [key, entry] of synth.byShape) {
+    if (newEmitted.has(key)) {
+      continue;
+    }
+    newEmitted.add(key);
+    const discRule = fieldRuleName(entry.domain, entry.discriminant);
+    const guardByVariant = new Map<string, OpaqueExpr>();
+    for (const variant of entry.variants) {
+      const lit = literalExpr(variant.literal);
+      if (!lit) {
+        continue;
+      }
+      guardByVariant.set(
+        variant.key,
+        ast.binop(
+          ast.opEq(),
+          ast.app(ast.var(discRule), [ast.var(entry.binder)]),
+          lit,
+        ),
+      );
+    }
+    decls.push({ kind: "domain", name: entry.domain });
+    decls.push({
+      kind: "rule",
+      name: discRule,
+      params: [{ name: entry.binder, type: entry.domain }],
+      returnType: entry.discriminantType,
+    });
+    for (const field of entry.fields) {
+      const guards = field.variantKeys
+        .map((variantKey) => guardByVariant.get(variantKey))
+        .filter((guard): guard is OpaqueExpr => guard !== undefined);
+      const guard = disjunction(guards);
+      if (!guard) {
+        continue;
+      }
+      decls.push({
+        kind: "rule",
+        name: fieldRuleName(entry.domain, field.name),
+        params: [{ name: entry.binder, type: entry.domain }],
+        returnType: field.type,
+        guard,
+      });
+    }
+  }
+  return {
+    decls,
+    synth: { byShape: synth.byShape, emitted: newEmitted },
+    registry,
+  };
+}
+
 export interface OpaqueSynthEntry {
   readonly id: string;
   readonly rule: string;
@@ -779,6 +1158,7 @@ function depModuleNameForFileImpl(fileName: string): string {
 export interface SynthCell {
   synth: MapSynth;
   recordSynth: RecordSynth;
+  discriminatedUnionSynth: DiscriminatedUnionSynth;
   opaqueSynth: OpaqueSynth;
   registry: NameRegistry;
   tupleSynth: TupleSynth;
@@ -808,6 +1188,7 @@ export function newSynthCell(
   const cell: SynthCell = {
     synth: emptyMapSynth(),
     recordSynth: emptyRecordSynth(),
+    discriminatedUnionSynth: emptyDiscriminatedUnionSynth(),
     opaqueSynth: emptyOpaqueSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
@@ -1103,10 +1484,10 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(toPantTermName(name));
 }
 
-/** Cell-mutating wrapper that drains Opaque, Map, and Record synth decls.
- *  Emits Opaque first so Map/Record decls can reference it, then Maps so
- *  Record accessor-rule return types can reference any Map domain registered
- *  bottom-up. Incremental: each call returns
+/** Cell-mutating wrapper that drains Opaque, Map, discriminated-union, and
+ *  Record synth decls. Emits Opaque first so later decls can reference it,
+ *  then Maps so Record/DU accessor-rule return types can reference any Map
+ *  domain registered bottom-up. Incremental: each call returns
  *  only the entries added since the previous drain.
  *
  *  Tuple-constructor synth is *not* drained here — tuple constructors
@@ -1119,10 +1500,16 @@ export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
   cell.registry = mapR.registry;
+  const duR = emitDiscriminatedUnionSynthDecls(
+    cell.discriminatedUnionSynth,
+    cell.registry,
+  );
+  cell.discriminatedUnionSynth = duR.synth;
+  cell.registry = duR.registry;
   const recR = emitRecordSynthDecls(cell.recordSynth, cell.registry);
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
-  return [...opaqueR.decls, ...mapR.decls, ...recR.decls];
+  return [...opaqueR.decls, ...mapR.decls, ...duR.decls, ...recR.decls];
 }
 
 /**
