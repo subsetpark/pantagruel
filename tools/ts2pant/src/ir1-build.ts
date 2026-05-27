@@ -126,6 +126,13 @@ export function tryBuildBuiltinCall(
   if (spec === null) {
     return null;
   }
+  const member = callMemberName(expr.expression);
+  if (
+    expressionHasSideEffects(expr.expression, ctx.checker) ||
+    (member !== null && expressionHasSideEffects(member.receiver, ctx.checker))
+  ) {
+    return null;
+  }
   if (expr.arguments.some(ts.isSpreadElement)) {
     return { unsupported: "call with spread arguments is unsupported" };
   }

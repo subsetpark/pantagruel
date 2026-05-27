@@ -25,6 +25,7 @@ function setupReturnExpr(source: string): {
 } {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
+  const program = sourceFile.getProject().getProgram().compilerObject;
   const fn = sourceFile.compilerNode.statements.find(
     (stmt): stmt is ts.FunctionDeclaration =>
       ts.isFunctionDeclaration(stmt) && stmt.body !== undefined,
@@ -46,7 +47,7 @@ function setupReturnExpr(source: string): {
   if (!stmt || !ts.isReturnStatement(stmt) || !stmt.expression) {
     throw new Error("setup: expected return expression");
   }
-  const supply: UniqueSupply = { n: 0, synthCell };
+  const supply: UniqueSupply = { n: 0, synthCell, program };
   return {
     expr: stmt.expression,
     ctx: {
@@ -152,6 +153,16 @@ describe("ir1-build call purity", () => {
       }
     `);
     assert.equal(tryBuildL1PureSubExpression(bracket.expr, bracket.ctx), null);
+  });
+
+  it("does not lower a builtin call whose receiver has unknown effects", () => {
+    const { expr, ctx } = setupReturnExpr(`
+      declare function makeString(): string;
+      function f(): string {
+        return makeString().trim();
+      }
+    `);
+    assert.equal(tryBuildL1PureSubExpression(expr, ctx), null);
   });
 
   it("does not lower a higher-order call with an effectful callee", () => {
