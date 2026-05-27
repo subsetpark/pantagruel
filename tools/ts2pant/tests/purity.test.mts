@@ -7,7 +7,7 @@ import {
   createSourceFileFromSource,
   getChecker,
 } from "../src/extract.js";
-import { isKnownPureCall } from "../src/purity.js";
+import { isEffectFree, isKnownPureCall } from "../src/purity.js";
 
 /**
  * Find the first CallExpression in a source file's function body.
@@ -41,6 +41,32 @@ function checkPurity(source: string): boolean {
     throw new Error("No CallExpression found in source");
   }
   return isKnownPureCall(callExpr, checker);
+}
+
+function findReturnExpression(
+  sourceFile: ts.SourceFile,
+): ts.Expression | undefined {
+  let result: ts.Expression | undefined;
+  function visit(node: ts.Node) {
+    if (result) return;
+    if (ts.isReturnStatement(node) && node.expression) {
+      result = node.expression;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile, visit);
+  return result;
+}
+
+function checkEffectFree(source: string): boolean {
+  const sf = createSourceFileFromSource(source);
+  const checker = getChecker(sf);
+  const expr = findReturnExpression(sf.compilerNode);
+  if (!expr) {
+    throw new Error("No return expression found in source");
+  }
+  return isEffectFree(expr, checker);
 }
 
 describe("isKnownPureCall", () => {
@@ -287,6 +313,60 @@ describe("isKnownPureCall", () => {
       false,
     );
   });
+});
+
+describe("isEffectFree", () => {
+  it("treats known-pure builtin calls as effect-free", () => {
+    assert.equal(
+      checkEffectFree(`
+        function f(a: number, b: number) { return Math.max(a, b); }
+      `),
+      true,
+    );
+  });
+
+  it("treats user calls as effectful", () => {
+    assert.equal(
+      checkEffectFree(`
+        declare function userFn(x: number): number;
+        function f(x: number) { return userFn(x); }
+      `),
+      false,
+    );
+  });
+
+  it("treats mutation as effectful", () => {
+    assert.equal(
+      checkEffectFree(`
+        function f(x: number) { return ++x; }
+      `),
+      false,
+    );
+  });
+
+  it("treats await as effectful", () => {
+    assert.equal(
+      checkEffectFree(`
+        async function f(p: Promise<number>) { return await p; }
+      `),
+      false,
+    );
+  });
+
+  it("treats new expressions as effectful", () => {
+    assert.equal(
+      checkEffectFree(`
+        class Box {}
+        function f() { return new Box(); }
+      `),
+      false,
+    );
+  });
+
+  it.skip(
+    "guard extraction over a builtin-call condition uses the checker-aware oracle",
+    () => {},
+  );
 });
 
 // ---------------------------------------------------------------------------

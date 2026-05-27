@@ -67,7 +67,7 @@ import type {
   OpaqueParam,
 } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { isKnownPureCall, isStaticallyBoolTyped } from "./purity.js";
+import { expressionHasSideEffects, isStaticallyBoolTyped } from "./purity.js";
 import { translateRecordReturn } from "./translate-record.js";
 import {
   classifyFunction,
@@ -101,6 +101,8 @@ import {
   extractBlockReturn,
 } from "./ts-ast-block-return.js";
 import type { PantDeclaration, PropResult } from "./types.js";
+
+export { expressionHasSideEffects } from "./purity.js";
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
@@ -3170,58 +3172,6 @@ export function unwrapExpression(expr: ts.Expression): ts.Expression {
     expr = expr.expression;
   }
   return expr;
-}
-
-export function expressionHasSideEffects(
-  expr: ts.Expression,
-  checker: ts.TypeChecker,
-): boolean {
-  expr = unwrapExpression(expr);
-
-  if (ts.isDeleteExpression(expr)) {
-    return true;
-  }
-
-  if (ts.isBinaryExpression(expr)) {
-    // Any assignment operator
-    return (
-      (expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
-        expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken) ||
-      expressionHasSideEffects(expr.left, checker) ||
-      expressionHasSideEffects(expr.right, checker)
-    );
-  }
-  if (ts.isCallExpression(expr)) {
-    if (isKnownPureCall(expr, checker)) {
-      // Known-pure callees still require a pure callee expression —
-      // `makeString().trim()` passes the name-based builtin allowlist
-      // but the receiver `makeString()` is itself a user call with
-      // unknown effects. The Tier 1a checks in `isKnownPureCall`
-      // already enforce this for Map/Set/HO-array, but not for
-      // Math/String/Number/PURE_ARRAY entries, so we double-check here.
-      return (
-        expressionHasSideEffects(expr.expression, checker) ||
-        expr.arguments.some((a) => expressionHasSideEffects(a, checker))
-      );
-    }
-    return true;
-  }
-  if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) {
-    return true;
-  }
-  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
-    const op = expr.operator;
-    return (
-      op === ts.SyntaxKind.PlusPlusToken ||
-      op === ts.SyntaxKind.MinusMinusToken ||
-      expressionHasSideEffects(expr.operand, checker)
-    );
-  }
-  return (
-    ts.forEachChild(expr, (child) =>
-      ts.isExpression(child) ? expressionHasSideEffects(child, checker) : false,
-    ) ?? false
-  );
 }
 
 /**
