@@ -357,6 +357,29 @@ describe("loadBuiltinDepModule", () => {
     assert.match(text, /starts-with s: String, prefix: String => Bool\./);
     assert.match(text, /ends-with s: String, suffix: String => Bool\./);
     assert.match(text, /last-index-of s: String, t: String => Int\./);
+    assert.match(
+      text,
+      /replace s: String, from: String, to: String => String\./,
+    );
+  });
+
+  it("loadBuiltinDepModule('JS_ARRAY') returns the on-disk text", () => {
+    const text = loadBuiltinDepModule("JS_ARRAY");
+    assert.match(text, /^module JS_ARRAY\./m);
+    assert.match(text, /from xs: \[Int\] => \[Int\]\./);
+    assert.match(
+      text,
+      /from-entries xs: \[String \* Int\] => \[String \* Int\]\./,
+    );
+  });
+
+  it("loadBuiltinDepModule('JS_MAP') returns the on-disk text", () => {
+    const text = loadBuiltinDepModule("JS_MAP");
+    assert.match(text, /^module JS_MAP\./m);
+    assert.match(text, /StringToIntMap\./);
+    assert.match(text, /values m: StringToIntMap => \[Int\]\./);
+    assert.match(text, /entries m: StringToIntMap => \[String \* Int\]\./);
+    assert.match(text, /keys m: StringToIntMap => \[String\]\./);
   });
 
   it("caches the loaded module text across calls", () => {
@@ -368,7 +391,9 @@ describe("loadBuiltinDepModule", () => {
 
 describe("hand-written js-stdlib modules typecheck", () => {
   for (const name of [
+    "JS_ARRAY",
     "JS_MATH",
+    "JS_MAP",
     "JS_STRING",
     "TS_PRELUDE",
   ] satisfies DepModuleName[]) {

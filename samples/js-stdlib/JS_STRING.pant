@@ -23,5 +23,6 @@ includes s: String, t: String => Bool.
 starts-with s: String, prefix: String => Bool.
 ends-with s: String, suffix: String => Bool.
 last-index-of s: String, t: String => Int.
+replace s: String, from: String, to: String => String.
 
 ---
