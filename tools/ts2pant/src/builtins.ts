@@ -43,15 +43,20 @@ export interface BuiltinSpec {
   rule: string;
   mod: DepModuleName;
   arity: number;
+  receiver: "arg" | "none";
 }
 
 /**
  * Internal key for the dispatch table. The keys are TS surface forms
- * keyed by namespace (Math.* uses "Math.<name>"; String.prototype.*
- * uses "String.prototype.<name>") so the lookup logic can route by
- * which symbol-kind it just resolved.
+ * keyed by namespace (Math.* / Array.* use "<Namespace>.<name>";
+ * prototype methods use "<Type>.prototype.<name>") so the lookup logic
+ * can route by which symbol-kind it just resolved.
  */
-export type BuiltinKey = `Math.${string}` | `String.prototype.${string}`;
+export type BuiltinKey =
+  | `Array.${string}`
+  | `Map.prototype.${string}`
+  | `Math.${string}`
+  | `String.prototype.${string}`;
 
 const RESERVED_RULE_NAMES: ReadonlySet<string> = new Set([
   "max",
@@ -61,10 +66,15 @@ const RESERVED_RULE_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
+  ["Array.from", { arity: 1 }],
+  ["Map.prototype.values", { arity: 0 }],
+  ["Map.prototype.entries", { arity: 0 }],
+  ["Map.prototype.keys", { arity: 0 }],
   ["Math.max", { arity: 2 }],
   ["Math.min", { arity: 2 }],
   ["Math.abs", { arity: 1 }],
   ["String.prototype.toUpperCase", { arity: 0 }],
+  ["String.prototype.replace", { arity: 2 }],
   ["String.prototype.indexOf", { arity: 1 }],
   ["String.prototype.endsWith", { arity: 1 }],
   ["String.prototype.includes", { arity: 1 }],
@@ -75,18 +85,48 @@ const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
 ]);
 
 export function deriveBuiltinSpec(key: BuiltinKey, arity: number): BuiltinSpec {
-  const namespace = key.startsWith("Math.") ? "Math" : "String.prototype";
-  const method =
-    namespace === "Math"
-      ? key.slice("Math.".length)
-      : key.slice("String.prototype.".length);
-  const mod: DepModuleName = namespace === "Math" ? "JS_MATH" : "JS_STRING";
+  const namespace = getBuiltinNamespace(key);
+  const method = key.slice(`${namespace}.`.length);
+  const mod = moduleForNamespace(namespace);
+  const receiver = namespace.includes(".prototype") ? "arg" : "none";
   const kebab = method
     .replace(/([A-Z])/gu, "-$1")
     .toLowerCase()
     .replace(/^-/u, "");
   const ruleName = RESERVED_RULE_NAMES.has(kebab) ? `${kebab}-of` : kebab;
-  return { rule: `${mod}::${ruleName}`, mod, arity };
+  return { rule: `${mod}::${ruleName}`, mod, arity, receiver };
+}
+
+type BuiltinNamespace = "Array" | "Map.prototype" | "Math" | "String.prototype";
+
+function getBuiltinNamespace(key: BuiltinKey): BuiltinNamespace {
+  if (key.startsWith("Array.")) {
+    return "Array";
+  }
+  if (key.startsWith("Map.prototype.")) {
+    return "Map.prototype";
+  }
+  if (key.startsWith("Math.")) {
+    return "Math";
+  }
+  return "String.prototype";
+}
+
+function moduleForNamespace(namespace: BuiltinNamespace): DepModuleName {
+  switch (namespace) {
+    case "Array":
+      return "JS_ARRAY";
+    case "Map.prototype":
+      return "JS_MAP";
+    case "Math":
+      return "JS_MATH";
+    case "String.prototype":
+      return "JS_STRING";
+    default: {
+      const _exhaustive: never = namespace;
+      throw new Error(`Unhandled builtin namespace: ${_exhaustive}`);
+    }
+  }
 }
 
 /**
@@ -108,12 +148,12 @@ export function deriveBuiltinSpec(key: BuiltinKey, arity: number): BuiltinSpec {
  * `isDeclarationFile` alone would match the latter and silently re-bind
  * a user augmentation to the dispatch table.
  *
- * For `Math.<name>(...)` we resolve the symbol of the *receiver*
- * (the `Math` identifier) and accept it iff its declarations sit in
- * a TS default-library file. For `<receiver>.<name>(...)` where the
- * method is on `String.prototype` (e.g., `s.toUpperCase()`) we
- * resolve the symbol of the *method* and accept it iff its parent
- * declaration is the lib `String` interface.
+ * For namespace calls (`Math.<name>(...)`, `Array.<name>(...)`) we
+ * resolve the symbol of the *receiver* identifier and accept it iff
+ * its declarations sit in a TS default-library file. For prototype
+ * calls (`s.toUpperCase()`, `m.values()`) we resolve the symbol of
+ * the *method* and accept it iff its parent declaration is the
+ * corresponding lib interface.
  *
  * Once the namespace+name match, the call's argument count must equal
  * the dispatch entry's `arity` — see {@link BuiltinSpec}. Off-arity
@@ -135,6 +175,15 @@ export function lookupBuiltinByCall(
   let key: BuiltinKey | undefined;
   if (
     ts.isIdentifier(propAccess.expression) &&
+    propAccess.expression.text === "Array" &&
+    isDefaultLibSymbol(
+      checker.getSymbolAtLocation(propAccess.expression),
+      program,
+    )
+  ) {
+    key = `Array.${memberName}`;
+  } else if (
+    ts.isIdentifier(propAccess.expression) &&
     propAccess.expression.text === "Math" &&
     isDefaultLibSymbol(
       checker.getSymbolAtLocation(propAccess.expression),
@@ -146,6 +195,8 @@ export function lookupBuiltinByCall(
     const methodSymbol = checker.getSymbolAtLocation(propAccess.name);
     if (methodSymbol && isStringPrototypeMember(methodSymbol, program)) {
       key = `String.prototype.${memberName}`;
+    } else if (methodSymbol && isMapPrototypeMember(methodSymbol, program)) {
+      key = `Map.prototype.${memberName}`;
     }
   }
 
@@ -157,6 +208,14 @@ export function lookupBuiltinByCall(
     return null;
   }
   const fullSpec = deriveBuiltinSpec(key, entry.arity);
+  if (
+    key === "String.prototype.replace" &&
+    !expr.arguments.every((arg) =>
+      isStringLikeType(checker.getTypeAtLocation(arg)),
+    )
+  ) {
+    return null;
+  }
   return expr.arguments.length === fullSpec.arity ? fullSpec : null;
 }
 
@@ -177,6 +236,18 @@ function isStringPrototypeMember(
   symbol: ts.Symbol,
   program: ts.Program,
 ): boolean {
+  return isDefaultLibInterfaceMember(symbol, program, ["String"]);
+}
+
+function isMapPrototypeMember(symbol: ts.Symbol, program: ts.Program): boolean {
+  return isDefaultLibInterfaceMember(symbol, program, ["Map", "ReadonlyMap"]);
+}
+
+function isDefaultLibInterfaceMember(
+  symbol: ts.Symbol,
+  program: ts.Program,
+  interfaceNames: readonly string[],
+): boolean {
   const decls = symbol.declarations;
   if (!decls) {
     return false;
@@ -189,12 +260,19 @@ function isStringPrototypeMember(
     if (
       parent &&
       ts.isInterfaceDeclaration(parent) &&
-      parent.name.text === "String"
+      interfaceNames.includes(parent.name.text)
     ) {
       return true;
     }
   }
   return false;
+}
+
+function isStringLikeType(type: ts.Type): boolean {
+  if (type.isUnion()) {
+    return type.types.every(isStringLikeType);
+  }
+  return (type.flags & ts.TypeFlags.StringLike) !== 0;
 }
 
 const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
