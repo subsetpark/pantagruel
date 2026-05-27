@@ -98,7 +98,7 @@ import {
 } from "./translate-types.js";
 import {
   type ExtractedBlockConstBinding,
-  extractBlockReturn,
+  extractBlockReturnFromStatements,
 } from "./ts-ast-block-return.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -1719,7 +1719,10 @@ function recognizeLetWhilePair(
  * branch shapes. An if with an `else` falls through to the existing
  * terminal-position handling unchanged.
  */
-function recognizeEarlyReturnArm(stmt: ts.Statement): {
+function recognizeEarlyReturnArm(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): {
   predicateExpr: ts.Expression;
   valueExpr: ts.Expression;
   blockBindings: readonly ExtractedBlockConstBinding[];
@@ -1744,7 +1747,9 @@ function recognizeEarlyReturnArm(stmt: ts.Statement): {
   if (!ts.isBlock(body)) {
     return null;
   }
-  const extracted = extractBlockReturn(body);
+  const extracted = extractBlockReturnFromStatements(
+    body.statements.filter((s) => !isGuardStatement(s, checker)),
+  );
   if (extracted === null) {
     return null;
   }
@@ -1784,7 +1789,7 @@ function extractReturnExpression(
       continue;
     }
 
-    const arm = recognizeEarlyReturnArm(stmts[i]!);
+    const arm = recognizeEarlyReturnArm(stmts[i]!, checker);
     if (arm) {
       bindings.push({ kind: "earlyReturn", ...arm });
       i += 1;
@@ -1896,7 +1901,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         continue;
       }
       const stmt = stmts[i]!;
-      if (recognizeEarlyReturnArm(stmt)) {
+      if (recognizeEarlyReturnArm(stmt, checker)) {
         i += 1;
         continue;
       }
@@ -1959,7 +1964,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   if (
     ts.isIfStatement(stmt) &&
     !stmt.elseStatement &&
-    recognizeEarlyReturnArm(stmt) !== null
+    recognizeEarlyReturnArm(stmt, checker) !== null
   ) {
     return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
   }
@@ -2662,11 +2667,7 @@ function translateEarlyReturnBlockValue(
   }> = [];
 
   for (const binding of bindings) {
-    const localName = allocLocalBindingName(
-      ctx.supply,
-      toPantTermName(binding.tsName),
-      scopedParams,
-    );
+    const localName = freshHygienicBinder(ctx.supply);
     const initExpr = buildL1SubExpr(binding.initializer, {
       checker: ctx.checker,
       strategy: ctx.strategy,

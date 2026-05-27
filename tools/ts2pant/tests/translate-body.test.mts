@@ -597,6 +597,36 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
+  it("pure block-bodied early-return arm strips branch-local guards", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error("no");
+      }
+      export function f(n: number, ok: boolean): number {
+        if (n < 0) {
+          assert(ok);
+          const z = 0 - n;
+          return z;
+        }
+        return n + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const prop = finalEquation(props);
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond n < 0 => 0 - n, true => n + 1",
+      );
+    }
+  });
+
   it("composes arms with a μ-search prelude", () => {
     const source = `
       export function f(n: number, used: ReadonlySet<number>): number {
@@ -1716,6 +1746,32 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       props,
       /property rooted at the iterator binder/,
       "expected the non-iter-rooted-assign rejection",
+    );
+  });
+
+  it("rejects const bindings that shadow foreach iterators inside branches", () => {
+    const source = `
+      interface Item { total: number; }
+      interface Account { total: number; }
+      function f(xs: Item[], acc: Account, g: boolean): void {
+        for (const x of xs) {
+          if (g) {
+            const x = acc;
+            x.total = 1;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /cannot shadow the foreach iterator binder/,
+      "expected the foreach iterator shadowing rejection",
     );
   });
 

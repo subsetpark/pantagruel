@@ -20,16 +20,22 @@ export interface ExtractedBlockReturn {
 export function extractBlockReturn(
   block: ts.Block,
 ): ExtractedBlockReturn | null {
-  if (block.statements.length === 0) {
+  return extractBlockReturnFromStatements(block.statements);
+}
+
+export function extractBlockReturnFromStatements(
+  statements: readonly ts.Statement[],
+): ExtractedBlockReturn | null {
+  if (statements.length === 0) {
     return null;
   }
-  const last = block.statements[block.statements.length - 1]!;
+  const last = statements[statements.length - 1]!;
   if (!ts.isReturnStatement(last) || last.expression === undefined) {
     return null;
   }
 
   const bindings: ExtractedBlockConstBinding[] = [];
-  for (const stmt of block.statements.slice(0, -1)) {
+  for (const stmt of statements.slice(0, -1)) {
     if (
       !ts.isVariableStatement(stmt) ||
       !(stmt.declarationList.flags & ts.NodeFlags.Const)

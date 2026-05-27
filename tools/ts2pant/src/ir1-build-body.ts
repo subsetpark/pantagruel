@@ -1121,6 +1121,12 @@ function buildL1MutationBlockChildren(
               "branch const bindings must use identifier declarations with initializers",
           };
         }
+        if (ctx.iterRefs?.has(decl.name.text)) {
+          return {
+            unsupported:
+              "branch const binding cannot shadow the foreach iterator binder",
+          };
+        }
         if (expressionHasSideEffects(decl.initializer, ctx.checker)) {
           return { unsupported: "branch const initializer has side effects" };
         }
