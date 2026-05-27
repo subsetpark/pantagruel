@@ -27,8 +27,8 @@ import {
   isL1StmtUnsupported,
   isL1Unsupported,
   lowerL1ToOpaque,
-  tryBuildL1Cardinality,
   tryBuildBuiltinCall,
+  tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";

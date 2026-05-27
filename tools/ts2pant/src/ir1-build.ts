@@ -135,7 +135,10 @@ export function tryBuildBuiltinCall(
     if (!ts.isPropertyAccessExpression(expr.expression)) {
       return null;
     }
-    const receiver = tryBuildL1PureSubExpression(expr.expression.expression, ctx);
+    const receiver = tryBuildL1PureSubExpression(
+      expr.expression.expression,
+      ctx,
+    );
     if (receiver === null || isL1Unsupported(receiver)) {
       return receiver;
     }
