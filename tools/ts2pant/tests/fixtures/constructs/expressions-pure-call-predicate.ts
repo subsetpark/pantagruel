@@ -18,7 +18,6 @@ function recordsObservation(n: number): boolean {
   return observed > 0;
 }
 
-/** PENDING Patch 4: pure helper call in an early-return predicate */
 export function pureCallEarlyReturn(n: number): number {
   if (isPositive(n)) {
     return 1;
@@ -26,7 +25,6 @@ export function pureCallEarlyReturn(n: number): number {
   return 0;
 }
 
-/** PENDING Patch 4: pure helper call in a mutating if-condition */
 export function pureCallMutatingIf(account: Account, amount: number): void {
   if (isDepositAllowed(amount)) {
     account.balance = account.balance + amount;

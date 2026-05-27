@@ -11,6 +11,7 @@ import {
   UNSUPPORTED_UNKNOWN_REASON,
 } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
+import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 before(async () => {
   await loadAst();
@@ -571,6 +572,51 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
+  it("pure user call in early-return predicate lowers to its EUF rule", async () => {
+    const source = `
+      function isPositive(n: number): boolean {
+        return n > 0;
+      }
+      export function f(n: number): number {
+        if (isPositive(n)) return 1;
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "f"),
+    );
+
+    assert.match(output, /^is-positive n1: Int => Bool\.$/mu);
+    assert.match(output, /^f n = \(cond is-positive n => 1, true => 0\)\.$/mu);
+  });
+
+  it("effectful user call in early-return predicate still rejects", () => {
+    const source = `
+      let observed = 0;
+      function recordsObservation(n: number): boolean {
+        observed = n;
+        return observed > 0;
+      }
+      export function f(n: number): number {
+        if (recordsObservation(n)) return 1;
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assertUnsupportedReason(
+      props,
+      /early-return predicate has side effects/u,
+      "effectful user predicate",
+    );
+  });
+
   it("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
     const source = `
       export function f(n: number): number {
@@ -1046,6 +1092,59 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
+  it("pure user call in mutating if-condition lowers to its EUF rule", async () => {
+    const source = `
+      interface Account { balance: number }
+      function isDepositAllowed(amount: number): boolean {
+        const normalized = Math.max(0, amount);
+        return normalized > 0;
+      }
+      export function deposit(account: Account, amount: number): void {
+        if (isDepositAllowed(amount)) {
+          account.balance = account.balance + amount;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "deposit"),
+    );
+
+    assert.match(output, /^is-deposit-allowed amount1: Int => Bool\.$/mu);
+    assert.match(
+      output,
+      /^account--balance' account = \(cond is-deposit-allowed amount => account--balance account \+ amount, true => account--balance account\)\.$/mu,
+    );
+  });
+
+  it("effectful user call in mutating if-condition still rejects", () => {
+    const source = `
+      interface Account { balance: number }
+      let observed = 0;
+      function recordsObservation(n: number): boolean {
+        observed = n;
+        return observed > 0;
+      }
+      export function deposit(account: Account, amount: number): void {
+        if (recordsObservation(amount)) {
+          account.balance = account.balance + amount;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
+
+    assertUnsupportedReason(
+      props,
+      /impure if-condition in mutating body/u,
+      "effectful mutating if-condition",
+    );
+  });
+
   // `m.set(k, v)` etc. return the receiver/boolean, but the
   // translator categorizes them as effects (statement-only). Without
   // a `rejectEffect` guard at the assignment handler, `bodyExpr(val)`

@@ -691,11 +691,11 @@ exports[`expressions-pure-call-predicate.ts > effectfulCallPredicate 1`] = `
 `;
 
 exports[`expressions-pure-call-predicate.ts > pureCallEarlyReturn 1`] = `
-"module PURE_CALL_EARLY_RETURN.\\n\\nis-positive n1: Int => Bool.\\npure-call-early-return n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: pure-call-early-return — early-return predicate has side effects.\\n"
+"module PURE_CALL_EARLY_RETURN.\\n\\nis-positive n1: Int => Bool.\\npure-call-early-return n: Int => Int.\\n\\n---\\n\\npure-call-early-return n = (cond is-positive n => 1, true => 0).\\n"
 `;
 
 exports[`expressions-pure-call-predicate.ts > pureCallMutatingIf 1`] = `
-"module PURE_CALL_MUTATING_IF.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Pure-call-mutating-if @ account: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
+"module PURE_CALL_MUTATING_IF.\\n\\nAccount.\\naccount--balance a: Account => Int.\\nis-deposit-allowed amount1: Int => Bool.\\n~> Pure-call-mutating-if @ account: Account, amount: Int.\\n\\n---\\n\\naccount--balance' account = (cond is-deposit-allowed amount => account--balance account + amount, true => account--balance account).\\nis-deposit-allowed' amount1 = is-deposit-allowed amount1.\\n"
 `;
 
 exports[`expressions-readonly-set.ts > cardinalityReadonly 1`] = `

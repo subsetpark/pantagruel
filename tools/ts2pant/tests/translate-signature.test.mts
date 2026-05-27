@@ -160,7 +160,7 @@ describe("guard expression structure", () => {
     );
   });
 
-  it("skips guard when if-condition has side effects (call)", () => {
+  it("extracts guard when if-condition calls a pure helper", () => {
     const source = `
       interface Account { balance: number; }
       function audit(): boolean { return true; }
@@ -177,10 +177,10 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(result.declaration.guard, undefined);
+    assert.equal(getAst().strExpr(result.declaration.guard!), "audit");
   });
 
-  it("skips guard when negated if-condition has side effects", () => {
+  it("extracts negated guard when if-condition calls a pure helper", () => {
     const source = `
       interface Account { balance: number; }
       function check(): boolean { return true; }
@@ -196,7 +196,7 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(result.declaration.guard, undefined);
+    assert.equal(getAst().strExpr(result.declaration.guard!), "check");
   });
 
   it("guard detection stops at non-if statements", () => {

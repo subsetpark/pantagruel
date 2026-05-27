@@ -417,7 +417,10 @@ export function isKnownPureCall(
   checker: ts.TypeChecker,
 ): boolean {
   try {
-    return isKnownPureCallInner(expr, checker);
+    return (
+      isKnownBuiltinOrLibraryPureCall(expr, checker) ||
+      isPureUserCall(expr, checker)
+    );
   } catch {
     // TypeChecker can throw on malformed/incomplete ASTs.
     // Conservative fallback: treat as effectful.
@@ -425,7 +428,7 @@ export function isKnownPureCall(
   }
 }
 
-function isKnownPureCallInner(
+function isKnownBuiltinOrLibraryPureCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -539,9 +542,8 @@ function isKnownPureCallInner(
 /**
  * Conservatively classify a direct user-function call as pure.
  *
- * Dormant in Patch 3: this is intentionally not consulted by
- * `isKnownPureCall`/`isEffectFree` yet. Patch 4 wires it into the canonical
- * oracle once the behavior change is enabled.
+ * This feeds the canonical checker-aware oracle. Calls stay effectful unless
+ * the callee resolves to a user function whose body is conservatively pure.
  */
 export function isPureUserCall(
   call: ts.CallExpression,
@@ -1025,7 +1027,7 @@ function userExpressionIsPure(
     );
   }
   if (ts.isCallExpression(expr)) {
-    if (isKnownPureCall(expr, checker)) {
+    if (isKnownBuiltinOrLibraryPureCall(expr, checker)) {
       return (
         userExpressionIsPure(expr.expression, checker, visited) &&
         expr.arguments.every((arg) =>
