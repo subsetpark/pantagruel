@@ -1,5 +1,16 @@
 # Workstream: ts2pant Free-Call-Decl Synthesis
 
+> **STATUS: CLOSED at M2 (2026-05-27).** M1 `free-call-opaque-floor` ✅ (PRs
+> #273–#275), M2 `stdlib-dispatch-coverage` ✅ (PRs #277–#279), M3
+> `entailment-survey` ✅ — verdict **do NOT proceed to M4**. The M4 gate (≥5
+> `@pant` assertions blocked solely on a soundly-modelable stdlib axiom) is met
+> by **0** assertions, the documented abort condition. Every call-involving
+> assertion in the corpus already entails; the M2 dispatch EUF heads are
+> unexercised by any assertion. Survey report:
+> `tools/ts2pant/docs/free-call-decl-entailment-survey.md`. The end-state goal —
+> structurally accepted → declared → type-checks, and provable where there is
+> demand — is fully realized. See M4 below for the targeted re-open trigger.
+
 ## Vision
 
 Close the `free-call-decl` gap: every TypeScript call that ts2pant accepts
@@ -126,7 +137,7 @@ stdlib not yet in the dispatch table** (`String.prototype.replace`,
 
 ## Milestones
 
-### Milestone 1: free-call-opaque-floor
+### Milestone 1: free-call-opaque-floor — ✅ COMPLETE (PRs #273–#275)
 
 **Definition of Done**:
 - Every TS call that does not dispatch to a known builtin and is not otherwise
@@ -179,7 +190,16 @@ standalone improvement.
 
 ---
 
-### Milestone 2: stdlib-dispatch-coverage
+### Milestone 2: stdlib-dispatch-coverage — ✅ COMPLETE (PRs #277–#279)
+
+> Gameplan: `gameplans/ts2pant-stdlib-dispatch-coverage.json`. Note: the survey
+> framing assumed Math/String already dispatched end-to-end; in fact built-in
+> call *emission* was entirely unwired (the table resolved but nothing consumed
+> the `BuiltinSpec`), so M2 also wired emission for the existing JS_MATH/JS_STRING
+> entries via a shared `tryBuildBuiltinCall` helper. Decided during the M2
+> gameplan: **no `JS_SET`** — `Set.has` stays on the higher-fidelity `value in s`
+> membership encoding (and `.length`/`.size` on `#` cardinality) rather than an
+> opaque EUF head.
 
 **Definition of Done**:
 - `BUILTINS` (`builtins.ts`) gains entries for the high-frequency stdlib methods
@@ -216,7 +236,19 @@ here, the floor is simply cleaner and more shareable.
 
 ---
 
-### Milestone 3: entailment-survey
+### Milestone 3: entailment-survey — ✅ COMPLETE (2026-05-27); verdict: stop, do not start M4
+
+> Run read-only, no gameplan (a single `pant --check` measurement pass + report;
+> the work did not decompose into mergeable patches). Report committed at
+> `tools/ts2pant/docs/free-call-decl-entailment-survey.md`. **Findings:** all 13
+> `@pant`-bearing fixtures checked under z3 4.15.4 (`src/` dogfood carries no
+> `@pant`). All 5 call-involving assertions entail — the two guarded-free-call
+> cases via action/guard modeling, and `Map.get`/`Map.has`/`Set.has` via the
+> structured Map (McCarthy select/store) / `in` membership encoding, **not** via
+> any M2 dispatch EUF head. **0** assertions reference a shared js-stdlib EUF rule
+> at all — the dispatched-builtin fixtures (`constMathMax`, `constArrayFromMap`,
+> …) are type-check-only with no assertion. Per-rule blocked-on-sound-axiom count:
+> JS_MATH 0, JS_STRING 0, JS_ARRAY 0, JS_MAP 0. This is the abort condition below.
 
 **Definition of Done**:
 - A read-only survey runs across the dogfood + constructs fixture corpus: for
@@ -255,7 +287,18 @@ builtins it should target.
 
 ---
 
-### Milestone 4: targeted-sound-axioms
+### Milestone 4: targeted-sound-axioms — ❌ NOT STARTED; cancelled by M3 verdict
+
+> The M3 survey met the abort condition (0 assertions blocked solely on a sound
+> stdlib axiom, threshold was ≥5), so M4 does not run. **Targeted re-open
+> trigger (not a milestone):** if a future `@pant` assertion is written that is
+> blocked *solely* on a sound structural property of a dispatched head — e.g.
+> `#(Array.from(m.values())) = <map cardinality>` or `JS_ARRAY::from` length
+> non-negativity — add that single axiom to the owning `samples/js-stdlib/*.pant`
+> module with a soundness justification, guarding before/after with the survey's
+> entailment set. String semantics stay out of scope (the `JS_STRING.pant`
+> refusal). The original M4 design (preserved below) is the reference for how to
+> do that if the trigger fires.
 
 **Definition of Done**:
 - For each shared-module rule the M3 survey selected, add EUF body axioms to its
