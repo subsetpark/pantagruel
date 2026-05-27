@@ -10,6 +10,7 @@ import {
 } from "../src/builtins.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
+import { buildDocumentFromSourceFile, emitDocument } from "./helpers.mjs";
 
 function findCallExpression(
   sourceFile: ts.SourceFile,
@@ -40,12 +41,37 @@ function lookupFromSource(
   return lookupBuiltinByCall(call, checker, program);
 }
 
+async function emitFromSource(source: string, functionName: string) {
+  const sourceFile = createSourceFileFromSource(source);
+  const doc = await buildDocumentFromSourceFile(sourceFile, functionName);
+  return emitDocument(doc);
+}
+
 describe("deriveBuiltinSpec", () => {
+  it("maps Array.* keys to JS_ARRAY", () => {
+    assert.deepEqual(deriveBuiltinSpec("Array.from", 1), {
+      rule: "JS_ARRAY::from",
+      mod: "JS_ARRAY",
+      arity: 1,
+      receiver: "none",
+    });
+  });
+
+  it("maps Map.prototype.* keys to JS_MAP", () => {
+    assert.deepEqual(deriveBuiltinSpec("Map.prototype.values", 0), {
+      rule: "JS_MAP::values",
+      mod: "JS_MAP",
+      arity: 0,
+      receiver: "arg",
+    });
+  });
+
   it("maps Math.* keys to JS_MATH", () => {
     assert.deepEqual(deriveBuiltinSpec("Math.foo", 1), {
       rule: "JS_MATH::foo",
       mod: "JS_MATH",
       arity: 1,
+      receiver: "none",
     });
   });
 
@@ -54,6 +80,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_STRING::foo",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -62,6 +89,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_STRING::to-upper-case",
       mod: "JS_STRING",
       arity: 0,
+      receiver: "arg",
     });
   });
 
@@ -70,6 +98,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_STRING::index-of",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -78,6 +107,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_STRING::last-index-of",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -86,6 +116,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_MATH::max-of",
       mod: "JS_MATH",
       arity: 2,
+      receiver: "none",
     });
   });
 
@@ -94,6 +125,7 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_MATH::min-of",
       mod: "JS_MATH",
       arity: 2,
+      receiver: "none",
     });
   });
 
@@ -102,11 +134,34 @@ describe("deriveBuiltinSpec", () => {
       rule: "JS_MATH::abs",
       mod: "JS_MATH",
       arity: 1,
+      receiver: "none",
     });
     assert.deepEqual(deriveBuiltinSpec("String.prototype.indexOf", 1), {
       rule: "JS_STRING::index-of",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
+    });
+  });
+
+  it("composes the full spec for new entries", () => {
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.replace", 2), {
+      rule: "JS_STRING::replace",
+      mod: "JS_STRING",
+      arity: 2,
+      receiver: "arg",
+    });
+    assert.deepEqual(deriveBuiltinSpec("Array.from", 1), {
+      rule: "JS_ARRAY::from",
+      mod: "JS_ARRAY",
+      arity: 1,
+      receiver: "none",
+    });
+    assert.deepEqual(deriveBuiltinSpec("Map.prototype.entries", 0), {
+      rule: "JS_MAP::entries",
+      mod: "JS_MAP",
+      arity: 0,
+      receiver: "arg",
     });
   });
 });
@@ -120,6 +175,7 @@ describe("builtins dispatch", () => {
       rule: "JS_MATH::max-of",
       mod: "JS_MATH",
       arity: 2,
+      receiver: "none",
     });
   });
 
@@ -131,6 +187,7 @@ describe("builtins dispatch", () => {
       rule: "JS_MATH::min-of",
       mod: "JS_MATH",
       arity: 2,
+      receiver: "none",
     });
   });
 
@@ -142,6 +199,7 @@ describe("builtins dispatch", () => {
       rule: "JS_MATH::abs",
       mod: "JS_MATH",
       arity: 1,
+      receiver: "none",
     });
   });
 
@@ -153,6 +211,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::to-upper-case",
       mod: "JS_STRING",
       arity: 0,
+      receiver: "arg",
     });
   });
 
@@ -164,6 +223,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::index-of",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -175,6 +235,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::ends-with",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -186,6 +247,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::includes",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -197,6 +259,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::last-index-of",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -208,6 +271,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::starts-with",
       mod: "JS_STRING",
       arity: 1,
+      receiver: "arg",
     });
   });
 
@@ -219,6 +283,7 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::to-lower-case",
       mod: "JS_STRING",
       arity: 0,
+      receiver: "arg",
     });
   });
 
@@ -230,7 +295,115 @@ describe("builtins dispatch", () => {
       rule: "JS_STRING::trim",
       mod: "JS_STRING",
       arity: 0,
+      receiver: "arg",
     });
+  });
+
+  it("Array.from resolves to JS_ARRAY::from", () => {
+    const spec = lookupFromSource(`
+      function f(xs: number[]) { return Array.from(xs); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_ARRAY::from",
+      mod: "JS_ARRAY",
+      arity: 1,
+      receiver: "none",
+    });
+  });
+
+  it("Map.prototype.values resolves to JS_MAP::values", () => {
+    const spec = lookupFromSource(`
+      function f(m: Map<string, number>) { return m.values(); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_MAP::values",
+      mod: "JS_MAP",
+      arity: 0,
+      receiver: "arg",
+    });
+  });
+
+  it("Map.prototype.entries resolves to JS_MAP::entries", () => {
+    const spec = lookupFromSource(`
+      function f(m: Map<string, number>) { return m.entries(); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_MAP::entries",
+      mod: "JS_MAP",
+      arity: 0,
+      receiver: "arg",
+    });
+  });
+
+  it("Map.prototype.keys resolves to JS_MAP::keys", () => {
+    const spec = lookupFromSource(`
+      function f(m: Map<string, number>) { return m.keys(); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_MAP::keys",
+      mod: "JS_MAP",
+      arity: 0,
+      receiver: "arg",
+    });
+  });
+
+  it("String.prototype.replace resolves for string arguments", () => {
+    const spec = lookupFromSource(`
+      function f(s: string) { return s.replace("a", "b"); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::replace",
+      mod: "JS_STRING",
+      arity: 2,
+      receiver: "arg",
+    });
+  });
+
+  it("String.prototype.replace with a RegExp first argument falls through", () => {
+    const spec = lookupFromSource(`
+      function f(s: string) { return s.replace(/a/g, "b"); }
+    `);
+    assert.equal(spec, null);
+  });
+
+  it("user-shadowed Array identifier does not match Array.from", () => {
+    const spec = lookupFromSource(`
+      function f(xs: number[]) {
+        const Array = { from: (ys: number[]) => ys };
+        return Array.from(xs);
+      }
+    `);
+    assert.equal(spec, null);
+  });
+
+  it("Array.from with arity != 1 falls through", () => {
+    assert.equal(
+      lookupFromSource(`
+        function f() { return Array.from(); }
+      `),
+      null,
+    );
+    assert.equal(
+      lookupFromSource(`
+        function f(xs: number[]) { return Array.from(xs, (x) => x); }
+      `),
+      null,
+    );
+  });
+
+  it("Map iterator methods with arguments fall through", () => {
+    const spec = lookupFromSource(`
+      function f(m: Map<string, number>) { return m.values("unexpected"); }
+    `);
+    assert.equal(spec, null);
+  });
+
+  it("non-Map .values() calls fall through", () => {
+    const spec = lookupFromSource(`
+      interface Box { values(): number[]; }
+      function f(box: Box) { return box.values(); }
+    `);
+    assert.equal(spec, null);
   });
 
   it("user-shadowed Math identifier does not match Math.max (symbol-based dispatch)", () => {
@@ -386,6 +559,53 @@ describe("loadBuiltinDepModule", () => {
     const a = loadBuiltinDepModule("JS_MATH");
     const b = loadBuiltinDepModule("JS_MATH");
     assert.equal(a, b);
+  });
+});
+
+describe("builtins dispatch emission", () => {
+  it.skip("Math.max emits JS_MATH::max-of and imports JS_MATH", async () => {
+    const output = await emitFromSource(
+      "export function f(a: number, b: number) { return Math.max(a, b); }",
+      "f",
+    );
+    assert.match(output, /^import JS_MATH\.$/m);
+    assert.match(output, /JS_MATH::max-of/);
+  });
+
+  it.skip("s.toUpperCase emits JS_STRING::to-upper-case and imports JS_STRING", async () => {
+    const output = await emitFromSource(
+      "export function f(s: string) { return s.toUpperCase(); }",
+      "f",
+    );
+    assert.match(output, /^import JS_STRING\.$/m);
+    assert.match(output, /JS_STRING::to-upper-case/);
+  });
+
+  it.skip("Array.from emits JS_ARRAY::from and imports JS_ARRAY", async () => {
+    const output = await emitFromSource(
+      "export function f(xs: number[]) { return Array.from(xs); }",
+      "f",
+    );
+    assert.match(output, /^import JS_ARRAY\.$/m);
+    assert.match(output, /JS_ARRAY::from/);
+  });
+
+  it.skip("m.values emits JS_MAP::values and imports JS_MAP", async () => {
+    const output = await emitFromSource(
+      "export function f(m: Map<string, number>) { return m.values(); }",
+      "f",
+    );
+    assert.match(output, /^import JS_MAP\.$/m);
+    assert.match(output, /JS_MAP::values/);
+  });
+
+  it.skip("string-arg replace emits JS_STRING::replace", async () => {
+    const output = await emitFromSource(
+      'export function f(s: string) { return s.replace("a", "b"); }',
+      "f",
+    );
+    assert.match(output, /^import JS_STRING\.$/m);
+    assert.match(output, /JS_STRING::replace/);
   });
 });
 
