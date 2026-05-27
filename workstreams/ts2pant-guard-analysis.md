@@ -101,9 +101,18 @@ union, `yield* new ErrorClass()`) is unimplemented.
 
 ## Milestones
 
-### Milestone 1: guard-purity-user-calls
+### Milestone 1: guard-purity-user-calls — planned (`gameplans/ts2pant-guard-purity-user-calls.json`)
 
 **Definition of Done**:
+- **Purity-oracle consolidation (sequenced first within M1):** the two purity
+  predicates — checker-free `isPureExpression` (`translate-signature.ts:617`, all
+  calls impure) and checker-aware `expressionHasSideEffects` (`translate-body.ts`)
+  — are merged into a single checker-aware oracle in `purity.ts`; `isPureExpression`
+  is deleted and every guard/condition site routes through the one oracle, so call
+  classification is consistent across stages (known-pure builtin/Effect calls in
+  guard conditions become acceptable). Planning surfaced that the user-function
+  classifier needs the checker, which only the checker-aware predicate has, so the
+  duplication is resolved before the classifier is added.
 - A conservative user-function **purity classifier**: a called function is *pure*
   iff its body has no mutation of non-locals, no IO/throw-as-effect, no calls to
   effectful functions (recursive, visited-set guarded), and is resolvable
@@ -134,9 +143,9 @@ narrowing patterns that remain.
   through (spot-check a few inferred-pure classifications against the callee body).
 
 **Open Questions**:
-- Exact purity predicate boundary (are local `const` bindings / pure loops inside
-  the callee allowed? are recursive-but-pure functions classified pure or bailed?).
-  Resolve during M1's gameplan.
+- *(resolved during M1 gameplan)* Purity predicate boundary: pure local `const`
+  bindings and effect-free loops inside the callee are **allowed**; recursive
+  callees **bail to effectful** (visited-set). See Decisions Made.
 
 ---
 
@@ -276,6 +285,8 @@ in-repo call-following, Kroening & Strichman, TS Compiler API, Effect-TS) live i
 | Decision | Rationale |
 |----------|-----------|
 | User-function purity is **inferred** from the callee body, not annotated | Consistent with the existing conservative call-following; no new `@pure` annotation burden, and sound-by-bail (unknown ⇒ effectful) rather than trusting a possibly-mismarked human annotation. |
+| M1 **absorbs the purity-oracle consolidation** (merge `isPureExpression` + `expressionHasSideEffects` into one checker-aware oracle, delete the checker-free predicate), sequenced first within M1 — not a separate milestone | Decided while planning M1's gameplan. The classifier needs the checker, which only the checker-aware predicate has, so the duplication must be resolved first; consolidation is atomic/autonomous alongside the rest, so it folds into M1 via patch ordering rather than warranting its own milestone. Consolidation is an intended, sound behavior change (only oracle-proven-pure calls newly qualify in guard conditions), not behavior-preserving. |
+| Purity boundary: pure local `const` bindings + effect-free loops in a callee **allowed**; recursive callees **bail to effectful** | Resolves M1's open question. Allowing pure-local structure keeps the classifier useful; bailing on recursion keeps it sound and terminating (visited-set) without attempting a fixpoint. |
 | Both condition-purity and flow-narrowing live in **one workstream** | They are the two facets of "reason about which facts hold where"; flow-narrowing (M3) is the layer the DU workstream was promised to consume, so it belongs on the same roadmap rather than orphaned. |
 | Flow narrowing is **intra-function only** | Matches the any/unknown-opaque workstream's "cross-function-call narrowing not trusted by default" decision. Guard *extraction* still follows calls (already implemented); narrowing does not. |
 | No field-name / discriminant special-casing in narrowing | Inherits the project-wide constraint: discriminant-equality narrowing keys on the structural predicate `<field> === <literal>`, never on `.kind` by name. |
