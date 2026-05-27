@@ -571,6 +571,34 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
+  it.skip("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
+    // PENDING Patch 2: recognize block arms containing const bindings
+    // ending in `return`, inline the bindings, and feed the existing cond.
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) {
+          const z = 0 - n;
+          return z;
+        }
+        return n + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const prop = finalEquation(props);
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond n < 0 => 0 - n, true => n + 1",
+      );
+    }
+  });
+
   it("composes arms with a μ-search prelude", () => {
     const source = `
       export function f(n: number, used: ReadonlySet<number>): number {
@@ -841,6 +869,72 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
       assert.match(props[0].reason, /if-without-else as final statement/u);
+    }
+  });
+});
+
+describe("body-lowering completeness pending stubs", () => {
+  it.skip("mutating block-bodied arm lowers to cond post-state with inlined binding", () => {
+    // PENDING Patch 2: buildL1MutationBody accepts guarded blocks with
+    // const bindings before terminal property assignments.
+    const source = `
+      interface Account { balance: number; }
+      export function f(a: Account, g: boolean, amount: number): void {
+        if (g) {
+          const z = a.balance + amount;
+          a.balance = z;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
+      assert.equal(
+        ast.strExpr(eq.rhs),
+        "cond g => account--balance a + amount, true => account--balance a",
+      );
+    }
+  });
+
+  it.skip("switch block clause lowers to cond", () => {
+    // PENDING Patch 3: extract const bindings plus terminal return from
+    // switch case/default blocks and inline them into the cond arms.
+    const source = `
+      export function f(x: number): number {
+        switch (x) {
+          case 0: {
+            const z = x + 10;
+            return z;
+          }
+          default: {
+            const fallback = x + 1;
+            return fallback;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const prop = finalEquation(props);
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond x = 0 => x + 10, true => x + 1",
+      );
     }
   });
 });

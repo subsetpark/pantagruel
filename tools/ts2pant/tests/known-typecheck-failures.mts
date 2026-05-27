@@ -47,14 +47,56 @@
  *   - "annotation-types"  the user's `@pant` annotation is itself
  *                         ill-typed against the emitted signature
  *                         (e.g. comparing a Bool result to an Int).
+ *   - "block-early-return-arm"
+ *                         pending body-lowering support for block-bodied
+ *                         early-return/mutating arms with const bindings.
+ *   - "switch-block-clause"
+ *                         pending L1 switch support for case/default
+ *                         clauses that are blocks ending in a return.
  */
 export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["control-flow.ts > max", "$-binder-leak"],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnBindingReferencesParam",
+    "block-early-return-arm",
+  ],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnMutatingMultipleBindings",
+    "block-early-return-arm",
+  ],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnMutatingSingleBinding",
+    "block-early-return-arm",
+  ],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnMultipleBindings",
+    "block-early-return-arm",
+  ],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnNestedArms",
+    "block-early-return-arm",
+  ],
+  [
+    "expressions-block-early-return.ts > blockEarlyReturnSingleBinding",
+    "block-early-return-arm",
+  ],
   ["expressions-array.ts > nameLengths", "$-binder-leak"],
   ["expressions-boolean.ts > and", "$-binder-leak"],
   ["expressions-boolean.ts > or", "$-binder-leak"],
   ["expressions-let-closure-captured.ts > letForEachCapturedTotal", "closure-captured-reassignment"],
   ["expressions-let-closure-captured.ts > letMapCapturedCount", "closure-captured-reassignment"],
+  [
+    "expressions-switch-block-clause.ts > switchBlockClauseMultipleBindings",
+    "switch-block-clause",
+  ],
+  [
+    "expressions-switch-block-clause.ts > switchBlockClauseSingleBinding",
+    "switch-block-clause",
+  ],
+  [
+    "expressions-switch-block-clause.ts > switchBlockClauseStringLabel",
+    "switch-block-clause",
+  ],
   ["expressions-var-rejected.ts > varBinding", "var-rejected"],
   ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
