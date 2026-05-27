@@ -250,9 +250,20 @@ with its own diagnostic. `var` is rejected by design because hoisting and
 function scope do not fit the block-local SSA discipline. The reassignment
 recognizer under-accepts conservatively: ambiguous syntax must be treated as
 mutation rather than silently collapsing versions. Newly accepted built-in
-call shapes that survive to Pant as undeclared free calls remain tracked in
-`tests/known-typecheck-failures.mts` under `free-call-decl` until the
-separate Pant standard-library / free-call declaration workstream lands.
+call shapes that survive to Pant as method/stdlib or dispatch-completion
+gaps remain tracked in `tests/known-typecheck-failures.mts` under
+`free-call-decl` until the M2 dispatch-coverage work lands.
+
+Bare-identifier free calls are no longer allowed to dangle. If a TS body
+calls an ambient declaration or another non-builtin free function as a bare
+identifier, `extractReferencedFunctions` must synthesize a typed Pant rule
+head for that callee and thread the kebab'd name through `paramNameMap`.
+The synthesized head is pure EUF: do not add body axioms unless a separate
+workstream explicitly owns that semantic strengthening. If a free-call
+signature contains `any` or `unknown`, map only that position to the shared
+`Opaque` domain using the existing `OpaqueSynth` / `SynthCell` on-use
+emission path. Do not invent a second opaque domain, and do not expand this
+floor to method calls or stdlib receiver dispatch; those are M2.
 
 Read that file before extending the IR or touching SSA-bearing code:
 
