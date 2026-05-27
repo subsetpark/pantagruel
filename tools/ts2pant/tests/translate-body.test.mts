@@ -931,9 +931,7 @@ describe("body-lowering completeness pending stubs", () => {
     }
   });
 
-  it.skip("switch block clause lowers to cond", () => {
-    // PENDING Patch 3: extract const bindings plus terminal return from
-    // switch case/default blocks and inline them into the cond arms.
+  it("switch block clause lowers to cond", () => {
     const source = `
       export function f(x: number): number {
         switch (x) {

@@ -95,6 +95,10 @@ import {
   type NumericStrategy,
   toPantTermName,
 } from "./translate-types.js";
+import {
+  type ExtractedBlockReturn,
+  extractBlockReturn,
+} from "./ts-ast-block-return.js";
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of
@@ -2382,14 +2386,13 @@ function buildFromSwitchStatement(
     if (isL1Unsupported(labelL1)) {
       return labelL1;
     }
-    const ret = extractCaseReturn(clause);
-    if (!ret) {
+    const value = lowerCaseReturnValue(clause, ctx);
+    if (value === null) {
       return {
         unsupported:
           "switch case must end with `return EXPR` (no fall-through, no break/throw cases in M1)",
       };
     }
-    const value = buildSubExpr(ret, ctx);
     if (isL1Unsupported(value)) {
       return value;
     }
@@ -2398,13 +2401,12 @@ function buildFromSwitchStatement(
 
   // Default clause.
   const defaultClause = clauses[defaultIdx] as ts.DefaultClause;
-  const defaultRet = extractCaseReturn(defaultClause);
-  if (!defaultRet) {
+  const otherwise = lowerCaseReturnValue(defaultClause, ctx);
+  if (otherwise === null) {
     return {
       unsupported: "switch default must end with `return EXPR`",
     };
   }
-  const otherwise = buildSubExpr(defaultRet, ctx);
   if (isL1Unsupported(otherwise)) {
     return otherwise;
   }
@@ -2473,12 +2475,108 @@ function buildCaseLabel(
  * any case body containing more than one statement, or with a
  * non-return last statement.
  */
+function lowerCaseReturnValue(
+  clause: ts.CaseClause | ts.DefaultClause,
+  ctx: L1BuildContext,
+): L1BuildResult | null {
+  const extracted = extractCaseReturn(clause);
+  if (extracted === null) {
+    return null;
+  }
+  if (extracted.bindings.length === 0) {
+    return buildSubExpr(extracted.returnExpr, ctx);
+  }
+  return lowerBlockReturnValue(extracted, ctx);
+}
+
+function lowerBlockReturnValue(
+  extracted: ExtractedBlockReturn,
+  ctx: L1BuildContext,
+): L1BuildResult {
+  let scopedParams: ReadonlyMap<string, string> = new Map(ctx.paramNames);
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+
+  for (const [idx, binding] of extracted.bindings.entries()) {
+    if (expressionHasSideEffects(binding.initializer, ctx.checker)) {
+      return { unsupported: "switch block const has side effects" };
+    }
+    const blockedNames = new Set(
+      extracted.bindings.slice(idx).map((b) => b.tsName),
+    );
+    if (expressionReferencesNames(binding.initializer, blockedNames)) {
+      return {
+        unsupported:
+          "switch block const initializer references a later binding",
+      };
+    }
+
+    const value = buildSubExpr(binding.initializer, {
+      ...ctx,
+      paramNames: scopedParams,
+    });
+    if (isL1Unsupported(value)) {
+      return value;
+    }
+    const localName = allocateSwitchBlockLocalName(
+      toPantTermName(binding.tsName),
+      scopedParams,
+      ctx.supply,
+    );
+    substitutions.push({ localName, value });
+    scopedParams = withParam(scopedParams, binding.tsName, localName);
+  }
+
+  if (expressionHasSideEffects(extracted.returnExpr, ctx.checker)) {
+    return { unsupported: "switch block return value has side effects" };
+  }
+  const value = buildSubExpr(extracted.returnExpr, {
+    ...ctx,
+    paramNames: scopedParams,
+  });
+  if (isL1Unsupported(value)) {
+    return value;
+  }
+
+  return substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    value,
+  );
+}
+
+function allocateSwitchBlockLocalName(
+  hint: string,
+  scopedParams: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): string {
+  if (supply.synthCell) {
+    return cellRegisterName(supply.synthCell, hint);
+  }
+  const used = new Set(scopedParams.values());
+  if (!used.has(hint)) {
+    return hint;
+  }
+  let name: string;
+  do {
+    name = `${hint}${supply.n}`;
+    supply.n += 1;
+  } while (used.has(name));
+  return name;
+}
+
+function withParam<K, V>(m: ReadonlyMap<K, V>, k: K, v: V): ReadonlyMap<K, V> {
+  const next = new Map(m);
+  next.set(k, v);
+  return next;
+}
+
 function extractCaseReturn(
   clause: ts.CaseClause | ts.DefaultClause,
-): ts.Expression | null {
+): ExtractedBlockReturn | null {
   // Filter to the structural body. Each case body is a list of
-  // statements at the top level (TS doesn't wrap them in a Block by
-  // default). M1 requires exactly one statement: `return EXPR;`.
+  // statements at the top level (TS doesn't wrap them in a Block by default).
+  // M1 requires exactly one effective statement: either `return EXPR;` or a
+  // block shaped as `(const name = expr;)* return expr;`.
   const stmts = clause.statements;
   if (stmts.length === 0) {
     // Empty case body = fall-through. Reject.
@@ -2491,22 +2589,16 @@ function extractCaseReturn(
   if (lastIdx > 0 && stmts[lastIdx]!.kind === ts.SyntaxKind.BreakStatement) {
     lastIdx--;
   }
-  const last: ts.Statement = stmts[lastIdx]!;
-  // Accept `{ return EXPR; }` block.
-  if (
-    ts.isBlock(last) &&
-    last.statements.length === 1 &&
-    ts.isReturnStatement(last.statements[0]!) &&
-    last.statements[0]!.expression
-  ) {
-    return last.statements[0]!.expression!;
-  }
   // Only one effective statement allowed (after trailing-break trim).
   if (lastIdx !== 0) {
     return null;
   }
+  const last: ts.Statement = stmts[lastIdx]!;
+  if (ts.isBlock(last)) {
+    return extractBlockReturn(last);
+  }
   if (ts.isReturnStatement(last) && last.expression) {
-    return last.expression;
+    return { bindings: [], returnExpr: last.expression };
   }
   return null;
 }

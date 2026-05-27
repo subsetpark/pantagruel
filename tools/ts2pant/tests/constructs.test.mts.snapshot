@@ -851,7 +851,7 @@ exports[`expressions-switch-block-clause.ts > switchBlockClauseFallThrough 1`] =
 `;
 
 exports[`expressions-switch-block-clause.ts > switchBlockClauseMultipleBindings 1`] = `
-"module SWITCH_BLOCK_CLAUSE_MULTIPLE_BINDINGS.\\n\\nswitch-block-clause-multiple-bindings x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-multiple-bindings — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+"module SWITCH_BLOCK_CLAUSE_MULTIPLE_BINDINGS.\\n\\nswitch-block-clause-multiple-bindings x: Int => Int.\\n\\n---\\n\\nswitch-block-clause-multiple-bindings x = (cond x = 0 => (x + 1) * 2, x = 1 => x + 10, true => x - 1).\\n"
 `;
 
 exports[`expressions-switch-block-clause.ts > switchBlockClauseNonLiteralLabel 1`] = `
@@ -859,11 +859,11 @@ exports[`expressions-switch-block-clause.ts > switchBlockClauseNonLiteralLabel 1
 `;
 
 exports[`expressions-switch-block-clause.ts > switchBlockClauseSingleBinding 1`] = `
-"module SWITCH_BLOCK_CLAUSE_SINGLE_BINDING.\\n\\nswitch-block-clause-single-binding x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-single-binding — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+"module SWITCH_BLOCK_CLAUSE_SINGLE_BINDING.\\n\\nswitch-block-clause-single-binding x: Int => Int.\\n\\n---\\n\\nswitch-block-clause-single-binding x = (cond x = 0 => x + 10, true => x + 1).\\n"
 `;
 
 exports[`expressions-switch-block-clause.ts > switchBlockClauseStringLabel 1`] = `
-"module SWITCH_BLOCK_CLAUSE_STRING_LABEL.\\n\\nswitch-block-clause-string-label s: String => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-string-label — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+"module SWITCH_BLOCK_CLAUSE_STRING_LABEL.\\n\\nswitch-block-clause-string-label s: String => Int.\\n\\n---\\n\\nswitch-block-clause-string-label s = (cond s = \\"ready\\" => 1, true => 0).\\n"
 `;
 
 exports[`expressions-template-literal.ts > concatTwo 1`] = `
