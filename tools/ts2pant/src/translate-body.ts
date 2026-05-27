@@ -67,7 +67,11 @@ import type {
   OpaqueParam,
 } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { expressionHasSideEffects, isStaticallyBoolTyped } from "./purity.js";
+import {
+  expressionHasSideEffects,
+  isEffectFree,
+  isStaticallyBoolTyped,
+} from "./purity.js";
 import { translateRecordReturn } from "./translate-record.js";
 import {
   classifyFunction,
@@ -75,7 +79,6 @@ import {
   findFunction,
   isAssertionCall,
   isFollowableGuardCall,
-  isPureExpression,
   isTranslateExprUnsupported,
   shortParamName,
   translateExpr,
@@ -2728,10 +2731,10 @@ export function isGuardStatement(
   // checks used by scanBodyForGuards in translate-signature.ts
   if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
     const call = stmt.expression;
-    if (!isPureExpression(call.expression)) {
+    if (!isEffectFree(call.expression, checker)) {
       return false;
     }
-    if (!call.arguments.every(isPureExpression)) {
+    if (!call.arguments.every((arg) => isEffectFree(arg, checker))) {
       return false;
     }
     // M4 P3: an assertion arg containing loose equality cannot translate.
@@ -2752,8 +2755,8 @@ export function isGuardStatement(
   if (!ts.isIfStatement(stmt)) {
     return false;
   }
-  // Condition must be pure (aligned with classifyGuardIf's isPureExpression check)
-  if (!isPureExpression(stmt.expression)) {
+  // Condition must be effect-free, aligned with classifyGuardIf.
+  if (!isEffectFree(stmt.expression, checker)) {
     return false;
   }
   // M4 P3: same as classifyGuardIf — refuse to classify an if-throw guard
@@ -3623,6 +3626,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       supply.synthCell,
+      supply.program,
     );
     if (isTranslateExprUnsupported(result)) {
       return { unsupported: result.unsupported };

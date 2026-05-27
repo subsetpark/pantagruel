@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import ts from "typescript";
 import {
@@ -7,12 +7,19 @@ import {
   createSourceFileFromSource,
   getChecker,
 } from "../src/extract.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   isEffectFree,
   isKnownPureCall,
   isPureUserCall,
   isPureUserFunction,
 } from "../src/purity.js";
+import { translateSignature } from "../src/translate-signature.js";
+import { IntStrategy, newSynthCell } from "../src/translate-types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 /**
  * Find the first CallExpression in a source file's function body.
@@ -411,10 +418,27 @@ describe("isEffectFree", () => {
     );
   });
 
-  it.skip(
-    "guard extraction over a builtin-call condition uses the checker-aware oracle",
-    () => {},
-  );
+  it("guard extraction over a builtin-call condition uses the checker-aware oracle", () => {
+    const sf = createSourceFileFromSource(`
+        export function deposit(amount: number, limit: number): number {
+          if (!(Math.max(amount, limit) > 0)) {
+            throw new Error("amount");
+          }
+          return amount;
+        }
+      `);
+
+    const synthCell = newSynthCell();
+    const result = translateSignature(sf, "deposit", IntStrategy, synthCell);
+
+    assert.ok(result.declaration.kind === "rule");
+    assert.ok(result.declaration.guard);
+    assert.ok(synthCell.imports.has("JS_MATH"));
+    assert.equal(
+      getAst().strExpr(result.declaration.guard),
+      "JS_MATH::max-of amount limit > 0",
+    );
+  });
 });
 
 describe("isPureUserFunction", () => {
@@ -520,15 +544,9 @@ describe("isPureUserFunction", () => {
     );
   });
 
-  it.skip(
-    "PENDING Patch 4: pure user call in early-return predicate lowers to its EUF rule",
-    () => {},
-  );
+  it.skip("PENDING Patch 4: pure user call in early-return predicate lowers to its EUF rule", () => {});
 
-  it.skip(
-    "PENDING Patch 4: pure user call in mutating if-condition lowers to its EUF rule",
-    () => {},
-  );
+  it.skip("PENDING Patch 4: pure user call in mutating if-condition lowers to its EUF rule", () => {});
 });
 
 // ---------------------------------------------------------------------------
