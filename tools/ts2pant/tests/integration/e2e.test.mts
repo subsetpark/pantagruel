@@ -3,11 +3,15 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { extractFunctionAnnotations } from "../../src/annotations.js";
-import { createSourceFile } from "../../src/extract.js";
+import {
+  createSourceFile,
+  createSourceFileFromSource,
+} from "../../src/extract.js";
 import type { PantDocument } from "../../src/types.js";
 import {
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
+  buildDocumentFromSourceFile,
   emitAndCheck,
   runCheck,
 } from "../helpers.mjs";
@@ -152,6 +156,50 @@ describe("full pipeline", () => {
     const output = await emitAndCheck(doc);
 
     assertPantTypeChecks(output);
+  });
+});
+
+describe("pure user calls in predicates", () => {
+  it("early-return predicate emits a synthesized EUF rule head", async () => {
+    const sourceFile = createSourceFileFromSource(`
+      function isPositive(n: number): boolean {
+        return n > 0;
+      }
+      export function f(n: number): number {
+        if (isPositive(n)) return 1;
+        return 0;
+      }
+    `);
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "f"),
+    );
+
+    assert.match(output, /^is-positive n1: Int => Bool\.$/mu);
+    assert.match(output, /^f n = \(cond is-positive n => 1, true => 0\)\.$/mu);
+  });
+
+  it("mutating if-condition emits a synthesized EUF rule head", async () => {
+    const sourceFile = createSourceFileFromSource(`
+      interface Account { balance: number }
+      function isDepositAllowed(amount: number): boolean {
+        const normalized = Math.max(0, amount);
+        return normalized > 0;
+      }
+      export function deposit(account: Account, amount: number): void {
+        if (isDepositAllowed(amount)) {
+          account.balance = account.balance + amount;
+        }
+      }
+    `);
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "deposit"),
+    );
+
+    assert.match(output, /^is-deposit-allowed amount1: Int => Bool\.$/mu);
+    assert.match(
+      output,
+      /^account--balance' account = \(cond is-deposit-allowed amount => account--balance account \+ amount, true => account--balance account\)\.$/mu,
+    );
   });
 });
 

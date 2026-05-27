@@ -11,7 +11,6 @@ import {
   UNSUPPORTED_UNKNOWN_REASON,
 } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
-import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 before(async () => {
   await loadAst();
@@ -572,7 +571,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("pure user call in early-return predicate lowers to its EUF rule", async () => {
+  it("admits pure user call in early-return predicate", () => {
     const source = `
       function isPositive(n: number): boolean {
         return n > 0;
@@ -583,12 +582,16 @@ describe("if-early-return prelude arms", () => {
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const output = await emitAndCheck(
-      await buildDocumentFromSourceFile(sourceFile, "f"),
-    );
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
 
-    assert.match(output, /^is-positive n1: Int => Bool\.$/mu);
-    assert.match(output, /^f n = \(cond is-positive n => 1, true => 0\)\.$/mu);
+    assert.equal(
+      getAst().strExpr(finalEquation(props).rhs),
+      "cond is-positive n => 1, true => 0",
+    );
   });
 
   it("effectful user call in early-return predicate still rejects", () => {
@@ -1092,7 +1095,7 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
-  it("pure user call in mutating if-condition lowers to its EUF rule", async () => {
+  it("admits pure user call in mutating if-condition", () => {
     const source = `
       interface Account { balance: number }
       function isDepositAllowed(amount: number): boolean {
@@ -1106,15 +1109,14 @@ describe("conditional mutations (symbolic last-write)", () => {
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const output = await emitAndCheck(
-      await buildDocumentFromSourceFile(sourceFile, "deposit"),
-    );
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
 
-    assert.match(output, /^is-deposit-allowed amount1: Int => Bool\.$/mu);
-    assert.match(
-      output,
-      /^account--balance' account = \(cond is-deposit-allowed amount => account--balance account \+ amount, true => account--balance account\)\.$/mu,
-    );
+    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    assert.match(equationRhsText(props), /isDepositAllowed amount/u);
   });
 
   it("effectful user call in mutating if-condition still rejects", () => {
