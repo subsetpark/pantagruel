@@ -550,17 +550,27 @@ export function isPureUserCall(
   checker: ts.TypeChecker,
 ): boolean {
   try {
-    if (call.arguments.some(ts.isSpreadElement)) {
-      return false;
-    }
-    if (!call.arguments.every((arg) => userExpressionIsPure(arg, checker))) {
-      return false;
-    }
-    const decl = resolveUserCallTarget(call, checker);
-    return decl !== null && isPureUserFunction(decl, checker);
+    return isPureUserCallWithVisited(call, checker, new Set());
   } catch {
     return false;
   }
+}
+
+function isPureUserCallWithVisited(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node>,
+): boolean {
+  if (call.arguments.some(ts.isSpreadElement)) {
+    return false;
+  }
+  if (
+    !call.arguments.every((arg) => userExpressionIsPure(arg, checker, visited))
+  ) {
+    return false;
+  }
+  const decl = resolveUserCallTarget(call, checker);
+  return decl !== null && isPureUserFunction(decl, checker, visited);
 }
 
 /**
@@ -1035,18 +1045,7 @@ function userExpressionIsPure(
         )
       );
     }
-    if (expr.arguments.some(ts.isSpreadElement)) {
-      return false;
-    }
-    if (
-      !expr.arguments.every((arg) =>
-        userExpressionIsPure(arg, checker, visited),
-      )
-    ) {
-      return false;
-    }
-    const decl = resolveUserCallTarget(expr, checker);
-    return decl !== null && isPureUserFunction(decl, checker, visited);
+    return isPureUserCallWithVisited(expr, checker, visited);
   }
 
   return false;
