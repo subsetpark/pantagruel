@@ -10,7 +10,10 @@ import {
 } from "../src/builtins.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
-import { buildDocumentFromSourceFile, emitDocument } from "./helpers.mjs";
+import {
+  buildDocumentFromSourceFile,
+  emitAndCheck,
+} from "./helpers.mjs";
 
 function findCallExpression(
   sourceFile: ts.SourceFile,
@@ -44,7 +47,7 @@ function lookupFromSource(
 async function emitFromSource(source: string, functionName: string) {
   const sourceFile = createSourceFileFromSource(source);
   const doc = await buildDocumentFromSourceFile(sourceFile, functionName);
-  return emitDocument(doc);
+  return emitAndCheck(doc);
 }
 
 describe("deriveBuiltinSpec", () => {
@@ -563,7 +566,7 @@ describe("loadBuiltinDepModule", () => {
 });
 
 describe("builtins dispatch emission", () => {
-  it.skip("Math.max emits JS_MATH::max-of and imports JS_MATH", async () => {
+  it("Math.max emits JS_MATH::max-of and imports JS_MATH", async () => {
     const output = await emitFromSource(
       "export function f(a: number, b: number) { return Math.max(a, b); }",
       "f",
@@ -572,7 +575,7 @@ describe("builtins dispatch emission", () => {
     assert.match(output, /JS_MATH::max-of/);
   });
 
-  it.skip("s.toUpperCase emits JS_STRING::to-upper-case and imports JS_STRING", async () => {
+  it("s.toUpperCase emits JS_STRING::to-upper-case and imports JS_STRING", async () => {
     const output = await emitFromSource(
       "export function f(s: string) { return s.toUpperCase(); }",
       "f",
@@ -581,7 +584,7 @@ describe("builtins dispatch emission", () => {
     assert.match(output, /JS_STRING::to-upper-case/);
   });
 
-  it.skip("Array.from emits JS_ARRAY::from and imports JS_ARRAY", async () => {
+  it("Array.from emits JS_ARRAY::from and imports JS_ARRAY", async () => {
     const output = await emitFromSource(
       "export function f(xs: number[]) { return Array.from(xs); }",
       "f",
@@ -590,7 +593,7 @@ describe("builtins dispatch emission", () => {
     assert.match(output, /JS_ARRAY::from/);
   });
 
-  it.skip("m.values emits JS_MAP::values and imports JS_MAP", async () => {
+  it("m.values emits JS_MAP::values and imports JS_MAP", async () => {
     const output = await emitFromSource(
       "export function f(m: Map<string, number>) { return m.values(); }",
       "f",
@@ -599,7 +602,7 @@ describe("builtins dispatch emission", () => {
     assert.match(output, /JS_MAP::values/);
   });
 
-  it.skip("string-arg replace emits JS_STRING::replace", async () => {
+  it("string-arg replace emits JS_STRING::replace", async () => {
     const output = await emitFromSource(
       'export function f(s: string) { return s.replace("a", "b"); }',
       "f",

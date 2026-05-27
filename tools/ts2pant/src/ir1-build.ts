@@ -33,6 +33,7 @@
  */
 
 import ts from "typescript";
+import { lookupBuiltinByCall } from "./builtins.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -113,6 +114,66 @@ export const isL1Unsupported = (
   r: L1BuildResult,
 ): r is { unsupported: string } =>
   typeof r === "object" && r !== null && "unsupported" in r;
+
+export function tryBuildBuiltinCall(
+  expr: ts.CallExpression,
+  ctx: L1BuildContext,
+): L1BuildResult | null {
+  if (!ctx.supply.program) {
+    return null;
+  }
+  const spec = lookupBuiltinByCall(expr, ctx.checker, ctx.supply.program);
+  if (spec === null) {
+    return null;
+  }
+  const member = callMemberName(expr.expression);
+  if (
+    expressionHasSideEffects(expr.expression, ctx.checker) ||
+    (member !== null && expressionHasSideEffects(member.receiver, ctx.checker))
+  ) {
+    return null;
+  }
+  if (expr.arguments.some(ts.isSpreadElement)) {
+    return { unsupported: "call with spread arguments is unsupported" };
+  }
+
+  const args: IR1Expr[] = [];
+  if (spec.receiver === "arg") {
+    if (!ts.isPropertyAccessExpression(expr.expression)) {
+      return null;
+    }
+    const receiver = tryBuildL1PureSubExpression(
+      expr.expression.expression,
+      ctx,
+    );
+    if (receiver === null || isL1Unsupported(receiver)) {
+      return receiver;
+    }
+    args.push(receiver);
+  }
+  for (const arg of expr.arguments) {
+    const builtArg = tryBuildL1PureSubExpression(arg, ctx);
+    if (builtArg === null || isL1Unsupported(builtArg)) {
+      return builtArg;
+    }
+    args.push(builtArg);
+  }
+
+  let rule = spec.rule;
+  if (spec.rule === "JS_ARRAY::from" && expr.arguments.length === 1) {
+    const sourceType = mapTsType(
+      ctx.checker.getTypeAtLocation(expr.arguments[0]!),
+      ctx.checker,
+      ctx.strategy,
+      ctx.supply.synthCell,
+    );
+    if (sourceType === "[String * Int]") {
+      rule = "JS_ARRAY::from-entries";
+    }
+  }
+  ctx.supply.synthCell?.imports.add(spec.mod);
+  return ir1App(ir1Var(rule), args);
+}
 
 /**
  * L1-layering primitive: strip operationally-equivalent syntactic
@@ -644,6 +705,10 @@ export function tryBuildL1PureSubExpression(
   }
 
   if (ts.isCallExpression(expr)) {
+    const builtin = tryBuildBuiltinCall(expr, ctx);
+    if (builtin !== null) {
+      return builtin;
+    }
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: "call with spread arguments is unsupported" };
     }

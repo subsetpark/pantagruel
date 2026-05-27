@@ -127,7 +127,7 @@ exports[`expressions-calls.ts > freeCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
-"module METHOD_CALL.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = (to-upper-case s).\\n"
+"module METHOD_CALL.\\nimport JS_STRING.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = JS_STRING::to-upper-case s.\\n"
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
@@ -191,7 +191,7 @@ exports[`expressions-const-bindings.ts > simpleConst 1`] = `
 `;
 
 exports[`expressions-const-chained-impure.ts > chainedArrayCount 1`] = `
-"module CHAINED_ARRAY_COUNT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nchained-array-count m: StringToIntMap => Int.\\nxs  => [Int].\\nn  => Int.\\n\\n---\\n\\nxs = (from Array) (values m).\\nn = #((from Array) (values m)).\\nchained-array-count m = n.\\n"
+"module CHAINED_ARRAY_COUNT.\\nimport JS_MAP.\\nimport JS_ARRAY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nchained-array-count m: StringToIntMap => Int.\\nxs  => [Int].\\nn  => Int.\\n\\n---\\n\\nxs = JS_ARRAY::from (JS_MAP::values m).\\nn = #(JS_ARRAY::from (JS_MAP::values m)).\\nchained-array-count m = n.\\n"
 `;
 
 exports[`expressions-const-chained-impure.ts > chainedReplaceTrim 1`] = `
@@ -199,7 +199,7 @@ exports[`expressions-const-chained-impure.ts > chainedReplaceTrim 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
-"module CONST_CHAINED_PURE.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\na  => Int.\\nb  => Int.\\n\\n---\\n\\na = (abs Math) x.\\nb = (max Math) ((abs Math) x) y.\\nconst-chained-pure x y = b.\\n"
+"module CONST_CHAINED_PURE.\\nimport JS_MATH.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\na  => Int.\\nb  => Int.\\n\\n---\\n\\na = JS_MATH::abs x.\\nb = JS_MATH::max-of (JS_MATH::abs x) y.\\nconst-chained-pure x y = b.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
@@ -207,23 +207,23 @@ exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
-"module CONST_MATH_MAX.\\n\\nconst-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = (max Math) a b.\\nconst-math-max a b = m + 1.\\n"
+"module CONST_MATH_MAX.\\nimport JS_MATH.\\n\\nconst-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = JS_MATH::max-of a b.\\nconst-math-max a b = m + 1.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
-"module CONST_STRING_METHOD.\\n\\nconst-string-method s: String => Int.\\ni  => Int.\\n\\n---\\n\\ni = (index-of s) \\"x\\".\\nconst-string-method s = i.\\n"
+"module CONST_STRING_METHOD.\\nimport JS_STRING.\\n\\nconst-string-method s: String => Int.\\ni  => Int.\\n\\n---\\n\\ni = JS_STRING::index-of s \\"x\\".\\nconst-string-method s = i.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constArrayFromMap 1`] = `
-"module CONST_ARRAY_FROM_MAP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-array-from-map m: StringToIntMap => Int.\\nxs  => [Int].\\n\\n---\\n\\nxs = (from Array) (values m).\\nconst-array-from-map m = #xs.\\n"
+"module CONST_ARRAY_FROM_MAP.\\nimport JS_MAP.\\nimport JS_ARRAY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-array-from-map m: StringToIntMap => Int.\\nxs  => [Int].\\n\\n---\\n\\nxs = JS_ARRAY::from (JS_MAP::values m).\\nconst-array-from-map m = #xs.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constMapEntries 1`] = `
-"module CONST_MAP_ENTRIES.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-map-entries m: StringToIntMap => Int.\\nxs  => [String * Int].\\n\\n---\\n\\nxs = (from Array) (entries m).\\nconst-map-entries m = #xs.\\n"
+"module CONST_MAP_ENTRIES.\\nimport JS_MAP.\\nimport JS_ARRAY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-map-entries m: StringToIntMap => Int.\\nxs  => [String * Int].\\n\\n---\\n\\nxs = JS_ARRAY::from-entries (JS_MAP::entries m).\\nconst-map-entries m = #xs.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constReplaceLiteral 1`] = `
-"module CONST_REPLACE_LITERAL.\\n\\nconst-replace-literal s: String => String.\\nx  => String.\\n\\n---\\n\\nx = (replace s) \\"a\\" \\"b\\".\\nconst-replace-literal s = x.\\n"
+"module CONST_REPLACE_LITERAL.\\nimport JS_STRING.\\n\\nconst-replace-literal s: String => String.\\nx  => String.\\n\\n---\\n\\nx = JS_STRING::replace s \\"a\\" \\"b\\".\\nconst-replace-literal s = x.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constReplaceRegex 1`] = `
@@ -407,7 +407,7 @@ exports[`expressions-let-immutable.ts > letInTernary 1`] = `
 `;
 
 exports[`expressions-let-immutable.ts > letMathMax 1`] = `
-"module LET_MATH_MAX.\\n\\nlet-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = (max Math) a b.\\nlet-math-max a b = m + 1.\\n"
+"module LET_MATH_MAX.\\nimport JS_MATH.\\n\\nlet-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = JS_MATH::max-of a b.\\nlet-math-max a b = m + 1.\\n"
 `;
 
 exports[`expressions-let-immutable.ts > letWithPropAccess 1`] = `
