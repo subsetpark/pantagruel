@@ -82,6 +82,34 @@ exports[`expressions-array.ts > nameLengths 1`] = `
 "module NAME_LENGTHS.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nname-lengths users: [User] => [Int].\\n\\n---\\n\\nname-lengths users = (each x in users | length (user--name x)).\\n"
 `;
 
+exports[`expressions-block-early-return.ts > blockEarlyReturnBindingReferencesParam 1`] = `
+"module BLOCK_EARLY_RETURN_BINDING_REFERENCES_PARAM.\\n\\nblock-early-return-binding-references-param n: Int, offset: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-binding-references-param — if-with-return body must be a single return statement.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnEffectfulConstRejected 1`] = `
+"module BLOCK_EARLY_RETURN_EFFECTFUL_CONST_REJECTED.\\n\\ncompute n1: Int => Int.\\nblock-early-return-effectful-const-rejected n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-effectful-const-rejected — if-with-return body must be a single return statement.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnMultipleBindings 1`] = `
+"module BLOCK_EARLY_RETURN_MULTIPLE_BINDINGS.\\n\\nblock-early-return-multiple-bindings n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-multiple-bindings — if-with-return body must be a single return statement.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnMutatingMultipleBindings 1`] = `
+"module BLOCK_EARLY_RETURN_MUTATING_MULTIPLE_BINDINGS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-multiple-bindings @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnMutatingSingleBinding 1`] = `
+"module BLOCK_EARLY_RETURN_MUTATING_SINGLE_BINDING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-single-binding @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnNestedArms 1`] = `
+"module BLOCK_EARLY_RETURN_NESTED_ARMS.\\n\\nblock-early-return-nested-arms n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-nested-arms — if-with-return body must be a single return statement.\\n"
+`;
+
+exports[`expressions-block-early-return.ts > blockEarlyReturnSingleBinding 1`] = `
+"module BLOCK_EARLY_RETURN_SINGLE_BINDING.\\n\\nblock-early-return-single-binding n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-single-binding — if-with-return body must be a single return statement.\\n"
+`;
+
 exports[`expressions-boolean.ts > and 1`] = `
 "module AND.\\n\\nand a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand a b = (a and b).\\n"
 `;
@@ -816,6 +844,26 @@ exports[`expressions-state-aware-reads.ts > setIfThenBump 1`] = `
 
 exports[`expressions-state-aware-reads.ts > tagThenCheck 1`] = `
 "module TAG_THEN_CHECK.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\ntagged--flag t: Tagged => Bool.\\n~> Tag-then-check @ c: Tagged, x: String, gate: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond gate => true, true => x in tagged--tags c), true => y in tagged--tags c).\\ntagged--flag' c = (cond gate => (cond (cond x = x => true, true => x in tagged--tags c) => true, true => tagged--flag c), true => tagged--flag c).\\n"
+`;
+
+exports[`expressions-switch-block-clause.ts > switchBlockClauseFallThrough 1`] = `
+"module SWITCH_BLOCK_CLAUSE_FALL_THROUGH.\\n\\nswitch-block-clause-fall-through x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-fall-through — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+`;
+
+exports[`expressions-switch-block-clause.ts > switchBlockClauseMultipleBindings 1`] = `
+"module SWITCH_BLOCK_CLAUSE_MULTIPLE_BINDINGS.\\n\\nswitch-block-clause-multiple-bindings x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-multiple-bindings — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+`;
+
+exports[`expressions-switch-block-clause.ts > switchBlockClauseNonLiteralLabel 1`] = `
+"module SWITCH_BLOCK_CLAUSE_NON_LITERAL_LABEL.\\n\\nswitch-block-clause-non-literal-label x: Int, k: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-non-literal-label — switch case label must be a literal (number/string/bool).\\n"
+`;
+
+exports[`expressions-switch-block-clause.ts > switchBlockClauseSingleBinding 1`] = `
+"module SWITCH_BLOCK_CLAUSE_SINGLE_BINDING.\\n\\nswitch-block-clause-single-binding x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-single-binding — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+`;
+
+exports[`expressions-switch-block-clause.ts > switchBlockClauseStringLabel 1`] = `
+"module SWITCH_BLOCK_CLAUSE_STRING_LABEL.\\n\\nswitch-block-clause-string-label s: String => Int.\\n\\n---\\n\\n> UNSUPPORTED: switch-block-clause-string-label — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
 `;
 
 exports[`expressions-template-literal.ts > concatTwo 1`] = `
