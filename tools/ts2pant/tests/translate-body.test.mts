@@ -571,6 +571,55 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
+  it("admits pure user call in early-return predicate", () => {
+    const source = `
+      function isPositive(n: number): boolean {
+        return n > 0;
+      }
+      export function f(n: number): number {
+        if (isPositive(n)) return 1;
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(
+      getAst().strExpr(finalEquation(props).rhs),
+      "cond is-positive n => 1, true => 0",
+    );
+  });
+
+  it("effectful user call in early-return predicate still rejects", () => {
+    const source = `
+      let observed = 0;
+      function recordsObservation(n: number): boolean {
+        observed = n;
+        return observed > 0;
+      }
+      export function f(n: number): number {
+        if (recordsObservation(n)) return 1;
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assertUnsupportedReason(
+      props,
+      /early-return predicate has side effects/u,
+      "effectful user predicate",
+    );
+  });
+
   it("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
     const source = `
       export function f(n: number): number {
@@ -1046,6 +1095,58 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
+  it("admits pure user call in mutating if-condition", () => {
+    const source = `
+      interface Account { balance: number }
+      function isDepositAllowed(amount: number): boolean {
+        const normalized = Math.max(0, amount);
+        return normalized > 0;
+      }
+      export function deposit(account: Account, amount: number): void {
+        if (isDepositAllowed(amount)) {
+          account.balance = account.balance + amount;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    assert.match(equationRhsText(props), /isDepositAllowed amount/u);
+  });
+
+  it("effectful user call in mutating if-condition still rejects", () => {
+    const source = `
+      interface Account { balance: number }
+      let observed = 0;
+      function recordsObservation(n: number): boolean {
+        observed = n;
+        return observed > 0;
+      }
+      export function deposit(account: Account, amount: number): void {
+        if (recordsObservation(amount)) {
+          account.balance = account.balance + amount;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
+
+    assertUnsupportedReason(
+      props,
+      /impure if-condition in mutating body/u,
+      "effectful mutating if-condition",
+    );
+  });
+
   // `m.set(k, v)` etc. return the receiver/boolean, but the
   // translator categorizes them as effects (statement-only). Without
   // a `rejectEffect` guard at the assignment handler, `bodyExpr(val)`

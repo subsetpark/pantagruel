@@ -544,9 +544,6 @@ describe("isPureUserFunction", () => {
     );
   });
 
-  it.skip("PENDING Patch 4: pure user call in early-return predicate lowers to its EUF rule", () => {});
-
-  it.skip("PENDING Patch 4: pure user call in mutating if-condition lowers to its EUF rule", () => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -644,7 +641,7 @@ describe("isKnownPureCall (Effect-TS symbol resolution)", () => {
 
   // --- User function returning Effect ---
 
-  it("user function returning Effect is impure (not a library export)", () => {
-    assert.equal(checkFixturePurity("userEffectReturning"), false);
+  it("pure user function returning Effect is pure by body analysis", () => {
+    assert.equal(checkFixturePurity("userEffectReturning"), true);
   });
 });

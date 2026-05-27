@@ -4,6 +4,7 @@ import ts from "typescript";
 import { lookupBuiltinByCall } from "./builtins.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
+import { isPureUserCall } from "./purity.js";
 import { classifyFunction, translateSignature } from "./translate-signature.js";
 import {
   cellRegisterName,
@@ -931,10 +932,7 @@ export function extractReferencedFunctions(
   if (!consumerNode?.body) {
     return [];
   }
-  if (classifyFunction(consumerNode, checker) !== "pure") {
-    return [];
-  }
-
+  const consumerIsPure = classifyFunction(consumerNode, checker) === "pure";
   // Collect (declaration, callSiteNames) pairs for free-function calls
   // reached from the consumer's body. Keying by the
   // resolved declaration deduplicates aliased imports — `import {
@@ -952,6 +950,10 @@ export function extractReferencedFunctions(
       !n.arguments.some(ts.isSpreadElement)
     ) {
       if (lookupBuiltinByCall(n, checker, program) !== null) {
+        ts.forEachChild(n, visit);
+        return;
+      }
+      if (!consumerIsPure && !isPureUserCall(n, checker)) {
         ts.forEachChild(n, visit);
         return;
       }

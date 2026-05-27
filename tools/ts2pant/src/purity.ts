@@ -417,7 +417,10 @@ export function isKnownPureCall(
   checker: ts.TypeChecker,
 ): boolean {
   try {
-    return isKnownPureCallInner(expr, checker);
+    return (
+      isKnownBuiltinOrLibraryPureCall(expr, checker) ||
+      isPureUserCall(expr, checker)
+    );
   } catch {
     // TypeChecker can throw on malformed/incomplete ASTs.
     // Conservative fallback: treat as effectful.
@@ -425,7 +428,7 @@ export function isKnownPureCall(
   }
 }
 
-function isKnownPureCallInner(
+function isKnownBuiltinOrLibraryPureCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -539,26 +542,35 @@ function isKnownPureCallInner(
 /**
  * Conservatively classify a direct user-function call as pure.
  *
- * Dormant in Patch 3: this is intentionally not consulted by
- * `isKnownPureCall`/`isEffectFree` yet. Patch 4 wires it into the canonical
- * oracle once the behavior change is enabled.
+ * This feeds the canonical checker-aware oracle. Calls stay effectful unless
+ * the callee resolves to a user function whose body is conservatively pure.
  */
 export function isPureUserCall(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
 ): boolean {
   try {
-    if (call.arguments.some(ts.isSpreadElement)) {
-      return false;
-    }
-    if (!call.arguments.every((arg) => userExpressionIsPure(arg, checker))) {
-      return false;
-    }
-    const decl = resolveUserCallTarget(call, checker);
-    return decl !== null && isPureUserFunction(decl, checker);
+    return isPureUserCallWithVisited(call, checker, new Set());
   } catch {
     return false;
   }
+}
+
+function isPureUserCallWithVisited(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Node>,
+): boolean {
+  if (call.arguments.some(ts.isSpreadElement)) {
+    return false;
+  }
+  if (
+    !call.arguments.every((arg) => userExpressionIsPure(arg, checker, visited))
+  ) {
+    return false;
+  }
+  const decl = resolveUserCallTarget(call, checker);
+  return decl !== null && isPureUserFunction(decl, checker, visited);
 }
 
 /**
@@ -1025,7 +1037,7 @@ function userExpressionIsPure(
     );
   }
   if (ts.isCallExpression(expr)) {
-    if (isKnownPureCall(expr, checker)) {
+    if (isKnownBuiltinOrLibraryPureCall(expr, checker)) {
       return (
         userExpressionIsPure(expr.expression, checker, visited) &&
         expr.arguments.every((arg) =>
@@ -1033,18 +1045,7 @@ function userExpressionIsPure(
         )
       );
     }
-    if (expr.arguments.some(ts.isSpreadElement)) {
-      return false;
-    }
-    if (
-      !expr.arguments.every((arg) =>
-        userExpressionIsPure(arg, checker, visited),
-      )
-    ) {
-      return false;
-    }
-    const decl = resolveUserCallTarget(expr, checker);
-    return decl !== null && isPureUserFunction(decl, checker, visited);
+    return isPureUserCallWithVisited(expr, checker, visited);
   }
 
   return false;
