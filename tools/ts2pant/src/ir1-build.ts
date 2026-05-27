@@ -2517,11 +2517,7 @@ function lowerBlockReturnValue(
     if (isL1Unsupported(value)) {
       return value;
     }
-    const localName = allocateSwitchBlockLocalName(
-      toPantTermName(binding.tsName),
-      scopedParams,
-      ctx.supply,
-    );
+    const localName = freshHygienicBinder(ctx.supply);
     substitutions.push({ localName, value });
     scopedParams = withParam(scopedParams, binding.tsName, localName);
   }
@@ -2542,26 +2538,6 @@ function lowerBlockReturnValue(
       substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
     value,
   );
-}
-
-function allocateSwitchBlockLocalName(
-  hint: string,
-  scopedParams: ReadonlyMap<string, string>,
-  supply: UniqueSupply,
-): string {
-  if (supply.synthCell) {
-    return cellRegisterName(supply.synthCell, hint);
-  }
-  const used = new Set(scopedParams.values());
-  if (!used.has(hint)) {
-    return hint;
-  }
-  let name: string;
-  do {
-    name = `${hint}${supply.n}`;
-    supply.n += 1;
-  } while (used.has(name));
-  return name;
 }
 
 function withParam<K, V>(m: ReadonlyMap<K, V>, k: K, v: V): ReadonlyMap<K, V> {
