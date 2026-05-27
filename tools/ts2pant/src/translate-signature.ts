@@ -1124,7 +1124,7 @@ export function translateExpr(
         strategy: _strategy,
         paramNames,
         state: undefined,
-        supply: { n: 0, synthCell },
+        supply: { n: 0, synthCell, program },
       };
       // Route property/element access operands through the same
       // signature-side cardinality + Member dispatch that
