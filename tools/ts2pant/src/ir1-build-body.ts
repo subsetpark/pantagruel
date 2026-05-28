@@ -921,6 +921,7 @@ function simulateShapeAPropertyWrite(
       subCtx.paramNames,
       subCtx.state,
       subCtx.supply,
+      subCtx.env,
     ),
   );
   if (isBodyUnsupported(objR)) {
@@ -934,6 +935,7 @@ function simulateShapeAPropertyWrite(
       subCtx.paramNames,
       subCtx.state,
       subCtx.supply,
+      subCtx.env,
     ),
   );
   if (isBodyUnsupported(valR)) {
