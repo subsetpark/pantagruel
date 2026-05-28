@@ -700,20 +700,31 @@ export function buildDiscriminatedUnionTotalityAssertion(
   entry: DiscriminatedUnionSynthEntry,
   ast = getAst(),
 ): PropResult {
-  const body = disjunction(
-    entry.variants.map((variant) =>
+  const comparisons: OpaqueExpr[] = [];
+  for (const variant of entry.variants) {
+    const lit = literalExpr(variant.literal);
+    if (!lit) {
+      return {
+        kind: "unsupported",
+        reason: `unsupported discriminant literal in ${entry.domain}`,
+      };
+    }
+    comparisons.push(
       ast.binop(
         ast.opEq(),
         ast.app(ast.var(fieldRuleName(entry.domain, entry.discriminant)), [
           ast.var(entry.binder),
         ]),
-        literalExpr(variant.literal)!,
+        lit,
       ),
-    ),
-    ast,
-  );
+    );
+  }
+  const body = disjunction(comparisons, ast);
   if (!body) {
-    throw new Error(`discriminated union ${entry.domain} has no variants`);
+    return {
+      kind: "unsupported",
+      reason: `discriminated union ${entry.domain} has no variants`,
+    };
   }
   return {
     kind: "assertion",

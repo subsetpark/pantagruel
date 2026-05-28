@@ -51,6 +51,40 @@ describe("du-totality", () => {
     );
   });
 
+  it("builder returns unsupported for empty variant lists", async () => {
+    await loadAst();
+    const assertion = buildDiscriminatedUnionTotalityAssertion({
+      domain: "Shape",
+      binder: "s",
+      discriminant: "kind",
+      discriminantType: "String",
+      variants: [],
+      fields: [],
+    });
+
+    assert.deepEqual(assertion, {
+      kind: "unsupported",
+      reason: "discriminated union Shape has no variants",
+    });
+  });
+
+  it("builder returns unsupported for unrenderable discriminant literals", async () => {
+    await loadAst();
+    const assertion = buildDiscriminatedUnionTotalityAssertion({
+      domain: "Shape",
+      binder: "s",
+      discriminant: "kind",
+      discriminantType: "Nat0",
+      variants: [{ key: "number:-1", literal: { kind: "number", value: -1 } }],
+      fields: [],
+    });
+
+    assert.deepEqual(assertion, {
+      kind: "unsupported",
+      reason: "unsupported discriminant literal in Shape",
+    });
+  });
+
   it("cellEmitSynth returns one assertion per newly-emitted DU domain", async () => {
     await loadAst();
     const { alias, checker } = extractFirstAlias(`
