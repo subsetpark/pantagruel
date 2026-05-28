@@ -162,7 +162,19 @@ Map encoding + McCarthy/Dafny guards, which this milestone consumes directly.
 
 ---
 
-### Milestone 2: du-entailment-narrowing-survey
+### Milestone 2: du-entailment-narrowing-survey — ✅ COMPLETE (2026-05-28)
+
+> Run read-only, no gameplan. Report: `tools/ts2pant/docs/du-entailment-narrowing-survey.md`.
+> **Findings:** (1) M1 encoding entails under z3 when the discriminant guard is
+> discharged (the post-narrowing target shape compiles cleanly); disjointness is
+> free from function-value semantics, totality is NOT free (M3 must decide whether
+> to emit a totality invariant — recommendation: emit it). (2) DU-relevant
+> narrowing inventory: ~37 `switch (x.kind)` over structural DUs + 160
+> `.kind === "<literal>"` ifs (excluding `ts.SyntaxKind` enum compares), dominated
+> by ts2pant's own IR1 walkers. (3) M3 consumes the guard-analysis M3a
+> `<property-access> === <literal>` fact unchanged — no DU-specific narrowing
+> infrastructure needed. **Verdict:** proceed to M3, gated on guard-analysis M3a
+> landing; emit-totality decision resolved in M3 gameplan.
 
 **Definition of Done**:
 - A read-only survey over the dogfood + constructs corpus: for each
@@ -210,6 +222,18 @@ invariants to add first).
 
 ### Milestone 3: du-discriminant-narrowing
 
+> **Update (2026-05-28):** the guard-analysis M3a gameplan
+> (`gameplans/ts2pant-du-discriminant-narrowing-layer.json`) ships the
+> assumption-environment infrastructure AND the variant-field-rule discharge
+> wiring AND a narrowing-aware fixture whose `@pant` annotations entail under
+> z3. DU M3's scope correspondingly narrows to (a) the totality-invariant
+> decision from the M2 survey §5 (whether to emit `all s: Shape | shape--kind
+> s = "circle" or shape--kind s = "square"` per DU domain), and (b) DU-corpus-
+> wide `@pant` entailment validation across the existing discriminated-union
+> fixtures + dogfood (`DiscriminantLiteral`, `FieldOwnerResolution`, etc.).
+> The "narrowing mechanism" half is landed by M3a — DU M3 is the validation +
+> totality-decision milestone, not a new mechanism.
+
 **Definition of Done**:
 - **Local, intra-function** narrowing: inside `if (x.kind === lit)` /
   `switch (x.kind)` / early-return guards on the discriminant, the guard
@@ -237,10 +261,14 @@ has no remaining advantage for discriminated unions and can be retired.
   targeted narrowing assertions now entail.
 
 **Established Precedents** (milestone-scoped):
-- **existing-implementation — guard-analysis flow-narrowing layer** —
-  (the guard-analysis workstream's deliverable; path TBD when that workstream is
-  planned) — M3 consumes its discriminant-guard propagation rather than building
-  a bespoke narrowing mechanism. This is a **cross-workstream dependency**.
+- **existing-implementation — guard-analysis M3a env + discharge wiring** —
+  `gameplans/ts2pant-du-discriminant-narrowing-layer.json` (the gameplan;
+  may not survive past patch landing — once the patches land, the durable
+  references are `tools/ts2pant/src/assumption-env.ts`,
+  `tools/ts2pant/src/narrowing-recognizer.ts`, and the env-threading sites in
+  `ir1-build.ts` / `ir1-build-body.ts`). M3 consumes the env's discharge
+  result rather than building a bespoke narrowing mechanism. This was the
+  **cross-workstream dependency**; M3a delivers it.
 
 **Open Questions**:
 - The precise propagation surface for the discriminant guard through ts2pant's
