@@ -4,6 +4,7 @@ import ts from "typescript";
 import type { Fact } from "../src/assumption-env.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
+  negateFact,
   recognizeNarrowingFromSwitchCase,
   recognizeNarrowingPredicate,
 } from "../src/narrowing-recognizer.js";
@@ -145,8 +146,30 @@ describe("narrowing-recognizer", () => {
     });
   });
 
-  it("strict not-equal is deferred to arm-specific negation", () => {
-    assert.equal(recognizeExpr('s.kind !== "circle"'), null);
+  it("strict not-equal returns a negated DiscriminantFact", () => {
+    assertDiscriminant(recognizeExpr('s.kind !== "circle"'), {
+      receiver: "s",
+      property: "kind",
+      literal: "!(circle)",
+    });
+  });
+
+  it("loose not-equal returns a negated DiscriminantFact", () => {
+    assertDiscriminant(recognizeExpr('s.kind != "circle"'), {
+      receiver: "s",
+      property: "kind",
+      literal: "!(circle)",
+    });
+  });
+
+  it("negating a negated discriminant fact restores the positive fact", () => {
+    const fact = recognizeExpr('s.kind !== "circle"');
+
+    assertDiscriminant(fact === null ? null : negateFact(fact), {
+      receiver: "s",
+      property: "kind",
+      literal: "circle",
+    });
   });
 
   it("boolean predicate returns PredicateFact", () => {

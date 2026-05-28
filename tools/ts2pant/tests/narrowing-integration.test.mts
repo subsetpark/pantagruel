@@ -128,6 +128,24 @@ describe("narrowing integration", () => {
     assert.equal(envDepth(ctx.env), 1);
   });
 
+  it("if not-equal arm sees negated fact and else sees positive fact", () => {
+    const { fn, ctx, captures } = setupFunction(`
+      interface Shape { kind: "circle" | "square"; }
+      function f(s: Shape): number {
+        if (s.kind !== "circle") return 1;
+        else return 2;
+      }
+    `);
+    const result = buildL1Conditional(
+      fn.body!.statements[0] as ts.IfStatement,
+      ctx,
+    );
+    assert.equal("unsupported" in result, false);
+    assertDiscriminant(envAt(captures, "if.then"), "kind", "circle", true);
+    assertDiscriminant(envAt(captures, "if.else"), "kind", "circle");
+    assert.equal(envDepth(ctx.env), 1);
+  });
+
   it("switch case and default arms see case facts", () => {
     const { fn, ctx, captures } = setupFunction(`
       interface Shape { kind: "circle" | "square"; }
@@ -225,6 +243,45 @@ describe("narrowing integration", () => {
     assert.equal(envDepth(inner.snapshot), 3);
     assertDiscriminant(inner.snapshot, "kind", "circle");
     assertDiscriminant(inner.snapshot, "color", "red");
+    assert.equal(envDepth(env), 1);
+  });
+
+  it("mutating if not-equal arm sees negated fact and else sees positive fact", () => {
+    const sourceFile = createSourceFileFromSource(
+      `
+        interface Shape { kind: "circle" | "square"; value: number; }
+        function f(s: Shape): void {
+          if (s.kind !== "circle") {
+            s.value = 1;
+          } else {
+            s.value = 2;
+          }
+        }
+      `,
+      "narrowing-mutating-not-equal.ts",
+    );
+    const checker = getChecker(sourceFile);
+    const fn = sourceFile.compilerNode.statements.find(
+      (stmt): stmt is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(stmt) && stmt.body !== undefined,
+    );
+    assert.ok(fn?.body);
+    const env = createL1AssumptionEnv();
+    const captures: Array<{ location: string; snapshot: AssumptionEnv }> = [];
+    const result = buildL1IfMutation(fn.body.statements[0] as ts.IfStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: new Map([["s", "s"]]),
+      state: makeSymbolicState(),
+      supply: { n: 0, synthCell: newSynthCell() },
+      env,
+      recognitionHook: (hookEnv, location) => {
+        captures.push({ location, snapshot: cloneEnv(hookEnv) });
+      },
+    });
+    assert.equal("unsupported" in result, false);
+    assertDiscriminant(envAt(captures, "if.then"), "kind", "circle", true);
+    assertDiscriminant(envAt(captures, "if.else"), "kind", "circle");
     assert.equal(envDepth(env), 1);
   });
 });
