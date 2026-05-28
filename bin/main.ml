@@ -1,6 +1,8 @@
 (** Pantagruel CLI *)
 
-let version = "0.22.0"
+(* Stamped at build time from [git describe] — see the [version.ml] rule in
+   [bin/dune]. Avoids hand-syncing a literal with the release tags. *)
+let version = Version.s
 
 let usage =
   "pant [options] [file.pant]\n\n\
