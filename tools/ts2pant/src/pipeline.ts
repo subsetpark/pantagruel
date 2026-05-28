@@ -300,6 +300,13 @@ export async function buildPantDocument(
     }
   }
 
+  if (!noBody && synthCell.definednessObligations.length > 0) {
+    doc = {
+      ...doc,
+      checks: [...doc.checks, ...synthCell.definednessObligations],
+    };
+  }
+
   // Drain dep-module imports requested during build (template-literal
   // recognizer, future stdlib dispatchers). Each entry becomes one
   // `import M.` line and one bundleModules entry so the wasm bridge's
