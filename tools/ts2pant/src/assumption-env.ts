@@ -7,6 +7,7 @@ export type Fact =
       receiver: string;
       property: string;
       literal: string;
+      negated: boolean;
     }
   | { kind: "predicate"; testExpr: OpaqueExpr };
 
@@ -74,7 +75,10 @@ export function discriminantFactsInScope(
       ) {
         continue;
       }
-      const inScope = decodeDiscriminantLiteral(fact.literal);
+      const inScope: InScopeDiscriminantFact = {
+        literal: fact.literal,
+        negated: fact.negated,
+      };
       const key = `${inScope.negated ? "!" : "="}:${JSON.stringify(
         inScope.literal,
       )}`;
@@ -93,15 +97,8 @@ function factKey(fact: Fact): string {
       fact.receiver,
       fact.property,
       fact.literal,
+      fact.negated,
     ])}`;
   }
   return `pred:${JSON.stringify(getAst().strExpr(fact.testExpr))}`;
-}
-
-function decodeDiscriminantLiteral(literal: string): InScopeDiscriminantFact {
-  const negated = /^!\((.*)\)$/u.exec(literal);
-  if (negated !== null) {
-    return { literal: negated[1]!, negated: true };
-  }
-  return { literal, negated: false };
 }

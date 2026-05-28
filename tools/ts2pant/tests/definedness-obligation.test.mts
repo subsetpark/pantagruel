@@ -15,6 +15,7 @@ const circleFact: Fact = {
   receiver: "s",
   property: "kind",
   literal: "circle",
+  negated: false,
 };
 
 const squareFact: Fact = {
@@ -22,6 +23,7 @@ const squareFact: Fact = {
   receiver: "s",
   property: "kind",
   literal: "square",
+  negated: false,
 };
 
 before(async () => {
@@ -43,10 +45,26 @@ describe("definedness", () => {
   it("finds negated in-scope fact and flags it", () => {
     const env = createAssumptionEnv();
     enterFrame(env);
-    pushFact(env, { ...circleFact, literal: "!(circle)" });
+    pushFact(env, { ...circleFact, negated: true });
 
     assert.deepEqual(discriminantFactsInScope(env, "s", "kind"), [
       { literal: "circle", negated: true },
+    ]);
+  });
+
+  it("preserves literals shaped like the old negation sentinel", () => {
+    const env = createAssumptionEnv();
+    enterFrame(env);
+    pushFact(env, {
+      kind: "discriminant",
+      receiver: "s",
+      property: "kind",
+      literal: "!(circle)",
+      negated: false,
+    });
+
+    assert.deepEqual(discriminantFactsInScope(env, "s", "kind"), [
+      { literal: "!(circle)", negated: false },
     ]);
   });
 
@@ -109,7 +127,7 @@ describe("definedness", () => {
     pushFact(env, circleFact);
     pushFact(env, circleFact);
     enterFrame(env);
-    pushFact(env, { ...circleFact, literal: "!(circle)" });
+    pushFact(env, { ...circleFact, negated: true });
     pushFact(env, squareFact);
 
     assert.deepEqual(discriminantFactsInScope(env, "s", "kind"), [

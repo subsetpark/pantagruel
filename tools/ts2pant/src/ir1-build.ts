@@ -1536,6 +1536,7 @@ function queryDiscriminatedUnionFieldDischarge(
         receiver,
         property: entry.discriminant,
         literal: discriminantLiteralToFactLiteral(variant.literal),
+        negated: false,
       });
     });
   }

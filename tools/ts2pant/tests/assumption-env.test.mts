@@ -16,6 +16,7 @@ const circleFact: Fact = {
   receiver: "s",
   property: "kind",
   literal: "circle",
+  negated: false,
 };
 
 const squareFact: Fact = {
@@ -23,6 +24,7 @@ const squareFact: Fact = {
   receiver: "s",
   property: "kind",
   literal: "square",
+  negated: false,
 };
 
 const predicateFact: Fact = {
@@ -35,6 +37,7 @@ const separatorFact: Fact = {
   receiver: "a|b",
   property: "c",
   literal: "d",
+  negated: false,
 };
 
 const separatorCollisionFact: Fact = {
@@ -42,6 +45,7 @@ const separatorCollisionFact: Fact = {
   receiver: "a",
   property: "b|c",
   literal: "d",
+  negated: false,
 };
 
 describe("AssumptionEnv", () => {

@@ -55,10 +55,16 @@ function recognizeExpr(expr: string): Fact | null {
 
 function assertDiscriminant(
   actual: Fact | null,
-  expected: { receiver: string; property: string; literal: string },
+  expected: {
+    receiver: string;
+    property: string;
+    literal: string;
+    negated?: boolean;
+  },
 ): void {
   assert.deepEqual(actual, {
     kind: "discriminant",
+    negated: false,
     ...expected,
   });
 }
@@ -150,7 +156,8 @@ describe("narrowing-recognizer", () => {
     assertDiscriminant(recognizeExpr('s.kind !== "circle"'), {
       receiver: "s",
       property: "kind",
-      literal: "!(circle)",
+      literal: "circle",
+      negated: true,
     });
   });
 
@@ -158,7 +165,8 @@ describe("narrowing-recognizer", () => {
     assertDiscriminant(recognizeExpr('s.kind != "circle"'), {
       receiver: "s",
       property: "kind",
-      literal: "!(circle)",
+      literal: "circle",
+      negated: true,
     });
   });
 
