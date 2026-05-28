@@ -206,14 +206,20 @@ let test_regression_fixture fixture expect_kinds () =
     coincides with a head-rule-param's name, the action body's free reference
     must resolve to the declared constant, not a wrapping
     [(forall ((<name> ...)) ...)]. *)
-let test_no_shadowing_forall fixture shadowed_name () =
+let test_no_shadowing_forall ?(native = false) fixture shadowed_name () =
   match regression_dir with
   | None -> failf "regression directory not found"
   | Some dir ->
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
       let queries =
-        match translate_path path with
+        (* This asserts native forall emission does not shadow an action-param
+           constant; translate with grounding off so the forall binder is
+           actually present to check (grounding would expand it away). *)
+        match
+          Test_util.translate_to_queries ~ground_quantifiers:(not native)
+            (Test_util.parse_pant_file path)
+        with
         | Ok qs -> qs
         | Error msg -> failf "%s — translation failed: %s" fixture msg
       in
@@ -249,14 +255,20 @@ let test_no_shadowing_forall fixture shadowed_name () =
     as a substring. Used to lock in structural post-fix shapes — e.g. the
     alpha-renamed binder suffix that [test_regression_fixture] (which only
     checks structural-failure kinds) would miss. *)
-let test_smt_contains fixture needle () =
+let test_smt_contains ?(native = false) fixture needle () =
   match regression_dir with
   | None -> failf "regression directory not found"
   | Some dir ->
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
       let queries =
-        match translate_path path with
+        (* Binder-renaming assertions target the native forall/exists emission;
+           translate with grounding off so the renamed binder survives in the
+           output instead of being expanded away. *)
+        match
+          Test_util.translate_to_queries ~ground_quantifiers:(not native)
+            (Test_util.parse_pant_file path)
+        with
         | Ok qs -> qs
         | Error msg -> failf "%s — translation failed: %s" fixture msg
       in
@@ -304,26 +316,27 @@ let regression_cases () =
     test_case "bug_action_param_shadows_rule.pant — translates cleanly" `Quick
       (test_regression_fixture "bug_action_param_shadows_rule.pant" []);
     test_case "bug_action_param_shadows_rule.pant — no shadow forall" `Quick
-      (test_no_shadowing_forall "bug_action_param_shadows_rule.pant" "a1");
+      (test_no_shadowing_forall ~native:true
+         "bug_action_param_shadows_rule.pant" "a1");
     test_case "bug_rule_param_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rule_param_collision.pant" []);
     test_case "bug_rule_param_collision.pant — quantifier binder renamed" `Quick
-      (test_smt_contains "bug_rule_param_collision.pant" "name_q");
+      (test_smt_contains ~native:true "bug_rule_param_collision.pant" "name_q");
     test_case "bug_nested_binder_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_nested_binder_collision.pant" []);
     test_case
       "bug_nested_binder_collision.pant — inner rename skips outer binder"
       `Quick
-      (test_smt_contains "bug_nested_binder_collision.pant" "x_q1");
+      (test_smt_contains ~native:true "bug_nested_binder_collision.pant" "x_q1");
     test_case "bug_rename_app_head.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rename_app_head.pant"
          [ "fallback_emission" ]);
     test_case "bug_rename_app_head.pant — renamed binder used in head position"
       `Quick
-      (test_smt_contains "bug_rename_app_head.pant" "(xs_q 1)");
+      (test_smt_contains ~native:true "bug_rename_app_head.pant" "(xs_q 1)");
     test_case "bug_rename_app_head.pant — binder does not shadow declared xs"
       `Quick
-      (test_no_shadowing_forall "bug_rename_app_head.pant" "xs");
+      (test_no_shadowing_forall ~native:true "bug_rename_app_head.pant" "xs");
   ]
 
 let () =

@@ -42,4 +42,6 @@
 
 (copy_files ../lib/error.ml)
 
+(copy_files ../lib/lower_aliases.ml)
+
 (copy_files ../lib/module.ml)
