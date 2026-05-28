@@ -377,6 +377,32 @@ describe("dogfood: src/translate-types.ts", () => {
   });
 });
 
+describe("dogfood: DU totality", () => {
+  const hasSolver = solverAvailable();
+
+  it(
+    "emitted DU document contains its totality body proposition",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
+        "getRadius",
+      );
+      const output = await emitAndCheck(doc);
+      assert.match(
+        output,
+        /^all (s\d*): Shape \| shape--kind \1 = "circle" or shape--kind \1 = "square"\.$/mu,
+      );
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.match(result.output, /Invariants are jointly satisfiable/u);
+      assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+    },
+  );
+});
+
 // `@pant <proposition>` JSDoc annotations on dogfood functions become
 // entailment goals in the emitted document's `check` block. This suite
 // runs `pant --check` (z3-backed) against each annotated function to
