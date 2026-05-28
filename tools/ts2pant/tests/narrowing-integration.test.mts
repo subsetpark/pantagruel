@@ -63,7 +63,7 @@ function setupFunction(source: string): {
 }
 
 function cloneEnv(env: AssumptionEnv): AssumptionEnv {
-  return { frames: env.frames.map((frame) => new Set(frame)) };
+  return { frames: env.frames.map((frame) => new Map(frame)) };
 }
 
 function envAt(

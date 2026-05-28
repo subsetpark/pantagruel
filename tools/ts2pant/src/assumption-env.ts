@@ -11,7 +11,12 @@ export type Fact =
   | { kind: "predicate"; testExpr: OpaqueExpr };
 
 export interface AssumptionEnv {
-  frames: Set<string>[];
+  frames: Map<string, Fact>[];
+}
+
+export interface InScopeDiscriminantFact {
+  literal: string;
+  negated: boolean;
 }
 
 export function createAssumptionEnv(): AssumptionEnv {
@@ -23,7 +28,7 @@ export function envDepth(env: AssumptionEnv): number {
 }
 
 export function enterFrame(env: AssumptionEnv): void {
-  env.frames.push(new Set());
+  env.frames.push(new Map());
 }
 
 export function exitFrame(env: AssumptionEnv): void {
@@ -42,7 +47,7 @@ export function pushFact(env: AssumptionEnv, fact: Fact): void {
       "AssumptionEnv invariant violation: pushFact with no frame",
     );
   }
-  frame.add(factKey(fact));
+  frame.set(factKey(fact), fact);
 }
 
 export function queryFact(env: AssumptionEnv, fact: Fact): boolean {
@@ -51,6 +56,35 @@ export function queryFact(env: AssumptionEnv, fact: Fact): boolean {
   }
   const key = factKey(fact);
   return env.frames.some((frame) => frame.has(key));
+}
+
+export function discriminantFactsInScope(
+  env: AssumptionEnv,
+  receiver: string,
+  property: string,
+): InScopeDiscriminantFact[] {
+  const out: InScopeDiscriminantFact[] = [];
+  const seen = new Set<string>();
+  for (const frame of env.frames) {
+    for (const fact of frame.values()) {
+      if (
+        fact.kind !== "discriminant" ||
+        fact.receiver !== receiver ||
+        fact.property !== property
+      ) {
+        continue;
+      }
+      const inScope = decodeDiscriminantLiteral(fact.literal);
+      const key = `${inScope.negated ? "!" : "="}:${JSON.stringify(
+        inScope.literal,
+      )}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(inScope);
+      }
+    }
+  }
+  return out;
 }
 
 function factKey(fact: Fact): string {
@@ -62,4 +96,12 @@ function factKey(fact: Fact): string {
     ])}`;
   }
   return `pred:${JSON.stringify(getAst().strExpr(fact.testExpr))}`;
+}
+
+function decodeDiscriminantLiteral(literal: string): InScopeDiscriminantFact {
+  const negated = /^!\((.*)\)$/u.exec(literal);
+  if (negated !== null) {
+    return { literal: negated[1]!, negated: true };
+  }
+  return { literal, negated: false };
 }
