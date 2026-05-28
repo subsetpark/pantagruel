@@ -206,7 +206,17 @@ interface the DU workstream can commit to.
 > consults it to discharge guards; pop on exit), intra-function only, no field-name
 > special-casing, facts rendered as z3 path conditions.
 
-### Milestone 3a: du-discriminant-narrowing-layer
+### Milestone 3a: du-discriminant-narrowing-layer — planned (`gameplans/ts2pant-du-discriminant-narrowing-layer.json`)
+
+> **Planning decision (2026-05-28):** M3a absorbs the variant-field-rule discharge
+> wiring (Patch 5 in the gameplan) rather than deferring it to DU M3. Reason: the
+> workstream's M3a DoD line "lowering uses to discharge a discriminant-guarded
+> variant-field rule" was ambiguous between "the lowering site is wired to query
+> with no observable change" and "the lowering site emits differently"; the
+> resolution is "wired to query + one new narrowing-aware fixture whose `@pant`
+> annotations entail under z3". The cond-arm test already carries the path
+> condition z3 needs, so existing fixture snapshots stay byte-identical; the
+> BEHAVIOR delta is contained to the new fixture. See gameplan `explicitOpinions`.
 
 **Definition of Done**:
 - The function-scoped assumption-environment infrastructure, plus **discriminant**
@@ -218,12 +228,21 @@ interface the DU workstream can commit to.
   `<property> === <literal>` shape).
 - Exposes the stable `<property> === <literal>` discriminant fact the DU
   workstream's `du-discriminant-narrowing` consumes.
+- **Discharge wiring included:** at every variant-field-rule emission site in
+  `ir1-build.ts`, the env is queried with a Fact constructed from the rule's
+  guard; the emitted IR1 member node records `narrowingDischarged: boolean`.
+  Emitted Pantagruel text for existing fixtures is byte-identical.
+- A new construct fixture `expressions-discriminant-narrowing.ts` translates and
+  its `@pant` annotations entail under `pant --check` z3 — end-to-end proof that
+  discriminated-union narrowing now discharges.
 
 **Why this is a safe pause point**: Narrowing is additive — un-narrowed code keeps
 its sound-by-guard lowering. The DU dependency is delivered.
 
 **Unlocks**: The discriminated-union workstream's M3 (`du-discriminant-narrowing`) —
-the **cross-workstream unlock**.
+the **cross-workstream unlock**. With the discharge wiring absorbed into M3a, DU M3's
+scope narrows to (a) the totality-invariant decision from the DU M2 survey §5 and
+(b) DU-corpus-wide @pant entailment validation.
 
 **Operator Actions Before Next Milestone**:
 - Confirm the before/after entailment set: discriminant-narrowed obligations now
@@ -233,9 +252,11 @@ the **cross-workstream unlock**.
 and path-condition precedents are consumed here directly.
 
 **Open Questions**:
-- The propagation surface through ts2pant's IR/SSA (the any/unknown workstream
-  flagged narrowing "does not always survive" the IR). Resolve during M3a's gameplan
-  using the M2 report's interface proposal.
+- ~~The propagation surface through ts2pant's IR/SSA~~ RESOLVED (M3a gameplan):
+  env lives in `L1BuildContext`, threaded through `ir1-build.ts` +
+  `ir1-build-body.ts` at all conditional-arm boundaries; queried at the variant-
+  field-rule emission site (`qualifyFieldAccess`-adjacent). Narrowing survives the
+  IR because the env is populated at IR1 *build* time before any normalization.
 
 ---
 
@@ -317,7 +338,7 @@ priority.
 | ~~Purity predicate boundary for user functions~~ | RESOLVED (M1): pure local const/loops allowed; recursive callees bail to effectful | Milestone 1 ✅ |
 | ~~Which narrowing patterns does M3 implement, and does M3 split?~~ | RESOLVED (M2 survey): split into M3a (discriminant + boolean base) + M3b (nullish, type-predicate) | Milestone 2 ✅ |
 | ~~Flow-narrowing interface consumed by DU / nullish / any-unknown~~ | RESOLVED (M2): function-scoped assumption environment; DU consumes the `<property> === <literal>` discriminant fact | Milestone 2 ✅ |
-| Propagation surface through IR/SSA | any/unknown flagged narrowing may not survive the IR | Milestone 3a |
+| ~~Propagation surface through IR/SSA~~ | RESOLVED (M3a gameplan): env lives in `L1BuildContext`, threaded through `ir1-build.ts` + `ir1-build-body.ts`; populated at IR1 *build* time before normalization, queried at the variant-field-rule emission site | Milestone 3a ✅ |
 | Does `x is T` type-predicate narrowing need the any/unknown-opaque encoding? | Refines TS-compiler types | Milestone 3b |
 | Effect branded types / Schema filters in scope? | Name-based, lower confidence | Milestone 4 |
 
@@ -341,3 +362,7 @@ in-repo call-following, Kroening & Strichman, TS Compiler API, Effect-TS) live i
 | No field-name / discriminant special-casing in narrowing | Inherits the project-wide constraint: discriminant-equality narrowing keys on the structural predicate `<field> === <literal>`, never on `.kind` by name. |
 | Effect E-channel extraction is the **final** milestone, not dropped | The user opted to keep it; it is not on either critical path (dogfood lever M1, DU dependency M3), so it is sequenced last and depends only on M1. |
 | Guard *extraction* (asserts, if-throw, call-following) is treated as **already done** | Verified in current code (`translate-signature.ts`); the old roadmap's items 1–2 are implemented, so this workstream does not re-plan them. |
+| M3a **absorbs the variant-field-rule discharge wiring** (Patch 5 in the M3a gameplan), not deferred to DU M3 | Decided while planning M3a (2026-05-28). The workstream's M3a DoD line "lowering uses to discharge a discriminant-guarded variant-field rule" was ambiguous; resolution is "wired to query + new narrowing-aware fixture whose `@pant` annotations entail". The cond-arm test already carries the path condition z3 needs, so existing snapshots stay byte-identical; BEHAVIOR delta is one new fixture. DU M3's scope correspondingly narrows. |
+| M3a env is **mutable in place** (`pushFact` / `enterFrame` mutate the AssumptionEnv), one per L1BuildContext | M3a gameplan decision. Matches the per-translation single-threaded ctx pattern; the snapshot API deep-copies when tests need to compare states. Cheapest at the IR1-build threading sites (no allocation per if/switch arm). |
+| M3a `PredicateFact` wraps an `OpaqueExpr`, not a source-text snapshot | M3a gameplan decision. M3b consumers (nullish, type-predicate narrowing) need structural pattern-match; storing source text would force them to re-parse. Upfront cost in M3a's recognizer patch is small. |
+| Switch `default:` arms push the conjunction of negated case literals; if-else arms push the negated test | M3a gameplan decision. Gives consumers a positive fact to query for the default/else case — necessary for DU M3 to prove the else-branch of `if (s.kind === "circle") { … } else { /* s.kind === "square" by exhaustion */ }`. |
