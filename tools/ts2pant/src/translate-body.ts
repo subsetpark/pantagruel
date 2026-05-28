@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import type { AssumptionEnv } from "./assumption-env.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
@@ -23,6 +24,7 @@ import {
   buildL1IncrementStep,
   buildL1MemberAccess,
   buildL1MuSearchCombTyped,
+  createL1AssumptionEnv,
   isL1ConditionalForm,
   isL1StmtUnsupported,
   isL1Unsupported,
@@ -1231,6 +1233,7 @@ function translatePureBody(
   }
 
   const supply = makeUniqueSupply(synthCell, program);
+  const env = createL1AssumptionEnv();
 
   // M4 Patch 5: functor-lift on the if-conversion shape
   //   `if (x == null) return []; return [f(x)];`
@@ -1259,6 +1262,7 @@ function translatePureBody(
         paramNames,
         state: undefined,
         supply,
+        env,
       },
     );
     if (lifted !== null) {
@@ -1282,6 +1286,7 @@ function translatePureBody(
     strategy,
     paramNames,
     supply,
+    env,
   );
   if ("error" in prelude) {
     return [
@@ -1373,6 +1378,7 @@ function translatePureBody(
       paramNames: prelude.scopedParams,
       state: undefined as SymbolicState | undefined,
       supply,
+      env,
     };
     let bodyOpaque: OpaqueExpr;
     if (l1IsConditionalReturn) {
@@ -2368,6 +2374,7 @@ function lowerPreludeBindings(
   strategy: NumericStrategy,
   baseParams: ReadonlyMap<string, string>,
   supply: UniqueSupply,
+  env: AssumptionEnv,
   state?: SymbolicState,
 ): LoweredPreludeBindings | { error: string } {
   // Phase 1: TDZ validation — reject forward/self references on TS AST.
@@ -2478,6 +2485,7 @@ function lowerPreludeBindings(
           acc.scopedParams,
           state,
           supply,
+          env,
         );
         if ("error" in predRes) {
           return { tag: "error", error: predRes.error };
@@ -2491,6 +2499,7 @@ function lowerPreludeBindings(
                 acc.scopedParams,
                 state,
                 supply,
+                env,
               )
             : translateEarlyReturnBlockValue(
                 binding.blockBindings,
@@ -2501,6 +2510,7 @@ function lowerPreludeBindings(
                   scopedParams: acc.scopedParams,
                   state: state ?? makeSymbolicState(),
                   supply,
+                  env,
                 },
               );
         if ("error" in valRes) {
@@ -2521,6 +2531,7 @@ function lowerPreludeBindings(
           paramNames: acc.scopedParams,
           state: state ?? makeSymbolicState(),
           supply,
+          env,
         });
         if (isUnsupported(value)) {
           return { tag: "error", error: value.unsupported };
@@ -2548,6 +2559,7 @@ function lowerPreludeBindings(
           paramNames: scopedParams,
           state: state ?? makeSymbolicState(),
           supply,
+          env,
         });
         if (isUnsupported(built)) {
           return { tag: "error", error: built.unsupported };
@@ -2588,6 +2600,7 @@ function lowerPreludeBindings(
               paramNames: acc.scopedParams,
               state: state ?? makeSymbolicState(),
               supply,
+              env,
             })
           : buildL1MuSearchCombTyped(binding.mu, {
               checker,
@@ -2595,6 +2608,7 @@ function lowerPreludeBindings(
               paramNames: acc.scopedParams,
               state,
               supply,
+              env,
             });
       if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
         if (
@@ -2658,6 +2672,7 @@ function translateEarlyReturnBlockValue(
     scopedParams: ReadonlyMap<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
+    env: AssumptionEnv;
   },
 ): BindingInitResult {
   let scopedParams: ReadonlyMap<string, string> = new Map(ctx.scopedParams);
@@ -2674,6 +2689,7 @@ function translateEarlyReturnBlockValue(
       paramNames: scopedParams,
       state: ctx.state,
       supply: ctx.supply,
+      env: ctx.env,
     });
     if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
       return { error: initExpr.unsupported };
@@ -2688,6 +2704,7 @@ function translateEarlyReturnBlockValue(
     paramNames: scopedParams,
     state: ctx.state,
     supply: ctx.supply,
+    env: ctx.env,
   });
   if (isUnsupported(value) || isL1Unsupported(value)) {
     return { error: value.unsupported };
@@ -2708,6 +2725,7 @@ function translateBindingInit(
   scopedParams: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
+  env: AssumptionEnv,
 ): BindingInitResult {
   const result = translateBodyExpr(
     initializer,
@@ -2716,6 +2734,7 @@ function translateBindingInit(
     scopedParams,
     state,
     supply,
+    env,
   );
   if (isBodyUnsupported(result)) {
     return { error: result.unsupported };
@@ -3192,6 +3211,7 @@ export function translateBodyExpr(
   paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
+  env: AssumptionEnv = createL1AssumptionEnv(),
 ): BodyResult {
   const ast = getAst();
 
@@ -3281,6 +3301,7 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
     };
     const translate: NullishTranslate = (sub) => {
       const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
@@ -3311,7 +3332,7 @@ export function translateBodyExpr(
   ) {
     const l1 = buildL1Conditional(
       expr as ts.Expression | ts.IfStatement | ts.SwitchStatement,
-      { checker, strategy, paramNames, state, supply },
+      { checker, strategy, paramNames, state, supply, env },
     );
     if (isL1Unsupported(l1)) {
       return { unsupported: l1.unsupported };
@@ -3349,6 +3370,7 @@ export function translateBodyExpr(
           paramNames,
           state,
           supply,
+          env,
         );
         if (isBodyUnsupported(obj)) {
           return obj;
@@ -3382,6 +3404,7 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
     };
     const card = tryBuildL1Cardinality(expr, l1Ctx);
     if (card !== null) {
@@ -3413,6 +3436,7 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
     };
     const member = buildL1MemberAccess(expr, l1Ctx);
     if ("unsupported" in member) {
@@ -3428,7 +3452,15 @@ export function translateBodyExpr(
   // so downstream `bodyExpr()` calls see a narrow result and never throw.
   if (ts.isCallExpression(expr)) {
     return rejectEffect(
-      translateCallExpr(expr, checker, strategy, paramNames, state, supply),
+      translateCallExpr(
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        env,
+      ),
     );
   }
 
@@ -3441,6 +3473,7 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
     );
     if (isBodyUnsupported(operand)) {
       return operand;
@@ -4027,6 +4060,7 @@ export function translateCallExpr(
   paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
+  env: AssumptionEnv = createL1AssumptionEnv(),
 ): BodyResult {
   const ast = getAst();
   const builtin = tryBuildBuiltinCall(expr, {
@@ -4035,6 +4069,7 @@ export function translateCallExpr(
     paramNames,
     state,
     supply,
+    env,
   });
   if (builtin !== null) {
     if (isL1Unsupported(builtin)) {
@@ -4088,6 +4123,7 @@ export function translateCallExpr(
           paramNames,
           state,
           supply,
+          env,
         },
         { requireMember: true },
       );
@@ -4208,6 +4244,7 @@ export function translateCallExpr(
             paramNames,
             state,
             supply,
+            env,
           },
           { requireMember: true },
         );
@@ -4346,6 +4383,7 @@ export function translateCallExpr(
             paramNames,
             state,
             supply,
+            env,
           },
           { requireMember: true },
         );
@@ -4542,6 +4580,7 @@ export function translateCallExpr(
               paramNames,
               state,
               supply,
+              env,
             },
             { requireMember: true },
           );
@@ -4772,6 +4811,7 @@ function translateMutatingBody(
     return [];
   }
   const localRuleDecls: PropResult[] = [];
+  const env = createL1AssumptionEnv();
 
   const lowered = appendFramesForUnmodifiedRules(
     lowerSupportedSsaMutatingStatements(Array.from(node.body.statements), {
@@ -4784,6 +4824,7 @@ function translateMutatingBody(
       helperNameBase: functionName,
       declarations,
       localRuleDecls,
+      env,
     }),
     declarations,
   );
@@ -4805,6 +4846,7 @@ function lowerSupportedSsaMutatingStatements(
     helperNameBase: string;
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
+    env: AssumptionEnv;
   },
 ): IR1SsaBodyLowerResult {
   const tailReturnValue = extractTailReturnValue(stmts, ctx.checker);
@@ -4823,6 +4865,7 @@ function lowerSupportedSsaMutatingStatements(
       ctx.paramNames,
       ctx.state,
       ctx.supply,
+      ctx.env,
     );
     if (isBodyUnsupported(returnExpr)) {
       return ir1SsaBodyLowerUnsupported(returnExpr.unsupported);
@@ -5053,6 +5096,7 @@ function lowerSupportedSsaMutatingBlock(
     helperNameBase: string;
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
+    env: AssumptionEnv;
   },
 ): IR1SsaBodyLowerResult {
   const body = ts.factory.createBlock(stmts, true);
@@ -5063,6 +5107,7 @@ function lowerSupportedSsaMutatingBlock(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.env,
     ctx.localRuleDecls,
   );
 
@@ -5135,6 +5180,7 @@ function buildSupportedSsaMutatingBody(
   paramNames: Map<string, string>,
   state: SymbolicState,
   supply: UniqueSupply,
+  env: AssumptionEnv,
   localRuleDecls?: PropResult[],
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
@@ -5173,6 +5219,7 @@ function buildSupportedSsaMutatingBody(
           paramNames: scopedParamNames,
           state,
           supply,
+          env,
         },
       );
       if (built !== null) {
@@ -5189,6 +5236,7 @@ function buildSupportedSsaMutatingBody(
           paramNames: scopedParamNames,
           state,
           supply,
+          env,
         },
       );
       if (isUnsupported(fixedPointBuilt)) {
@@ -5214,6 +5262,7 @@ function buildSupportedSsaMutatingBody(
             strategy,
             scopedParamNames,
             supply,
+            env,
             state,
           );
           if ("error" in lowered) {
@@ -5260,6 +5309,7 @@ function buildSupportedSsaMutatingBody(
           strategy,
           scopedParamNames,
           supply,
+          env,
           state,
         );
         if ("error" in lowered) {
@@ -5275,6 +5325,7 @@ function buildSupportedSsaMutatingBody(
       paramNames: scopedParamNames,
       state,
       supply,
+      env,
       ...(localRuleDecls === undefined ? {} : { localRuleDecls }),
     });
     if (isUnsupported(built)) {
@@ -5299,6 +5350,7 @@ function buildSupportedSsaStatement(
     paramNames: Map<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
+    env: AssumptionEnv;
     localRuleDecls?: PropResult[];
   },
 ): IR1Stmt | { unsupported: string } {
@@ -5328,6 +5380,7 @@ function buildSupportedSsaStatement(
       ctx.paramNames,
       ctx.state,
       ctx.supply,
+      ctx.env,
       ctx.localRuleDecls,
     );
     return body;
@@ -5418,6 +5471,7 @@ function buildL1BareWhileMutation(
         ctx.paramNames,
         ctx.state,
         ctx.supply,
+        ctx.env,
         ctx.localRuleDecls,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
@@ -5435,6 +5489,7 @@ function buildL1ForCounterMutation(
     paramNames: Map<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
+    env: AssumptionEnv;
     localRuleDecls?: PropResult[];
   },
 ): IR1Stmt | { unsupported: string } {
@@ -5469,6 +5524,7 @@ function buildL1ForCounterMutation(
     paramNames: ctx.paramNames,
     state: ctx.state,
     supply: ctx.supply,
+    env: ctx.env,
   });
   if (isL1StmtUnsupported(step)) {
     return { unsupported: step.unsupported };
@@ -5482,6 +5538,7 @@ function buildL1ForCounterMutation(
         ctx.paramNames,
         ctx.state,
         ctx.supply,
+        ctx.env,
         ctx.localRuleDecls,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
@@ -5542,6 +5599,7 @@ function buildL1LetWhileFixedPointMutation(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.env,
     ctx.localRuleDecls,
   );
   if (isUnsupported(bodyStmt)) {
@@ -5643,6 +5701,7 @@ function buildL1LetWhileMutation(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.env,
     ctx.localRuleDecls,
   );
   if (isUnsupported(bodyStmt)) {
@@ -5757,6 +5816,7 @@ function buildL1ForCounterCondition(
     paramNames: Map<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
+    env: AssumptionEnv;
   },
 ): IR1Expr | { unsupported: string } {
   const cond = unwrapExpression(condition);

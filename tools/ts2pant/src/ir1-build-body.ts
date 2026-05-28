@@ -27,6 +27,7 @@
  */
 
 import ts from "typescript";
+import type { AssumptionEnv } from "./assumption-env.js";
 import type { IRBinop } from "./ir.js";
 import {
   type IR1Expr,
@@ -105,6 +106,7 @@ export interface BuildBodyCtx {
   paramNames: ReadonlyMap<string, string>;
   state: SymbolicState;
   supply: UniqueSupply;
+  env: AssumptionEnv;
   /**
    * When set, this build is inside a foreach loop body. Carries the
    * TS names of iterator binders in scope so the recursive
@@ -767,6 +769,7 @@ export function buildL1SubExpr(
       paramNames: ctx.paramNames,
       state: ctx.state,
       supply: ctx.supply,
+      env: ctx.env,
     };
     const card = tryBuildL1Cardinality(stripped, ctxOptions, l1Options);
     if (card !== null) {
@@ -784,6 +787,7 @@ export function buildL1SubExpr(
     paramNames: ctx.paramNames,
     state: ctx.state,
     supply: ctx.supply,
+    env: ctx.env,
   });
   if (native !== null) {
     return native;
@@ -1205,6 +1209,7 @@ export function buildL1EffectCall(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.env,
   );
   if (isBodyUnsupported(result)) {
     return { unsupported: result.unsupported };

@@ -4,6 +4,7 @@ import { lowerExpr } from "./ir-emit.js";
 import {
   type BuildL1MemberAccessOptions,
   buildL1MemberAccess,
+  createL1AssumptionEnv,
   isL1Unsupported,
   type L1BuildContext,
   tryBuildL1Cardinality,
@@ -1023,6 +1024,7 @@ export function translateExpr(
     paramNames,
     state: undefined,
     supply: { n: 0, synthCell, program },
+    env: createL1AssumptionEnv(),
   };
 
   // M5: plain (non-optional) property access dispatches cardinality
@@ -1125,6 +1127,7 @@ export function translateExpr(
         paramNames,
         state: undefined,
         supply: { n: 0, synthCell, program },
+        env: createL1AssumptionEnv(),
       };
       // Route property/element access operands through the same
       // signature-side cardinality + Member dispatch that
