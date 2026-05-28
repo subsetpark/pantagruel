@@ -1523,7 +1523,7 @@ function queryDiscriminatedUnionFieldDischarge(
     if (!field) {
       continue;
     }
-    const receiver = receiverNode.getText();
+    const receiver = unwrapTransparentExpression(receiverNode).getText();
     return field.variantKeys.some((variantKey) => {
       const variant = entry.variants.find(
         (candidate) => candidate.key === variantKey,
