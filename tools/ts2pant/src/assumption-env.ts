@@ -55,7 +55,11 @@ export function queryFact(env: AssumptionEnv, fact: Fact): boolean {
 
 function factKey(fact: Fact): string {
   if (fact.kind === "discriminant") {
-    return `disc:${fact.receiver}|${fact.property}|${fact.literal}`;
+    return `disc:${JSON.stringify([
+      fact.receiver,
+      fact.property,
+      fact.literal,
+    ])}`;
   }
-  return `pred:${getAst().strExpr(fact.testExpr)}`;
+  return `pred:${JSON.stringify(getAst().strExpr(fact.testExpr))}`;
 }

@@ -30,6 +30,20 @@ const predicateFact: Fact = {
   testExpr: {} as OpaqueExpr,
 };
 
+const separatorFact: Fact = {
+  kind: "discriminant",
+  receiver: "a|b",
+  property: "c",
+  literal: "d",
+};
+
+const separatorCollisionFact: Fact = {
+  kind: "discriminant",
+  receiver: "a",
+  property: "b|c",
+  literal: "d",
+};
+
 describe("AssumptionEnv", () => {
   it("push makes fact queryable", () => {
     const env = createAssumptionEnv();
@@ -87,5 +101,33 @@ describe("AssumptionEnv", () => {
 
     assert.equal(queryFact(env, circleFact), true);
     assert.equal(queryFact(env, squareFact), false);
+  });
+
+  it("discriminant keys do not collide on separator characters", () => {
+    const env = createAssumptionEnv();
+    enterFrame(env);
+
+    pushFact(env, separatorFact);
+
+    assert.equal(queryFact(env, separatorFact), true);
+    assert.equal(queryFact(env, separatorCollisionFact), false);
+  });
+
+  it("exitFrame throws with no frames", () => {
+    const env = createAssumptionEnv();
+
+    assert.throws(
+      () => exitFrame(env),
+      /AssumptionEnv invariant violation: exitFrame with no frame/u,
+    );
+  });
+
+  it("pushFact throws with no frames", () => {
+    const env = createAssumptionEnv();
+
+    assert.throws(
+      () => pushFact(env, circleFact),
+      /AssumptionEnv invariant violation: pushFact with no frame/u,
+    );
   });
 });
