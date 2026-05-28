@@ -33,6 +33,11 @@
  */
 
 import ts from "typescript";
+import {
+  type AssumptionEnv,
+  createAssumptionEnv,
+  enterFrame,
+} from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
@@ -110,9 +115,20 @@ export interface L1BuildContext {
   paramNames: ReadonlyMap<string, string>;
   state: SymbolicState | undefined;
   supply: UniqueSupply;
+  env: AssumptionEnv;
 }
 
 export type L1BuildResult = IR1Expr | { unsupported: string };
+
+export function createL1AssumptionEnv(): AssumptionEnv {
+  const env = createAssumptionEnv();
+  enterFrame(env);
+  return env;
+}
+
+export function snapshotAssumptionEnv(ctx: L1BuildContext): AssumptionEnv {
+  return ctx.env;
+}
 
 export const isL1Unsupported = (
   r: L1BuildResult,

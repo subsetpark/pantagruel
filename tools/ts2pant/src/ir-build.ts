@@ -27,6 +27,7 @@ import {
 import {
   buildL1MemberAccess,
   computedElementAccessUnsupportedReason,
+  createL1AssumptionEnv,
   elementAccessLiteralKey,
   isArrayChainCall,
   type L1BuildContext,
@@ -972,6 +973,7 @@ export function buildIR(
     paramNames,
     state: undefined,
     supply,
+    env: createL1AssumptionEnv(),
   };
 
   if (ts.isCallExpression(expr)) {
