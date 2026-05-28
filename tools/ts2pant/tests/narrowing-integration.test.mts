@@ -63,7 +63,7 @@ function setupFunction(source: string): {
 }
 
 function cloneEnv(env: AssumptionEnv): AssumptionEnv {
-  return { frames: env.frames.map((frame) => new Set(frame)) };
+  return { frames: env.frames.map((frame) => new Map(frame)) };
 }
 
 function envAt(
@@ -85,7 +85,8 @@ function assertDiscriminant(
     kind: "discriminant",
     receiver: "s",
     property,
-    literal: negated ? `!(${literal})` : literal,
+    literal,
+    negated,
   };
   assert.ok(
     queryFact(env, expected),

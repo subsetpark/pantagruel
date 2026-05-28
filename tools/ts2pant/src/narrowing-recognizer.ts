@@ -66,6 +66,7 @@ function discriminantFactFromParts(
     receiver: parts.receiver,
     property: parts.property,
     literal: value,
+    negated: false,
   };
 }
 
@@ -136,10 +137,9 @@ export function recognizeNarrowingFromSwitchCase(
 
 export function negateFact(fact: Fact): Fact {
   if (fact.kind === "discriminant") {
-    const negated = /^!\((.*)\)$/u.exec(fact.literal);
     return {
       ...fact,
-      literal: negated === null ? `!(${fact.literal})` : negated[1]!,
+      negated: !fact.negated,
     };
   }
   const ast = getAst();

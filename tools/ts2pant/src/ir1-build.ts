@@ -140,7 +140,7 @@ export function createL1AssumptionEnv(): AssumptionEnv {
 }
 
 export function snapshotAssumptionEnv(ctx: L1BuildContext): AssumptionEnv {
-  return { frames: ctx.env.frames.map((frame) => new Set(frame)) };
+  return { frames: ctx.env.frames.map((frame) => new Map(frame)) };
 }
 
 export const isL1Unsupported = (
@@ -1536,6 +1536,7 @@ function queryDiscriminatedUnionFieldDischarge(
         receiver,
         property: entry.discriminant,
         literal: discriminantLiteralToFactLiteral(variant.literal),
+        negated: false,
       });
     });
   }
