@@ -167,7 +167,7 @@ export async function buildPantDocument(
   // After both sig and types have registered their Maps, emit the synth
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
-  const synthDecls = cellEmitSynth(synthCell);
+  const { decls: synthDecls } = cellEmitSynth(synthCell);
 
   // Module-level `const NAME = <literal>` declarations map onto 0-arity
   // rules + body equations. Done after `translateSignature` so the
@@ -225,7 +225,7 @@ export async function buildPantDocument(
   // initial signature/type drain above. Drain once more before building
   // the declaration list so those rule heads have their domains in the
   // same document even if body translation does not register anything new.
-  const refFnSynthDecls = cellEmitSynth(synthCell);
+  const { decls: refFnSynthDecls } = cellEmitSynth(synthCell);
   const collisionSafeFnDecls = filterRuleCollisions(fnDecls, [
     ...typeDecls,
     ...synthDecls,
@@ -280,7 +280,7 @@ export async function buildPantDocument(
     // (e.g., `build().get(k)!` where `build`'s return type wasn't surfaced
     // through the signature or referenced types). cellEmitSynth is
     // incremental, so this returns only entries new since the pre-body emit.
-    const extraSynthDecls = cellEmitSynth(synthCell);
+    const { decls: extraSynthDecls } = cellEmitSynth(synthCell);
     if (extraSynthDecls.length > 0) {
       doc = {
         ...doc,

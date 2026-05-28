@@ -9,7 +9,7 @@ import {
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import type { PantDeclaration } from "./types.js";
+import type { PantDeclaration, PropResult } from "./types.js";
 
 /**
  * Sentinel returned by `mapTsType` when an anonymous-record type is
@@ -687,14 +687,39 @@ export function detectDiscriminatedUnion(
   return null;
 }
 
-function disjunction(exprs: OpaqueExpr[]): OpaqueExpr | null {
+function disjunction(exprs: OpaqueExpr[], ast = getAst()): OpaqueExpr | null {
   if (exprs.length === 0) {
     return null;
   }
-  const ast = getAst();
   return exprs
     .slice(1)
     .reduce((acc, expr) => ast.binop(ast.opOr(), acc, expr), exprs[0]!);
+}
+
+export function buildDiscriminatedUnionTotalityAssertion(
+  entry: DiscriminatedUnionSynthEntry,
+  ast = getAst(),
+): PropResult {
+  const body = disjunction(
+    entry.variants.map((variant) =>
+      ast.binop(
+        ast.opEq(),
+        ast.app(ast.var(fieldRuleName(entry.domain, entry.discriminant)), [
+          ast.var(entry.binder),
+        ]),
+        literalExpr(variant.literal)!,
+      ),
+    ),
+    ast,
+  );
+  if (!body) {
+    throw new Error(`discriminated union ${entry.domain} has no variants`);
+  }
+  return {
+    kind: "assertion",
+    quantifiers: [ast.param(entry.binder, ast.tName(entry.domain))],
+    body,
+  };
 }
 
 function discriminatedUnionShapeKey(
@@ -816,10 +841,12 @@ export function emitDiscriminatedUnionSynthDecls(
   registry: NameRegistry,
 ): {
   decls: PantDeclaration[];
+  assertions: PropResult[];
   synth: DiscriminatedUnionSynth;
   registry: NameRegistry;
 } {
   const decls: PantDeclaration[] = [];
+  const assertions: PropResult[] = [];
   const ast = getAst();
   const newEmitted = new Set(synth.emitted);
   for (const [key, entry] of synth.byShape) {
@@ -827,6 +854,7 @@ export function emitDiscriminatedUnionSynthDecls(
       continue;
     }
     newEmitted.add(key);
+    assertions.push(buildDiscriminatedUnionTotalityAssertion(entry, ast));
     const discRule = fieldRuleName(entry.domain, entry.discriminant);
     const guardByVariant = new Map<string, OpaqueExpr>();
     for (const variant of entry.variants) {
@@ -869,6 +897,7 @@ export function emitDiscriminatedUnionSynthDecls(
   }
   return {
     decls,
+    assertions,
     synth: { byShape: synth.byShape, emitted: newEmitted },
     registry,
   };
@@ -1524,7 +1553,10 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
  *  Tuple-constructor synth is *not* drained here — tuple constructors
  *  emit to a separate per-source-file dep module via
  *  `emitTupleCtorModule`, not into the consumer document's head. */
-export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
+export function cellEmitSynth(cell: SynthCell): {
+  decls: PantDeclaration[];
+  assertions: PropResult[];
+} {
   const opaqueR = emitOpaqueSynthDecls(cell.opaqueSynth, cell.registry);
   cell.opaqueSynth = opaqueR.synth;
   cell.registry = opaqueR.registry;
@@ -1540,7 +1572,10 @@ export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   const recR = emitRecordSynthDecls(cell.recordSynth, cell.registry);
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
-  return [...opaqueR.decls, ...mapR.decls, ...duR.decls, ...recR.decls];
+  return {
+    decls: [...opaqueR.decls, ...mapR.decls, ...duR.decls, ...recR.decls],
+    assertions: duR.assertions,
+  };
 }
 
 /**

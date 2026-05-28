@@ -53,6 +53,10 @@ function extractFirstAlias(source: string) {
   return { alias, checker, sourceFile };
 }
 
+function emitSynthDeclsOnly(cell: ReturnType<typeof newSynthCell>) {
+  return cellEmitSynth(cell).decls;
+}
+
 describe("numeric strategy", () => {
   it("IntStrategy maps number to Int", () => {
     const { decls } = extractAndTranslate(
@@ -294,7 +298,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
     const output = emitDocument({
       moduleName: "TEST",
       imports: [],
-      declarations: cellEmitSynth(cell),
+      declarations: emitSynthDeclsOnly(cell),
       propositions: [],
       checks: [],
       bundleModules: new Map(),
@@ -336,7 +340,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
       ],
     );
 
-    const decls = cellEmitSynth(cell);
+    const decls = emitSynthDeclsOnly(cell);
     assert.ok(
       decls.some(
         (decl) =>
@@ -382,10 +386,10 @@ describe("mapTsType", () => {
       }),
       OPAQUE_DOMAIN,
     );
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       { kind: "domain", name: OPAQUE_DOMAIN },
     ]);
-    assert.deepEqual(cellEmitSynth(cell), []);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
   it("opaque fallback maps `unknown` to the shared Opaque sort", async () => {
@@ -402,7 +406,7 @@ describe("mapTsType", () => {
       }),
       OPAQUE_DOMAIN,
     );
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       { kind: "domain", name: OPAQUE_DOMAIN },
     ]);
   });
@@ -421,7 +425,7 @@ describe("mapTsType", () => {
       }),
       "Int",
     );
-    assert.deepEqual(cellEmitSynth(cell), []);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
   it("opaque fallback disabled keeps `any` and `unknown` unsupported", () => {
@@ -471,7 +475,7 @@ describe("mapTsType", () => {
     );
     cellRegisterOpaqueValue(cell, "foo.ts:1");
 
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       { kind: "domain", name: OPAQUE_DOMAIN },
       {
         kind: "rule",
@@ -482,7 +486,7 @@ describe("mapTsType", () => {
     ]);
 
     cellRegisterOpaqueValue(cell, "foo.ts:2");
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       {
         kind: "rule",
         name: opaqueValueRuleName("foo.ts:2"),
@@ -507,7 +511,7 @@ describe("mapTsType", () => {
       "StringToListOpaqueMap",
     );
 
-    const decls = cellEmitSynth(cell);
+    const decls = emitSynthDeclsOnly(cell);
     assert.equal(decls.length, 4);
     assert.deepEqual(decls[0], { kind: "domain", name: OPAQUE_DOMAIN });
     assert.deepEqual(decls[1], {
@@ -535,7 +539,7 @@ describe("mapTsType", () => {
     assert.equal(decls[3].returnType, "[Opaque]");
 
     cellRegisterOpaqueValue(cell, "foo.ts:2");
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       {
         kind: "rule",
         name: opaqueValueRuleName("foo.ts:2"),
@@ -774,7 +778,7 @@ describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
   it("emits nothing while no opaque id is registered", async () => {
     await loadAst();
     const cell = newSynthCell();
-    assert.deepEqual(cellEmitSynth(cell), []);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
   it("emits the Opaque domain and one nullary constant per id on use", async () => {
@@ -788,7 +792,7 @@ describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
     assert.equal(firstAgain.rule, first.rule);
     assert.equal(cellLookupOpaqueValue(cell, "foo.ts:2"), second);
 
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       { kind: "domain", name: OPAQUE_DOMAIN },
       {
         kind: "rule",
@@ -803,10 +807,10 @@ describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
         returnType: OPAQUE_DOMAIN,
       },
     ]);
-    assert.deepEqual(cellEmitSynth(cell), []);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
 
     cellRegisterOpaqueValue(cell, "foo.ts:3");
-    assert.deepEqual(cellEmitSynth(cell), [
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
       {
         kind: "rule",
         name: opaqueValueRuleName("foo.ts:3"),
