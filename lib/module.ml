@@ -224,3 +224,39 @@ let check_with_imports registry (doc : Ast.document) =
   match Check.check_document full_env doc with
   | Ok warnings -> Ok (full_env, warnings)
   | Error e -> Error (ParseError ("<main>", Error.format_type_error e))
+
+(** Identity-lower list-typed aliases that are never destructured as lists,
+    returning the lowered [(env, doc)]. Uses [check_with_imports] as a soundness
+    oracle: an alias is lowered to a domain only if the rewritten document still
+    type-checks (a list operation on a now-opaque alias is a type error). The
+    maximal safe subset of candidates is lowered. When nothing is lowerable the
+    original [(env, doc)] is returned unchanged, so the common case adds no work
+    beyond a single candidate scan. *)
+let lower_identity_aliases registry (env : Env.t) (doc : Ast.document) :
+    Env.t * Ast.document =
+  match Lower_aliases.list_alias_candidates doc with
+  | [] -> (env, doc)
+  | candidates -> (
+      let type_checks names =
+        match
+          check_with_imports registry
+            (Lower_aliases.rewrite_to_domains doc names)
+        with
+        | Ok _ -> true
+        | Error _ -> false
+      in
+      (* Fast path: try lowering all candidates at once; otherwise greedily keep
+         the maximal safe subset. *)
+      let safe =
+        if type_checks candidates then candidates
+        else
+          List.fold_left
+            (fun acc c -> if type_checks (c :: acc) then c :: acc else acc)
+            [] candidates
+      in
+      if safe = [] then (env, doc)
+      else
+        let doc' = Lower_aliases.rewrite_to_domains doc safe in
+        match check_with_imports registry doc' with
+        | Ok (env', _warnings) -> (env', doc')
+        | Error _ -> (env, doc))

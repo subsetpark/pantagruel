@@ -167,7 +167,13 @@ let check_doc doc =
         List.iter
           (fun w -> prerr_endline (Pantagruel.Error.format_type_warning w))
           warnings;
-        if !do_check then run_smt_check env doc
+        if !do_check then
+          (* Identity-lower list-typed aliases used only as opaque identities,
+             so the SMT encoding avoids arrays-indexed-by-arrays. *)
+          let env, doc =
+            Pantagruel.Module.lower_identity_aliases registry env doc
+          in
+          run_smt_check env doc
         else if !do_normalize <> "" then begin
           let root = !do_normalize in
           let all_names =
