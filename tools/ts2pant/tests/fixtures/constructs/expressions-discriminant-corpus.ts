@@ -22,19 +22,6 @@ export function litWidth(l: Lit): number {
   }
 }
 
-export function litValue(l: Lit): string | number | boolean {
-  switch (l.kind) {
-    case "string":
-      return l.value;
-    case "number":
-      return l.value;
-    case "boolean":
-      return l.value;
-    default:
-      return "";
-  }
-}
-
 type Res =
   | { kind: "resolved"; owner: string }
   | { kind: "none" }

@@ -262,6 +262,14 @@ exports[`expressions-const-side-effectful.ts > constSetHas 1`] = `
 "module CONST_SET_HAS.\\n\\nconst-set-has s: [String], value: String => Bool.\\nx  => Bool.\\n\\n---\\n\\nx = (value in s).\\nconst-set-has s value = x.\\n"
 `;
 
+exports[`expressions-discriminant-corpus.ts > litWidth 1`] = `
+"module LIT_WIDTH.\\n\\nLit.\\nlit--kind s: Lit => String.\\nlit--value s: Lit, lit--kind s = \\"string\\" or lit--kind s = \\"number\\" or lit--kind s = \\"boolean\\" => String + Int + Bool.\\nlit-width l: Lit => Int.\\n\\n---\\n\\nall s: Lit | lit--kind s = \\"string\\" or lit--kind s = \\"number\\" or lit--kind s = \\"boolean\\".\\nlit-width l = (cond lit--kind l = \\"string\\" => 1, lit--kind l = \\"number\\" => 2, lit--kind l = \\"boolean\\" => 3, true => 0).\\n\\ncheck\\n\\nlit--kind l = \\"string\\" -> lit--kind l = \\"string\\" or lit--kind l = \\"number\\" or lit--kind l = \\"boolean\\".\\nlit--kind l = \\"number\\" -> lit--kind l = \\"string\\" or lit--kind l = \\"number\\" or lit--kind l = \\"boolean\\".\\nlit--kind l = \\"boolean\\" -> lit--kind l = \\"string\\" or lit--kind l = \\"number\\" or lit--kind l = \\"boolean\\".\\n"
+`;
+
+exports[`expressions-discriminant-corpus.ts > ownerOf 1`] = `
+"module OWNER_OF.\\n\\nRes.\\nres--kind s: Res => String.\\nres--owner s: Res, res--kind s = \\"resolved\\" => String.\\nowner-of r: Res => String.\\n\\n---\\n\\nall s: Res | res--kind s = \\"resolved\\" or res--kind s = \\"none\\" or res--kind s = \\"ambiguous\\".\\nowner-of r = (cond res--kind r = \\"resolved\\" => res--owner r, true => \\"\\").\\n\\ncheck\\n\\nres--kind r = \\"resolved\\" -> res--kind r = \\"resolved\\".\\n"
+`;
+
 exports[`expressions-discriminant-definedness.ts > circleOrZero 1`] = `
 "module CIRCLE_OR_ZERO.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\ncircle-or-zero s1: Shape => Int.\\n\\n---\\n\\nall s: Shape | shape--kind s = \\"circle\\" or shape--kind s = \\"square\\".\\ncircle-or-zero s1 = (cond shape--kind s1 ~= \\"circle\\" => 0, true => shape--r s1).\\n\\ncheck\\n\\nshape--kind s1 = \\"circle\\" -> shape--kind s1 = \\"circle\\".\\n"
 `;
