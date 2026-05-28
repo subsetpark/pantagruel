@@ -133,6 +133,7 @@ let test_sample_smt name () =
           let domain_bounds = Smt.compute_domain_bounds 3 env in
           let config =
             Smt.make_config ~bound:3 ~steps:1 ~domain_bounds ~inject_guards:true
+              ()
           in
           let queries = Smt.generate_queries config env doc in
           ignore queries)

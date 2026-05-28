@@ -18,6 +18,7 @@ let check_bound = ref 3
 let solver_cmd = ref "z3"
 let solver_timeout = ref 30.0
 let check_steps = ref 5
+let no_ground_quantifiers = ref false
 let dump_smt_dir = ref ""
 let module_path = ref "."
 let files = ref []
@@ -56,6 +57,10 @@ let specs =
     ( "--dump-smt",
       Arg.Set_string dump_smt_dir,
       "DIR  Write generated SMT-LIB2 queries to DIR" );
+    ( "--no-ground-quantifiers",
+      Arg.Set no_ground_quantifiers,
+      " Emit native forall/exists instead of grounding finite-domain \
+       quantifiers" );
     ( "--version",
       Arg.Unit
         (fun () ->
@@ -93,6 +98,8 @@ let run_smt_check env doc =
     let config =
       Pantagruel.Smt.make_config ~bound:!check_bound ~steps:!check_steps
         ~domain_bounds ~inject_guards:true
+        ~ground_quantifiers:(not !no_ground_quantifiers)
+        ()
     in
     let queries = Pantagruel.Smt.generate_queries config env doc in
     if !dump_smt_dir <> "" then begin

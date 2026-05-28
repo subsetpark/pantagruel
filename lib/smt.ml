@@ -965,6 +965,173 @@ and translate_quantifier config env quant params guards body =
      on guard expressions (e.g., GIn list exprs) can resolve them. *)
   let param_bindings = resolve_param_bindings env params in
   let env = Env.with_vars param_bindings env in
+  (* Try grounding finite-domain binders into a quantifier-free expansion; fall
+     back to native forall/exists emission when nothing is groundable, the
+     instance count exceeds the cap, or grounding is disabled. *)
+  match
+    if config.ground_quantifiers then
+      try_ground_quantifier config env quant params guards body
+    else None
+  with
+  | Some grounded -> grounded
+  | None -> emit_native_quantifier config env quant params guards body
+
+(** Infer the element type of a membership's right-hand side: [Some elem_ty] for
+    a list, or [Some (TyDomain _)] for iterating a domain directly. Falls back
+    to unpriming the expression (for invariant-preservation queries where the
+    primed name isn't in the type environment). Shared by the native [GIn] arm
+    and the grounding groundability check so primed lists resolve consistently.
+*)
+and infer_membership_elem_ty env list_expr =
+  let infer e =
+    match[@warning "-4"] Check.infer_type { Check.env; loc = dummy_loc } e with
+    | Ok (TyList elem_ty) -> Some elem_ty
+    | Ok (TyDomain _ as ty) -> Some ty
+    | _ -> None
+  in
+  match infer list_expr with
+  | Some _ as r -> r
+  | None -> infer (unprime_expr list_expr)
+
+(** Attempt to ground a quantifier over finite-domain binders. Returns
+    [Some smt] when at least one binder ranges over a finite [TyDomain] (bound >
+    0) and the cartesian-product instance count is within [ground_instance_cap];
+    otherwise [None] to fall through to native emission. Groundable binders are
+    eliminated by substituting each domain-element constant; ungroundable
+    binders (e.g. over Nat/Int) are kept and re-emitted natively by the
+    recursive call. A grounded [GIn] membership survives as a per-instance
+    condition. *)
+and try_ground_quantifier config env quant params guards body =
+  let elems_for_domain d =
+    let b = bound_for config d in
+    if b > 0 then Some (domain_elements d b) else None
+  in
+  let param_domain (p : param) =
+    match[@warning "-4"] Collect.resolve_type env p.param_type dummy_loc with
+    | Ok (TyDomain d) -> (
+        match elems_for_domain d with
+        | Some elems -> Some (d, elems)
+        | None -> None)
+    | _ -> None
+  in
+  (* Partition head params into groundable [(name, domain, elems, no-membership)]
+     and residual params (kept as native binders). *)
+  let head_ground, head_residual =
+    List.partition_map
+      (fun (p : param) ->
+        match param_domain p with
+        | Some (d, elems) ->
+            Either.Left (Ast.lower_name p.param_name, d, elems, None)
+        | None -> Either.Right p)
+      params
+  in
+  (* Same for guard binders. A grounded [GIn] carries its list expression as
+     [Some list_expr] so the membership can be re-emitted as a per-instance
+     condition; [GExpr] guards are always residual conditions. *)
+  let guard_ground, guard_residual =
+    List.fold_right
+      (fun g (gacc, racc) ->
+        match g with
+        | GParam p -> (
+            match param_domain p with
+            | Some (d, elems) ->
+                ((Ast.lower_name p.param_name, d, elems, None) :: gacc, racc)
+            | None -> (gacc, g :: racc))
+        | GIn (Lower name, list_expr) -> (
+            match[@warning "-4"] infer_membership_elem_ty env list_expr with
+            | Some (TyDomain d) -> (
+                match elems_for_domain d with
+                | Some elems -> ((name, d, elems, Some list_expr) :: gacc, racc)
+                | None -> (gacc, g :: racc))
+            | _ -> (gacc, g :: racc))
+        | GExpr _ -> (gacc, g :: racc))
+      guards ([], [])
+  in
+  let grounds = head_ground @ guard_ground in
+  match grounds with
+  | [] -> None
+  | _ ->
+      let product_size =
+        List.fold_left
+          (fun acc (_, _, elems, _) -> acc * List.length elems)
+          1 grounds
+      in
+      if product_size > ground_instance_cap then begin
+        Printf.eprintf
+          "warning: ground-quantifiers: %d instances exceed cap %d for a \
+           quantifier; emitting native quantifier instead\n\
+           %!"
+          product_size ground_instance_cap;
+        None
+      end
+      else begin
+        (* Bind every grounded element constant to its domain type so that type
+           inference on the substituted body/guards (e.g. inferring the element
+           type of [items Thing_0]) still resolves — the synthetic constants are
+           not otherwise present in the type environment. *)
+        let elem_type_bindings =
+          List.concat_map
+            (fun (_, d, elems, _) -> List.map (fun e -> (e, TyDomain d)) elems)
+            grounds
+        in
+        let env = Env.with_vars elem_type_bindings env in
+        (* Cartesian product of the per-binder element choices. *)
+        let rec cartesian = function
+          | [] -> [ [] ]
+          | xs :: rest ->
+              let tails = cartesian rest in
+              List.concat_map (fun x -> List.map (fun t -> x :: t) tails) xs
+        in
+        let choices =
+          List.map
+            (fun (n, _, elems, m) -> List.map (fun e -> (n, e, m)) elems)
+            grounds
+        in
+        let subst_guard subst = function
+          | GParam _ as g -> g
+          | GIn (n, xs) -> GIn (n, Smt_expr.substitute_vars subst xs)
+          | GExpr e -> GExpr (Smt_expr.substitute_vars subst e)
+        in
+        let instances =
+          List.map
+            (fun assignment ->
+              let subst =
+                List.map (fun (n, e, _) -> (n, EVar (Lower e))) assignment
+              in
+              (* Grounded GIn memberships become per-instance conditions so the
+                 antecedent/conjunct semantics are preserved. *)
+              let membership_guards =
+                List.filter_map
+                  (fun (_, e, m) ->
+                    match m with
+                    | Some list_expr ->
+                        Some
+                          (GExpr
+                             (EBinop
+                                ( OpIn,
+                                  EVar (Lower e),
+                                  Smt_expr.substitute_vars subst list_expr )))
+                    | None -> None)
+                  assignment
+              in
+              let residual_guards =
+                List.map (subst_guard subst) guard_residual @ membership_guards
+              in
+              let body' = Smt_expr.substitute_vars subst body in
+              translate_quantifier config env quant head_residual
+                residual_guards body')
+            (cartesian choices)
+        in
+        let connective = if quant = "forall" then "and" else "or" in
+        match instances with
+        | [ single ] -> Some single
+        | _ ->
+            Some
+              (Printf.sprintf "(%s %s)" connective
+                 (String.concat " " instances))
+      end
+
+and emit_native_quantifier config env quant params guards body =
   (* Collect bindings, guard conditions, and type constraints for Nat/Nat0 *)
   let nat_constraint_of_param env (p : param) =
     match Collect.resolve_type env p.param_type dummy_loc with
@@ -1034,23 +1201,10 @@ and translate_quantifier config env quant params guards body =
               conds,
               env )
         | GIn (Lower name, list_expr) ->
-            (* Bind name as element type; resolve from list expression type *)
-            let infer_elem_ty e =
-              match[@warning "-4"]
-                Check.infer_type { Check.env; loc = dummy_loc } e
-              with
-              | Ok (TyList elem_ty) -> Some elem_ty
-              | Ok (TyDomain _ as ty) -> Some ty
-              | _ -> None
-            in
-            (* When the expression has been primed (for invariant preservation
-               checks), the primed name won't be in the type environment.
-               Fall back to unpriming before inference. *)
-            let elem_ty_opt =
-              match infer_elem_ty list_expr with
-              | Some _ as r -> r
-              | None -> infer_elem_ty (unprime_expr list_expr)
-            in
+            (* Bind name as element type; resolve from list expression type.
+               Shared with the grounding groundability check via
+               [infer_membership_elem_ty] (handles the primed-list fallback). *)
+            let elem_ty_opt = infer_membership_elem_ty env list_expr in
             let elem_sort =
               match elem_ty_opt with
               | Some elem_ty -> sort_of_ty elem_ty
@@ -1101,16 +1255,19 @@ and translate_quantifier config env quant params guards body =
     param_type_conditions @ List.rev guard_conditions @ app_guard_strs
   in
   let binding_str = String.concat " " all_bindings in
-  match (quant, conditions) with
-  | "forall", _ :: _ ->
-      Printf.sprintf "(%s (%s) (=> (and %s) %s))" quant binding_str
-        (String.concat " " conditions)
+  let cond_str = String.concat " " conditions in
+  match (all_bindings, quant, conditions) with
+  (* Zero-binder base case (e.g. after fully grounding a quantifier): emit the
+     conditioned body directly, with no degenerate empty binder list. *)
+  | [], "forall", _ :: _ -> Printf.sprintf "(=> (and %s) %s)" cond_str body_str
+  | [], "exists", _ :: _ -> Printf.sprintf "(and %s %s)" cond_str body_str
+  | [], _, _ -> body_str
+  | _, "forall", _ :: _ ->
+      Printf.sprintf "(%s (%s) (=> (and %s) %s))" quant binding_str cond_str
         body_str
-  | "exists", _ :: _ ->
-      Printf.sprintf "(%s (%s) (and %s %s))" quant binding_str
-        (String.concat " " conditions)
-        body_str
-  | _ -> Printf.sprintf "(%s (%s) %s)" quant binding_str body_str
+  | _, "exists", _ :: _ ->
+      Printf.sprintf "(%s (%s) (and %s %s))" quant binding_str cond_str body_str
+  | _, _, _ -> Printf.sprintf "(%s (%s) %s)" quant binding_str body_str
 
 and translate_cond config env = function[@warning "-4"]
   | [] -> assert false

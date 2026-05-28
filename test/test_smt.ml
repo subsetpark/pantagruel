@@ -9,7 +9,14 @@ let parse_and_collect = Test_util.parse_and_collect
 
 let config =
   Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:Env.StringMap.empty
-    ~inject_guards:true
+    ~inject_guards:true ()
+
+(* Native-quantifier config: disables grounding so tests can assert on the
+   forall/exists emission machinery (alpha-renaming, binder guard substitution)
+   directly, rather than its grounded expansion. *)
+let config_native =
+  Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:Env.StringMap.empty
+    ~inject_guards:true ~ground_quantifiers:false ()
 
 let test_lit_bool () =
   let env = Env.empty "" in
@@ -984,6 +991,7 @@ let test_bound_for () =
   let bounds = Env.StringMap.singleton "Color" 5 in
   let config =
     Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:bounds ~inject_guards:true
+      ()
   in
   check int "Color uses override" 5 (Smt.bound_for config "Color");
   check int "Account uses default" 3 (Smt.bound_for config "Account")
@@ -993,6 +1001,7 @@ let test_card_domain_with_bounds () =
   let bounds = Env.StringMap.singleton "Color" 5 in
   let cfg =
     Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:bounds ~inject_guards:true
+      ()
   in
   check string "#Domain with per-domain bound" "5"
     (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain (Upper "Color"))))
@@ -1150,7 +1159,7 @@ let test_translate_in_zero_bound () =
      Now produces "false" (nothing in empty domain). *)
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
   let result =
@@ -1211,7 +1220,7 @@ let test_domain_closure_bound_one () =
   in
   let one_config =
     Smt.make_config ~bound:1 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let queries = Smt.generate_queries one_config env doc in
   let inv =
@@ -1688,7 +1697,7 @@ let test_aggregate_add_empty () =
   (* + over empty domain (bound=0) should return identity "0" *)
   let zero_config =
     Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let env =
     Env.empty ""
@@ -1759,7 +1768,7 @@ let test_aggregate_add_real_empty () =
   (* + over empty Real domain should return "0.0" *)
   let zero_config =
     Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let env =
     Env.empty ""
@@ -2140,7 +2149,7 @@ let test_closure_axiom_generation () =
   in
   let small_config =
     Smt.make_config ~bound:2 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let queries = Smt.generate_queries small_config env doc in
   let inv =
@@ -2328,7 +2337,9 @@ let test_guard_substitution () =
       (EBinop
          (OpGe, EApp (EVar (Lower "score"), [ EVar (Lower "x") ]), ELitNat 0))
   in
-  let result = Smt.translate_expr config env expr in
+  (* Use the native config: this test asserts on the binder-bound guard
+     substitution in native forall emission. *)
+  let result = Smt.translate_expr config_native env expr in
   (* Guard should be substituted: (active x), not (active u) *)
   check bool "has (active x)" true (contains result "(active x)");
   check bool "no (active u)" false (contains result "(active u)")
@@ -2830,7 +2841,7 @@ let test_aggregate_empty_domain () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2845,7 +2856,7 @@ let test_aggregate_empty_domain_mul () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2860,7 +2871,7 @@ let test_aggregate_empty_domain_and () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2875,7 +2886,7 @@ let test_aggregate_empty_domain_or () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2891,7 +2902,7 @@ let test_aggregate_empty_domain_min () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2907,7 +2918,7 @@ let test_aggregate_empty_domain_max () =
   let env = make_aggregate_env () in
   let zero_config =
     Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let expr =
     Ast.make_each
@@ -2932,7 +2943,7 @@ let test_aggregate_integration () =
   in
   let small_config =
     Smt.make_config ~bound:2 ~steps:0 ~domain_bounds:Env.StringMap.empty
-      ~inject_guards:true
+      ~inject_guards:true ()
   in
   let queries = Smt.generate_queries small_config env doc in
   let inv =
@@ -3012,8 +3023,10 @@ let test_entailment_action_query () =
     (contains q.smt2 "(= (balance_prime a)");
   check bool "has action precondition assumption" true
     (contains q.smt2 "(>= (balance a) amount)");
+  (* The invariant [all a: Account | balance a >= 0] is grounded over the
+     Account elements, so the assumption appears per-element. *)
   check bool "has invariant assumption" true
-    (contains q.smt2 "(>= (balance a) 0)")
+    (contains q.smt2 "(>= (balance Account_0) 0)")
 
 let test_entailment_uses_chapter_local_invariants () =
   (* Two invariant chapters, each with a check. The check in the second chapter
@@ -3104,6 +3117,160 @@ let entailment_tests =
       test_entailment_multiple_goals;
   ]
 
+(* --- Quantifier grounding tests --- *)
+
+(* Env with a domain [D] and a unary predicate [p : D => Bool]. *)
+let ground_env () =
+  Env.empty ""
+  |> Env.add_domain "D" Ast.dummy_loc ~chapter:0
+  |> Env.add_rule "p"
+       (Types.TyFunc ([ Types.TyDomain "D" ], Some Types.TyBool))
+       Ast.dummy_loc ~chapter:0
+
+(* Config grounding domain D over two elements (D_0, D_1). *)
+let config_g2 =
+  Smt.make_config ~bound:2 ~steps:0 ~domain_bounds:Env.StringMap.empty
+    ~inject_guards:true ()
+
+let test_ground_forall_domain () =
+  let env = ground_env () in
+  let expr =
+    Ast.make_forall
+      [ { param_name = Lower "x"; param_type = TName (Upper "D") } ]
+      []
+      (EApp (EVar (Lower "p"), [ EVar (Lower "x") ]))
+  in
+  let result = Smt.translate_expr config_g2 env expr in
+  check bool "no native forall" false (contains result "forall");
+  check bool "conjunction" true (contains result "(and ");
+  check bool "instance D_0" true (contains result "(p D_0)");
+  check bool "instance D_1" true (contains result "(p D_1)")
+
+let test_ground_exists_domain () =
+  let env = ground_env () in
+  let expr =
+    Ast.make_exists
+      [ { param_name = Lower "x"; param_type = TName (Upper "D") } ]
+      []
+      (EApp (EVar (Lower "p"), [ EVar (Lower "x") ]))
+  in
+  let result = Smt.translate_expr config_g2 env expr in
+  check bool "no native exists" false (contains result "exists");
+  check bool "disjunction" true (contains result "(or ");
+  check bool "instance D_0" true (contains result "(p D_0)");
+  check bool "instance D_1" true (contains result "(p D_1)")
+
+let test_ground_gin_membership () =
+  (* all x in items : the membership becomes a per-instance antecedent. *)
+  let env =
+    ground_env ()
+    |> Env.add_rule "items"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "D"))))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.make_forall []
+      [ GIn (Lower "x", EVar (Lower "items")) ]
+      (EApp (EVar (Lower "p"), [ EVar (Lower "x") ]))
+  in
+  let result = Smt.translate_expr config_g2 env expr in
+  check bool "no native forall" false (contains result "forall");
+  check bool "membership antecedent for D_0" true
+    (contains result "(=> (and (select items D_0)) (p D_0))");
+  check bool "membership antecedent for D_1" true
+    (contains result "(=> (and (select items D_1)) (p D_1))")
+
+let test_ground_partial_nat () =
+  (* all x: D | all n: Nat | q x n : outer D grounded, inner Nat stays native. *)
+  let env =
+    ground_env ()
+    |> Env.add_rule "q"
+         (Types.TyFunc ([ Types.TyDomain "D"; Types.TyNat ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let inner =
+    Ast.make_forall
+      [ { param_name = Lower "n"; param_type = TName (Upper "Nat") } ]
+      []
+      (EApp (EVar (Lower "q"), [ EVar (Lower "x"); EVar (Lower "n") ]))
+  in
+  let expr =
+    Ast.make_forall
+      [ { param_name = Lower "x"; param_type = TName (Upper "D") } ]
+      [] inner
+  in
+  let result = Smt.translate_expr config_g2 env expr in
+  check bool "outer conjunction" true (contains result "(and ");
+  check bool "inner native forall over Int" true
+    (contains result "(forall ((n Int))");
+  check bool "grounded outer arg D_0" true (contains result "(q D_0 n)");
+  check bool "grounded outer arg D_1" true (contains result "(q D_1 n)")
+
+let test_ground_disabled_is_native () =
+  (* config_native reproduces the native forall emission. *)
+  let env = ground_env () in
+  let expr =
+    Ast.make_forall
+      [ { param_name = Lower "x"; param_type = TName (Upper "D") } ]
+      []
+      (EApp (EVar (Lower "p"), [ EVar (Lower "x") ]))
+  in
+  let result = Smt.translate_expr config_native env expr in
+  check bool "native forall binder" true (contains result "(forall ((x D))");
+  check bool "no grounded instance" false (contains result "(p D_0)")
+
+let test_ground_cap_fallback () =
+  (* Five binders at bound 4 = 1024 > cap 256 -> native fallback. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "D" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "r5"
+         (Types.TyFunc
+            ( [
+                Types.TyDomain "D";
+                Types.TyDomain "D";
+                Types.TyDomain "D";
+                Types.TyDomain "D";
+                Types.TyDomain "D";
+              ],
+              Some Types.TyBool ))
+         Ast.dummy_loc ~chapter:0
+  in
+  let mkp n = Ast.{ param_name = Lower n; param_type = TName (Upper "D") } in
+  let expr =
+    Ast.make_forall
+      [ mkp "a"; mkp "b"; mkp "c"; mkp "d"; mkp "e" ]
+      []
+      (EApp
+         ( EVar (Lower "r5"),
+           List.map
+             (fun n -> Ast.EVar (Ast.Lower n))
+             [ "a"; "b"; "c"; "d"; "e" ] ))
+  in
+  let config_g4 =
+    Smt.make_config ~bound:4 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true ()
+  in
+  let result = Smt.translate_expr config_g4 env expr in
+  check bool "fell back to native forall" true
+    (contains result "(forall ((a D)")
+
+let grounding_tests =
+  [
+    test_case "forall over domain grounds to conjunction" `Quick
+      test_ground_forall_domain;
+    test_case "exists over domain grounds to disjunction" `Quick
+      test_ground_exists_domain;
+    test_case "GIn membership becomes per-instance antecedent" `Quick
+      test_ground_gin_membership;
+    test_case "partial grounding leaves Nat binder native" `Quick
+      test_ground_partial_nat;
+    test_case "grounding disabled emits native quantifier" `Quick
+      test_ground_disabled_is_native;
+    test_case "over-cap quantifier falls back to native" `Quick
+      test_ground_cap_fallback;
+  ]
+
 let () =
   run "SMT"
     [
@@ -3122,4 +3289,5 @@ let () =
       ("bug_finding", bug_finding_tests);
       ("aggregates", aggregate_tests);
       ("entailment", entailment_tests);
+      ("grounding", grounding_tests);
     ]

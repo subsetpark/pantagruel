@@ -55,8 +55,8 @@ let parse_pant_file path =
     fails. Test-specific baseline: bound 3, steps 1 (CLI default is steps 5),
     guards injected. Used by every Layer-1, Layer-2, and fuzz test that needs
     the full translator output. *)
-let translate_to_queries (doc : Ast.document) : (Smt.query list, string) result
-    =
+let translate_to_queries ?(ground_quantifiers = true) (doc : Ast.document) :
+    (Smt.query list, string) result =
   let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
   match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
   | Error e -> Error (Collect.show_collect_error e)
@@ -67,6 +67,7 @@ let translate_to_queries (doc : Ast.document) : (Smt.query list, string) result
           let domain_bounds = Smt.compute_domain_bounds 3 env in
           let config =
             Smt.make_config ~bound:3 ~steps:1 ~domain_bounds ~inject_guards:true
+              ~ground_quantifiers ()
           in
           Ok (Smt.generate_queries config env doc))
 

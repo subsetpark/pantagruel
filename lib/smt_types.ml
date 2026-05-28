@@ -7,6 +7,14 @@ type config = {
   steps : int;
   domain_bounds : int Env.StringMap.t;
   inject_guards : bool;
+  ground_quantifiers : bool;
+      (** When true, quantifiers whose binders range over finite domain sorts
+          are expanded ("grounded") into quantifier-free conjunctions /
+          disjunctions over the enumerated domain elements, instead of being
+          emitted as native SMT [forall]/[exists]. This trades a larger formula
+          for a quantifier-free one, which the solver decides far more reliably
+          (no dependence on quantifier-instantiation heuristics) for both sat-
+          and unsat-seeking checks. *)
   quant_bound : string list;
       (** Accumulated quantifier-bound variable names from enclosing scopes.
           Used by [collect_body_guards] so that guard injection does not
@@ -17,8 +25,22 @@ type config = {
     nullary constant counts). [quant_bound] is internal traversal state — use
     [make_config] to construct. *)
 
-let make_config ~bound ~steps ~domain_bounds ~inject_guards =
-  { bound; steps; domain_bounds; inject_guards; quant_bound = [] }
+(** Maximum number of grounded instances a single quantifier node may expand to.
+    Above this, the node falls back to a native [forall]/[exists] (with a
+    visible SMT comment) rather than expanding, bounding formula blow-up from
+    high-arity / high-bound quantifiers. *)
+let ground_instance_cap = 256
+
+let make_config ~bound ~steps ~domain_bounds ~inject_guards
+    ?(ground_quantifiers = true) () =
+  {
+    bound;
+    steps;
+    domain_bounds;
+    inject_guards;
+    ground_quantifiers;
+    quant_bound = [];
+  }
 
 (** Fresh uninterpreted constants for non-exhaustive cond else-branches. When a
     cond's last arm guard is not [true], we emit a fresh constant of the
