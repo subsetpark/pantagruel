@@ -37,6 +37,9 @@ import {
   type AssumptionEnv,
   createAssumptionEnv,
   enterFrame,
+  exitFrame,
+  type Fact,
+  pushFact,
 } from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
 import { lowerExpr } from "./ir-emit.js";
@@ -65,6 +68,11 @@ import {
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
+import {
+  negateFact,
+  recognizeNarrowingFromSwitchCase,
+  recognizeNarrowingPredicate,
+} from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -116,6 +124,7 @@ export interface L1BuildContext {
   state: SymbolicState | undefined;
   supply: UniqueSupply;
   env: AssumptionEnv;
+  recognitionHook?: (env: AssumptionEnv, location: string) => void;
 }
 
 export type L1BuildResult = IR1Expr | { unsupported: string };
@@ -127,13 +136,37 @@ export function createL1AssumptionEnv(): AssumptionEnv {
 }
 
 export function snapshotAssumptionEnv(ctx: L1BuildContext): AssumptionEnv {
-  return ctx.env;
+  return { frames: ctx.env.frames.map((frame) => new Set(frame)) };
 }
 
 export const isL1Unsupported = (
   r: L1BuildResult,
 ): r is { unsupported: string } =>
   typeof r === "object" && r !== null && "unsupported" in r;
+
+function withNarrowingFrame<T>(
+  ctx: L1BuildContext,
+  location: string,
+  facts: readonly (Fact | null)[],
+  build: () => T,
+): T {
+  const env = (ctx as { env?: L1BuildContext["env"] }).env;
+  if (env === undefined) {
+    return build();
+  }
+  enterFrame(env);
+  try {
+    for (const fact of facts) {
+      if (fact !== null) {
+        pushFact(env, fact);
+      }
+    }
+    ctx.recognitionHook?.(env, location);
+    return build();
+  } finally {
+    exitFrame(env);
+  }
+}
 
 export function tryBuildBuiltinCall(
   expr: ts.CallExpression,
@@ -2294,6 +2327,7 @@ function buildFromIfStatement(
 
   const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
   let current: ts.IfStatement = stmt;
+  const elsePathFacts: Fact[] = [];
   while (true) {
     if (!current.elseStatement) {
       return {
@@ -2301,6 +2335,10 @@ function buildFromIfStatement(
           "if-without-else cannot lower to value-position cond (need both branches)",
       };
     }
+    const currentFact = recognizeNarrowingPredicate(
+      current.expression,
+      ctx.checker,
+    );
     const guard = buildSubExpr(current.expression, ctx);
     if (isL1Unsupported(guard)) {
       return guard;
@@ -2314,14 +2352,23 @@ function buildFromIfStatement(
         unsupported: "if-then branch must contain a single return-with-value",
       };
     }
-    const thenValue = buildSubExpr(thenExpr, ctx);
+    const thenValue = withNarrowingFrame(
+      ctx,
+      "if.then",
+      [...elsePathFacts, currentFact],
+      () => buildSubExpr(thenExpr, ctx),
+    );
     if (isL1Unsupported(thenValue)) {
       return thenValue;
     }
     arms.push([guard, thenValue] as const);
 
     // Else: another IfStatement (chain) or a terminal block-with-return.
+    const elseFact = currentFact === null ? null : negateFact(currentFact);
     if (ts.isIfStatement(current.elseStatement)) {
+      if (elseFact !== null) {
+        elsePathFacts.push(elseFact);
+      }
       current = current.elseStatement;
       continue;
     }
@@ -2334,7 +2381,12 @@ function buildFromIfStatement(
         unsupported: "if-else branch must contain a single return-with-value",
       };
     }
-    const elseValue = buildSubExpr(elseExpr, ctx);
+    const elseValue = withNarrowingFrame(
+      ctx,
+      "if.else",
+      [...elsePathFacts, elseFact],
+      () => buildSubExpr(elseExpr, ctx),
+    );
     if (isL1Unsupported(elseValue)) {
       return elseValue;
     }
@@ -2396,13 +2448,23 @@ function buildFromSwitchStatement(
   // M1 only supports return-cases; break/throw cases are rejected
   // (no coherent value-position lowering).
   const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
+  const caseFacts: Fact[] = [];
   for (let i = 0; i < defaultIdx; i++) {
     const clause = clauses[i] as ts.CaseClause;
     const labelL1 = buildCaseLabel(clause.expression, ctx);
     if (isL1Unsupported(labelL1)) {
       return labelL1;
     }
-    const value = lowerCaseReturnValue(clause, ctx);
+    const caseFact = recognizeNarrowingFromSwitchCase(
+      stmt.expression,
+      clause.expression,
+    );
+    if (caseFact !== null) {
+      caseFacts.push(caseFact);
+    }
+    const value = withNarrowingFrame(ctx, "switch.case", [caseFact], () =>
+      lowerCaseReturnValue(clause, ctx),
+    );
     if (value === null) {
       return {
         unsupported:
@@ -2417,7 +2479,12 @@ function buildFromSwitchStatement(
 
   // Default clause.
   const defaultClause = clauses[defaultIdx] as ts.DefaultClause;
-  const otherwise = lowerCaseReturnValue(defaultClause, ctx);
+  const otherwise = withNarrowingFrame(
+    ctx,
+    "switch.default",
+    caseFacts.map(negateFact),
+    () => lowerCaseReturnValue(defaultClause, ctx),
+  );
   if (otherwise === null) {
     return {
       unsupported: "switch default must end with `return EXPR`",

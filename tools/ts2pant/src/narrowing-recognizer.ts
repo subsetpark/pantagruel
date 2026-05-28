@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { Fact } from "./assumption-env.js";
+import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import {
   isTranslateExprUnsupported,
@@ -126,4 +127,18 @@ export function recognizeNarrowingFromSwitchCase(
   caseLabel: ts.Expression,
 ): Fact | null {
   return discriminantFactFromParts(switchTest, caseLabel);
+}
+
+export function negateFact(fact: Fact): Fact {
+  if (fact.kind === "discriminant") {
+    return {
+      ...fact,
+      literal: `!(${fact.literal})`,
+    };
+  }
+  const ast = getAst();
+  return {
+    kind: "predicate",
+    testExpr: ast.unop(ast.opNot(), fact.testExpr),
+  };
 }

@@ -1,6 +1,12 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { AssumptionEnv } from "./assumption-env.js";
+import {
+  type AssumptionEnv,
+  enterFrame,
+  exitFrame,
+  type Fact,
+  pushFact,
+} from "./assumption-env.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
@@ -57,6 +63,10 @@ import {
   type ScalarSsaEarlyExitPropertyInput,
 } from "./ir1-ssa-scalars.js";
 import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
+import {
+  negateFact,
+  recognizeNarrowingPredicate,
+} from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -1069,6 +1079,8 @@ export interface TranslateBodyOptions {
    * signature and body-emitted applications.
    */
   paramNameMap?: ReadonlyMap<string, string> | undefined;
+  assumptionEnv?: AssumptionEnv | undefined;
+  recognitionHook?: (env: AssumptionEnv, location: string) => void;
 }
 
 /**
@@ -1086,6 +1098,8 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
     declarations,
     synthCell,
     paramNameMap,
+    assumptionEnv,
+    recognitionHook,
   } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const program = sourceFile.getProject().getProgram().compilerObject;
@@ -1195,6 +1209,8 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       paramNames,
       synthCell,
       program,
+      assumptionEnv,
+      recognitionHook,
     );
   } else {
     return translateMutatingBody(
@@ -1206,6 +1222,8 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       declarations ?? [],
       synthCell,
       program,
+      assumptionEnv,
+      recognitionHook,
     );
   }
 }
@@ -1219,6 +1237,8 @@ function translatePureBody(
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
   program?: ts.Program,
+  suppliedEnv?: AssumptionEnv,
+  recognitionHook?: (env: AssumptionEnv, location: string) => void,
 ): PropResult[] {
   const ast = getAst();
 
@@ -1233,7 +1253,7 @@ function translatePureBody(
   }
 
   const supply = makeUniqueSupply(synthCell, program);
-  const env = createL1AssumptionEnv();
+  const env = suppliedEnv ?? createL1AssumptionEnv();
 
   // M4 Patch 5: functor-lift on the if-conversion shape
   //   `if (x == null) return []; return [f(x)];`
@@ -1372,6 +1392,13 @@ function translatePureBody(
     (ts.isExpression(extracted.returnExpr) &&
       isL1ConditionalForm(extracted.returnExpr, checker));
   if (prelude.arms.length > 0 || l1IsConditionalReturn) {
+    if (prelude.fallthroughFacts.length > 0) {
+      enterFrame(env);
+      for (const fact of prelude.fallthroughFacts) {
+        pushFact(env, fact);
+      }
+      recognitionHook?.(env, "early-return.fallthrough");
+    }
     const l1Ctx = {
       checker,
       strategy,
@@ -1379,103 +1406,113 @@ function translatePureBody(
       state: undefined as SymbolicState | undefined,
       supply,
       env,
+      ...(recognitionHook === undefined ? {} : { recognitionHook }),
     };
     let bodyOpaque: OpaqueExpr;
-    if (l1IsConditionalReturn) {
-      // Build the conditional terminal as L1 first, then merge prelude
-      // early-return arms at the OpaqueExpr layer. When the L1 terminal is
-      // itself a cond we
-      // splice its arms in to keep the output flat (matching the
-      // legacy single-cond shape).
-      const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
-      if (isL1Unsupported(terminalL1)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — ${terminalL1.unsupported}`,
-          },
-        ];
-      }
-      if (terminalL1.kind === "cond") {
-        const armsOpaque: Array<[OpaqueExpr, OpaqueExpr]> = [
-          ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-          ...terminalL1.arms.map(
-            ([g, v]) =>
-              [lowerL1ToOpaque(g), lowerL1ToOpaque(v)] as [
-                OpaqueExpr,
-                OpaqueExpr,
-              ],
-          ),
-          [ast.litBool(true), lowerL1ToOpaque(terminalL1.otherwise)] as [
-            OpaqueExpr,
-            OpaqueExpr,
-          ],
-        ];
-        bodyOpaque = ast.cond(armsOpaque);
-      } else {
-        const terminalOpaque = lowerL1ToOpaque(terminalL1);
-        if (prelude.arms.length === 0) {
-          bodyOpaque = terminalOpaque;
-        } else {
-          bodyOpaque = ast.cond([
-            ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-            [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
-          ]);
+    try {
+      if (l1IsConditionalReturn) {
+        // Build the conditional terminal as L1 first, then merge prelude
+        // early-return arms at the OpaqueExpr layer. When the L1 terminal is
+        // itself a cond we
+        // splice its arms in to keep the output flat (matching the
+        // legacy single-cond shape).
+        const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
+        if (isL1Unsupported(terminalL1)) {
+          return [
+            {
+              kind: "unsupported",
+              reason: `${functionName} — ${terminalL1.unsupported}`,
+            },
+          ];
         }
-      }
-    } else {
-      // Arms-only path: terminal is a plain expression that we route
-      // through `buildIR` (the canonical pure path) and merge with the
-      // prelude arms at the OpaqueExpr layer. Mirror the plain-return
-      // path's legacy fallback so adding a prelude arm doesn't regress
-      // a function whose terminal expression only translates through
-      // `translateBodyExpr` (`%`, `**`, raw array literals, etc.).
-      if (!ts.isExpression(extracted.returnExpr)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — unsupported pure return terminal`,
-          },
-        ];
-      }
-      const ir = buildIR(
-        extracted.returnExpr,
-        checker,
-        strategy,
-        prelude.scopedParams,
-        supply,
-      );
-      let terminalOpaque: OpaqueExpr;
-      if (isBuildUnsupported(ir)) {
-        const legacy = translateBodyExpr(
+        if (terminalL1.kind === "cond") {
+          const armsOpaque: Array<[OpaqueExpr, OpaqueExpr]> = [
+            ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            ...terminalL1.arms.map(
+              ([g, v]) =>
+                [lowerL1ToOpaque(g), lowerL1ToOpaque(v)] as [
+                  OpaqueExpr,
+                  OpaqueExpr,
+                ],
+            ),
+            [ast.litBool(true), lowerL1ToOpaque(terminalL1.otherwise)] as [
+              OpaqueExpr,
+              OpaqueExpr,
+            ],
+          ];
+          bodyOpaque = ast.cond(armsOpaque);
+        } else {
+          const terminalOpaque = lowerL1ToOpaque(terminalL1);
+          if (prelude.arms.length === 0) {
+            bodyOpaque = terminalOpaque;
+          } else {
+            bodyOpaque = ast.cond([
+              ...prelude.arms.map(
+                ([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr],
+              ),
+              [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+            ]);
+          }
+        }
+      } else {
+        // Arms-only path: terminal is a plain expression that we route
+        // through `buildIR` (the canonical pure path) and merge with the
+        // prelude arms at the OpaqueExpr layer. Mirror the plain-return
+        // path's legacy fallback so adding a prelude arm doesn't regress
+        // a function whose terminal expression only translates through
+        // `translateBodyExpr` (`%`, `**`, raw array literals, etc.).
+        if (!ts.isExpression(extracted.returnExpr)) {
+          return [
+            {
+              kind: "unsupported",
+              reason: `${functionName} — unsupported pure return terminal`,
+            },
+          ];
+        }
+        const ir = buildIR(
           extracted.returnExpr,
           checker,
           strategy,
           prelude.scopedParams,
-          undefined,
           supply,
         );
-        if (isBodyUnsupported(legacy) || "effect" in legacy) {
-          const reason = isBodyUnsupported(legacy)
-            ? legacy.unsupported
-            : `${functionName} — collection mutation in pure return position`;
-          return [
-            {
-              kind: "unsupported",
-              reason: ir.unsupported.startsWith("unsupported pure expression")
-                ? reason
-                : ir.unsupported,
-            },
-          ];
+        let terminalOpaque: OpaqueExpr;
+        if (isBuildUnsupported(ir)) {
+          const legacy = translateBodyExpr(
+            extracted.returnExpr,
+            checker,
+            strategy,
+            prelude.scopedParams,
+            undefined,
+            supply,
+            env,
+          );
+          if (isBodyUnsupported(legacy) || "effect" in legacy) {
+            const reason = isBodyUnsupported(legacy)
+              ? legacy.unsupported
+              : `${functionName} — collection mutation in pure return position`;
+            return [
+              {
+                kind: "unsupported",
+                reason: ir.unsupported.startsWith("unsupported pure expression")
+                  ? reason
+                  : ir.unsupported,
+              },
+            ];
+          }
+          terminalOpaque = bodyExpr(legacy);
+        } else {
+          terminalOpaque = lowerExpr(ir);
         }
-        terminalOpaque = bodyExpr(legacy);
-      } else {
-        terminalOpaque = lowerExpr(ir);
+        bodyOpaque = ast.cond([
+          ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+          [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+        ]);
       }
-      bodyOpaque = ast.cond([
-        ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-        [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
-      ]);
+    } finally {
+      if (prelude.fallthroughFacts.length > 0) {
+        exitFrame(env);
+      }
     }
     rhs = bodyOpaque;
   } else if (ts.isExpression(extracted.returnExpr)) {
@@ -1504,6 +1541,7 @@ function translatePureBody(
         prelude.scopedParams,
         undefined,
         supply,
+        env,
       );
       if (isBodyUnsupported(legacy) || "effect" in legacy) {
         const reason = isBodyUnsupported(legacy)
@@ -2366,6 +2404,7 @@ interface LoweredPreludeBindings {
   ruleDecls: PropResult[];
   scopedParams: ReadonlyMap<string, string>;
   arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
+  fallthroughFacts: Fact[];
 }
 
 function lowerPreludeBindings(
@@ -2469,6 +2508,7 @@ function lowerPreludeBindings(
         letStmts: IR1Stmt[];
         ruleDecls: PropResult[];
         arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
+        fallthroughFacts: Fact[];
       }
     | { tag: "error"; error: string };
 
@@ -2522,6 +2562,10 @@ function lowerPreludeBindings(
           letStmts: acc.letStmts,
           ruleDecls: acc.ruleDecls,
           arms: [...acc.arms, [predRes.value, valRes.value] as const],
+          fallthroughFacts: [
+            ...acc.fallthroughFacts,
+            ...earlyReturnFallthroughFacts(binding.predicateExpr, checker),
+          ],
         };
       }
       if (binding.kind === "reassign") {
@@ -2549,6 +2593,7 @@ function lowerPreludeBindings(
           letStmts: [...acc.letStmts, ir1Assign(ir1Var(localName), value)],
           ruleDecls: acc.ruleDecls,
           arms: acc.arms,
+          fallthroughFacts: acc.fallthroughFacts,
         };
       }
       if (binding.kind === "stmt") {
@@ -2570,6 +2615,7 @@ function lowerPreludeBindings(
           letStmts: [...acc.letStmts, built],
           ruleDecls: acc.ruleDecls,
           arms: acc.arms,
+          fallthroughFacts: acc.fallthroughFacts,
         };
       }
       const localName = allocLocalBindingName(
@@ -2639,6 +2685,7 @@ function lowerPreludeBindings(
         ],
         letStmts: [...acc.letStmts, ir1Let(localName, initExpr)],
         arms: acc.arms,
+        fallthroughFacts: acc.fallthroughFacts,
       };
     },
     {
@@ -2647,6 +2694,7 @@ function lowerPreludeBindings(
       letStmts: [],
       ruleDecls: [],
       arms: [],
+      fallthroughFacts: [],
     },
   );
 
@@ -2658,7 +2706,16 @@ function lowerPreludeBindings(
     ruleDecls: folded.ruleDecls,
     scopedParams: folded.scopedParams,
     arms: folded.arms,
+    fallthroughFacts: folded.fallthroughFacts,
   };
+}
+
+function earlyReturnFallthroughFacts(
+  predicateExpr: ts.Expression,
+  checker: ts.TypeChecker,
+): Fact[] {
+  const fact = recognizeNarrowingPredicate(predicateExpr, checker);
+  return fact === null ? [] : [negateFact(fact)];
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
@@ -4806,12 +4863,14 @@ function translateMutatingBody(
   declarations: PantDeclaration[],
   synthCell?: SynthCell,
   program?: ts.Program,
+  suppliedEnv?: AssumptionEnv,
+  recognitionHook?: (env: AssumptionEnv, location: string) => void,
 ): PropResult[] {
   if (!node.body) {
     return [];
   }
   const localRuleDecls: PropResult[] = [];
-  const env = createL1AssumptionEnv();
+  const env = suppliedEnv ?? createL1AssumptionEnv();
 
   const lowered = appendFramesForUnmodifiedRules(
     lowerSupportedSsaMutatingStatements(Array.from(node.body.statements), {
@@ -4825,6 +4884,7 @@ function translateMutatingBody(
       declarations,
       localRuleDecls,
       env,
+      ...(recognitionHook === undefined ? {} : { recognitionHook }),
     }),
     declarations,
   );
@@ -4847,6 +4907,7 @@ function lowerSupportedSsaMutatingStatements(
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
     env: AssumptionEnv;
+    recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1SsaBodyLowerResult {
   const tailReturnValue = extractTailReturnValue(stmts, ctx.checker);
@@ -5097,6 +5158,7 @@ function lowerSupportedSsaMutatingBlock(
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
     env: AssumptionEnv;
+    recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1SsaBodyLowerResult {
   const body = ts.factory.createBlock(stmts, true);
@@ -5109,6 +5171,7 @@ function lowerSupportedSsaMutatingBlock(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.recognitionHook,
   );
 
   if (isUnsupported(ssaBody)) {
@@ -5182,6 +5245,7 @@ function buildSupportedSsaMutatingBody(
   supply: UniqueSupply,
   env: AssumptionEnv,
   localRuleDecls?: PropResult[],
+  recognitionHook?: (env: AssumptionEnv, location: string) => void,
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
@@ -5220,6 +5284,7 @@ function buildSupportedSsaMutatingBody(
           state,
           supply,
           env,
+          ...(recognitionHook === undefined ? {} : { recognitionHook }),
         },
       );
       if (built !== null) {
@@ -5237,6 +5302,7 @@ function buildSupportedSsaMutatingBody(
           state,
           supply,
           env,
+          ...(recognitionHook === undefined ? {} : { recognitionHook }),
         },
       );
       if (isUnsupported(fixedPointBuilt)) {
@@ -5327,6 +5393,7 @@ function buildSupportedSsaMutatingBody(
       supply,
       env,
       ...(localRuleDecls === undefined ? {} : { localRuleDecls }),
+      ...(recognitionHook === undefined ? {} : { recognitionHook }),
     });
     if (isUnsupported(built)) {
       return built;
@@ -5352,6 +5419,7 @@ function buildSupportedSsaStatement(
     supply: UniqueSupply;
     env: AssumptionEnv;
     localRuleDecls?: PropResult[];
+    recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1Stmt | { unsupported: string } {
   if (
@@ -5382,6 +5450,7 @@ function buildSupportedSsaStatement(
       ctx.supply,
       ctx.env,
       ctx.localRuleDecls,
+      ctx.recognitionHook,
     );
     return body;
   }
