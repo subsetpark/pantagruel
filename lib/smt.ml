@@ -1402,6 +1402,15 @@ let build_value_terms config env (params : param list) =
   in
   param_terms @ func_terms
 
+(** Append a (check-sat) command followed by a (get-info :reason-unknown) query.
+    The latter is harmless when the result is sat/unsat (Z3 returns an empty
+    reason) but gives a meaningful diagnostic — e.g. "(incomplete (theory
+    array))" — when the result is unknown, instead of leaving the parser to
+    scrape a reason out of unrelated trailing commands. *)
+let append_check_sat buf =
+  Buffer.add_string buf "(check-sat)\n";
+  Buffer.add_string buf "(get-info :reason-unknown)\n"
+
 (** Append (get-value ...) command to buffer if value_terms is non-empty *)
 let append_get_value buf value_terms =
   match value_terms with
@@ -1518,7 +1527,7 @@ let generate_contradiction_query config env action =
         (translate_proposition post_config env p.value))
     action.a_propositions;
   let value_terms = build_value_terms config env action.a_params in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   Buffer.add_string buf "(get-unsat-core)\n";
   append_get_value buf value_terms;
   {
@@ -1572,7 +1581,7 @@ let generate_invariant_query config env ~all_invariants ~index
   let inv_primed = translate_proposition config env primed_inv.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_primed);
   let value_terms = build_value_terms config env action.a_params in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "invariant:%s:%d" action.a_label index;
@@ -1625,7 +1634,7 @@ let generate_precondition_query config env invariant_props action =
         (Printf.sprintf "Precondition: %s" (Pretty.str_expr e))
         (translate_precondition config env e))
     precond_exprs;
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   Buffer.add_string buf "(get-unsat-core)\n";
   {
     name = Printf.sprintf "precondition:%s" action.a_label;
@@ -1691,7 +1700,7 @@ let generate_invariant_consistency_query config env invariant_props =
         (translate_proposition config env inv.value))
     invariant_props;
   let value_terms = build_invariant_value_terms config env in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   Buffer.add_string buf "(get-unsat-core)\n";
   append_get_value buf value_terms;
   {
@@ -1729,7 +1738,7 @@ let generate_init_consistency_query config env init_props =
         (translate_proposition config env prop.value))
     init_props;
   let value_terms = build_invariant_value_terms config env in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   Buffer.add_string buf "(get-unsat-core)\n";
   append_get_value buf value_terms;
   {
@@ -1766,7 +1775,7 @@ let generate_init_invariant_query config env init_props ~index
   let inv_smt = translate_proposition config env inv.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_smt);
   let value_terms = build_invariant_value_terms config env in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "init-invariant:%d" index;
@@ -2029,7 +2038,7 @@ let generate_bmc_query config env init_props actions ~inv_index
   Buffer.add_string buf
     (Printf.sprintf "(assert (or %s))\n" (String.concat " " negated_steps));
   let value_terms = build_bmc_value_terms config env steps in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "bmc-invariant:%d" inv_index;
@@ -2168,7 +2177,7 @@ let generate_bmc_deadlock_query config env init_props invariant_props actions
   (* Assert all actions disabled at step k *)
   Buffer.add_string buf (generate_all_actions_disabled config env actions steps);
   let value_terms = build_bmc_value_terms config env steps in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = "bmc-deadlock";
@@ -2348,7 +2357,7 @@ let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
   Buffer.add_string buf "\n; --- Exhaustiveness (negated) ---\n";
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" smt_exhaustive);
   let value_terms = build_cond_value_terms config env cond in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "cond-exhaustiveness:%d" index;
@@ -2381,7 +2390,7 @@ let generate_invariant_entailment_query config env invariant_props ~index
   let goal_smt = translate_proposition config env goal.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" goal_smt);
   let value_terms = build_invariant_value_terms config env in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "entailment:invariant:%d" index;
@@ -2432,7 +2441,7 @@ let generate_action_entailment_query config env ~all_invariants ~index
   let goal_smt = translate_proposition config env goal.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" goal_smt);
   let value_terms = build_value_terms config env action.a_params in
-  Buffer.add_string buf "(check-sat)\n";
+  append_check_sat buf;
   append_get_value buf value_terms;
   {
     name = Printf.sprintf "entailment:%s:%d" action.a_label index;

@@ -363,6 +363,16 @@ let read_with_timeout fd timeout =
   in
   loop ()
 
+(** Extract the reason-unknown string from a (get-info :reason-unknown) response
+    sexp: (:reason-unknown "..."). Returns None if not such a sexp or if the
+    reason is empty. *)
+let extract_reason_unknown (sexp : Sexp.t) =
+  match sexp with
+  | List [ Atom ":reason-unknown"; Atom reason ] when String.trim reason <> ""
+    ->
+      Some (String.trim reason)
+  | List _ | Atom _ -> None
+
 (** Parse raw solver output into a [solver_result]. *)
 let parse_solver_output output =
   if String.length output = 0 then SolverError "No output from solver"
@@ -374,6 +384,10 @@ let parse_solver_output output =
           List.find_map
             (fun (s : Sexp.t) ->
               match s with
+              (* skip (error ...) from e.g. (get-unsat-core) on a sat result,
+                 and the (:reason-unknown "") info response *)
+              | List (Atom "error" :: _) | List (Atom ":reason-unknown" :: _) ->
+                  None
               | List _ -> Some (parse_get_value_sexp s)
               | Atom _ -> None)
             rest
@@ -385,7 +399,10 @@ let parse_solver_output output =
           List.find_map
             (fun (s : Sexp.t) ->
               match s with
-              | List (Atom "error" :: _) -> None
+              (* skip (error ...) and the (:reason-unknown "") info response
+                 that now precedes the core in the output *)
+              | List (Atom "error" :: _) | List (Atom ":reason-unknown" :: _) ->
+                  None
               | List _ -> Some (parse_unsat_core_sexp s)
               | Atom _ -> None)
             rest
@@ -393,8 +410,12 @@ let parse_solver_output output =
         in
         Unsat core
     | Atom "unknown" :: rest ->
-        let reason = String.concat " " (List.map sexp_to_string rest) in
-        Unknown (if reason = "" then "unknown" else reason)
+        (* Prefer Z3's own (get-info :reason-unknown) diagnostic. Trailing
+           commands like (get-unsat-core) error on a non-unsat result and
+           (get-value ...) dumps a candidate model — neither belongs in the
+           reason, so we don't scrape the whole tail. *)
+        let reason = List.find_map extract_reason_unknown rest in
+        Unknown (Option.value reason ~default:"unknown")
     | List (Atom "error" :: _) :: _ -> SolverError output
     | List _ :: _ | Atom _ :: _ | [] ->
         SolverError (Printf.sprintf "Unexpected solver output: %s" output)
