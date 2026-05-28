@@ -36,6 +36,7 @@ import ts from "typescript";
 import {
   type AssumptionEnv,
   createAssumptionEnv,
+  discriminantFactsInScope,
   enterFrame,
   exitFrame,
   type Fact,
@@ -43,6 +44,7 @@ import {
   queryFact,
 } from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
+import { renderDefinednessObligation } from "./definedness-obligation.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -1472,6 +1474,7 @@ export function buildL1MemberAccess(
     queryDiscriminatedUnionFieldDischarge(
       ctx,
       receiverNode as ts.Expression,
+      receiverL1,
       fieldName,
       qualified,
     ),
@@ -1506,6 +1509,7 @@ function receiverTypeForFieldAccess(
 function queryDiscriminatedUnionFieldDischarge(
   ctx: L1BuildContext,
   receiverNode: ts.Expression,
+  receiverL1: IR1Expr,
   fieldName: string,
   qualifiedName: string,
 ): boolean | undefined {
@@ -1524,21 +1528,42 @@ function queryDiscriminatedUnionFieldDischarge(
       continue;
     }
     const receiver = unwrapTransparentExpression(receiverNode).getText();
-    return field.variantKeys.some((variantKey) => {
-      const variant = entry.variants.find(
-        (candidate) => candidate.key === variantKey,
-      );
-      if (!variant) {
-        return false;
-      }
-      return queryFact(ctx.env, {
+    const variants = field.variantKeys
+      .map((variantKey) =>
+        entry.variants.find((candidate) => candidate.key === variantKey),
+      )
+      .filter((variant): variant is (typeof entry.variants)[number] => {
+        return variant !== undefined;
+      });
+    if (variants.length === 0) {
+      continue;
+    }
+    const discRule = fieldRuleName(entry.domain, entry.discriminant);
+    const inScope = discriminantFactsInScope(
+      ctx.env,
+      receiver,
+      entry.discriminant,
+    );
+    const loweredReceiver = lowerExpr(lowerL1Expr(receiverL1));
+    ctx.supply.synthCell?.definednessObligations.push(
+      renderDefinednessObligation({
+        receiver: loweredReceiver,
+        discRule,
+        requiredLiterals: variants.map((variant) =>
+          discriminantLiteralToFactLiteral(variant.literal),
+        ),
+        inScope,
+      }),
+    );
+    return variants.some((variant) =>
+      queryFact(ctx.env, {
         kind: "discriminant",
         receiver,
         property: entry.discriminant,
         literal: discriminantLiteralToFactLiteral(variant.literal),
         negated: false,
-      });
-    });
+      }),
+    );
   }
   return undefined;
 }
@@ -1953,6 +1978,7 @@ function buildL1MemberOrVarForLift(
       queryDiscriminatedUnionFieldDischarge(
         ctx,
         receiverForType,
+        receiverL1,
         stripped.name.text,
         qualified,
       ),
@@ -1993,6 +2019,7 @@ function buildL1MemberOrVarForLift(
       queryDiscriminatedUnionFieldDischarge(
         ctx,
         receiverForType,
+        receiverL1,
         fieldName,
         qualified,
       ),
@@ -2089,6 +2116,7 @@ export function tryRecognizeFunctorLift(
         // the request into the consumer document — shallow-copy the set
         // here and `synthCell.imports = new Set(snapshot)` on restore.
         imports: new Set(synthCell.imports),
+        definednessObligations: [...synthCell.definednessObligations],
       }
     : null;
   // The mutating-body property-write cache inside `buildL1MemberAccess`
@@ -2110,6 +2138,9 @@ export function tryRecognizeFunctorLift(
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
       synthCell.imports = new Set(synthSnapshot.imports);
+      synthCell.definednessObligations = [
+        ...synthSnapshot.definednessObligations,
+      ];
     }
     if (opaqueAliasesSnapshot !== null) {
       ctx.supply.opaqueAliases = new Map(opaqueAliasesSnapshot);

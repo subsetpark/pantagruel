@@ -1469,40 +1469,61 @@ function translatePureBody(
             },
           ];
         }
-        const ir = buildIR(
-          extracted.returnExpr,
+        let terminalOpaque: OpaqueExpr;
+        const terminalDefinednessSnapshot = supply.synthCell
+          ? [...supply.synthCell.definednessObligations]
+          : null;
+        const terminalL1 = buildL1SubExpr(extracted.returnExpr, {
           checker,
           strategy,
-          prelude.scopedParams,
+          paramNames: prelude.scopedParams,
+          state: makeSymbolicState(),
           supply,
-        );
-        let terminalOpaque: OpaqueExpr;
-        if (isBuildUnsupported(ir)) {
-          const legacy = translateBodyExpr(
+          env,
+        });
+        if (!isUnsupported(terminalL1)) {
+          terminalOpaque = lowerL1ToOpaque(terminalL1);
+        } else {
+          if (supply.synthCell && terminalDefinednessSnapshot) {
+            supply.synthCell.definednessObligations =
+              terminalDefinednessSnapshot;
+          }
+          const ir = buildIR(
             extracted.returnExpr,
             checker,
             strategy,
             prelude.scopedParams,
-            undefined,
             supply,
-            env,
           );
-          if (isBodyUnsupported(legacy) || "effect" in legacy) {
-            const reason = isBodyUnsupported(legacy)
-              ? legacy.unsupported
-              : `${functionName} — collection mutation in pure return position`;
-            return [
-              {
-                kind: "unsupported",
-                reason: ir.unsupported.startsWith("unsupported pure expression")
-                  ? reason
-                  : ir.unsupported,
-              },
-            ];
+          if (!isBuildUnsupported(ir)) {
+            terminalOpaque = lowerExpr(ir);
+          } else {
+            const legacy = translateBodyExpr(
+              extracted.returnExpr,
+              checker,
+              strategy,
+              prelude.scopedParams,
+              undefined,
+              supply,
+              env,
+            );
+            if (isBodyUnsupported(legacy) || "effect" in legacy) {
+              const reason = isBodyUnsupported(legacy)
+                ? legacy.unsupported
+                : `${functionName} — collection mutation in pure return position`;
+              return [
+                {
+                  kind: "unsupported",
+                  reason: ir.unsupported.startsWith(
+                    "unsupported pure expression",
+                  )
+                    ? reason
+                    : ir.unsupported,
+                },
+              ];
+            }
+            terminalOpaque = bodyExpr(legacy);
           }
-          terminalOpaque = bodyExpr(legacy);
-        } else {
-          terminalOpaque = lowerExpr(ir);
         }
         bodyOpaque = ast.cond([
           ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
@@ -2518,6 +2539,10 @@ function lowerPreludeBindings(
         return acc;
       }
       if (binding.kind === "earlyReturn") {
+        const currentFact = recognizeNarrowingPredicate(
+          binding.predicateExpr,
+          checker,
+        );
         const predRes = translateBindingInit(
           binding.predicateExpr,
           checker,
@@ -2530,29 +2555,40 @@ function lowerPreludeBindings(
         if ("error" in predRes) {
           return { tag: "error", error: predRes.error };
         }
-        const valRes =
-          binding.blockBindings.length === 0
-            ? translateBindingInit(
-                binding.valueExpr,
-                checker,
-                strategy,
-                acc.scopedParams,
-                state,
-                supply,
-                env,
-              )
-            : translateEarlyReturnBlockValue(
-                binding.blockBindings,
-                binding.valueExpr,
-                {
+        enterFrame(env);
+        let valRes: BindingInitResult;
+        try {
+          for (const fact of [...acc.fallthroughFacts, currentFact]) {
+            if (fact !== null) {
+              pushFact(env, fact);
+            }
+          }
+          valRes =
+            binding.blockBindings.length === 0
+              ? translateBindingInit(
+                  binding.valueExpr,
                   checker,
                   strategy,
-                  scopedParams: acc.scopedParams,
-                  state: state ?? makeSymbolicState(),
+                  acc.scopedParams,
+                  state,
                   supply,
                   env,
-                },
-              );
+                )
+              : translateEarlyReturnBlockValue(
+                  binding.blockBindings,
+                  binding.valueExpr,
+                  {
+                    checker,
+                    strategy,
+                    scopedParams: acc.scopedParams,
+                    state: state ?? makeSymbolicState(),
+                    supply,
+                    env,
+                  },
+                );
+        } finally {
+          exitFrame(env);
+        }
         if ("error" in valRes) {
           return { tag: "error", error: valRes.error };
         }
@@ -2564,7 +2600,7 @@ function lowerPreludeBindings(
           arms: [...acc.arms, [predRes.value, valRes.value] as const],
           fallthroughFacts: [
             ...acc.fallthroughFacts,
-            ...earlyReturnFallthroughFacts(binding.predicateExpr, checker),
+            ...(currentFact === null ? [] : [negateFact(currentFact)]),
           ],
         };
       }
@@ -2708,14 +2744,6 @@ function lowerPreludeBindings(
     arms: folded.arms,
     fallthroughFacts: folded.fallthroughFacts,
   };
-}
-
-function earlyReturnFallthroughFacts(
-  predicateExpr: ts.Expression,
-  checker: ts.TypeChecker,
-): Fact[] {
-  const fact = recognizeNarrowingPredicate(predicateExpr, checker);
-  return fact === null ? [] : [negateFact(fact)];
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };

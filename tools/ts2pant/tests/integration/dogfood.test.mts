@@ -449,6 +449,26 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "circleOnly",
       minChecks: 1,
     },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+      fn: "getRadius",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+      fn: "getOther",
+      minChecks: 2,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+      fn: "dispatch",
+      minChecks: 2,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+      fn: "circleOrZero",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {
@@ -482,4 +502,34 @@ describe("dogfood: @pant annotations entail", () => {
       },
     );
   }
+});
+
+describe("dogfood: DU definedness", () => {
+  const hasSolver = solverAvailable();
+
+  it(
+    "un-narrowed read is not entailed",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+        "readUnchecked",
+      );
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      const entailments = result.checks.filter((c) =>
+        c.message.startsWith("OK: Entailed:") ||
+        c.message.startsWith("FAIL: Not entailed:"),
+      );
+      assert.ok(
+        entailments.length >= 1,
+        `expected at least one entailment result, got ${entailments.length}`,
+      );
+      assert.equal(result.passed, false, result.output);
+      assert.ok(entailments.some((c) => !c.passed), result.output);
+    },
+  );
 });

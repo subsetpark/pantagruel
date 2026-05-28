@@ -5,7 +5,8 @@ import { getAst } from "./pant-wasm.js";
 export interface DefinednessObligationInput {
   receiver: OpaqueExpr;
   discRule: string;
-  requiredLiteral: string;
+  requiredLiteral?: string;
+  requiredLiterals?: readonly string[];
   inScope: readonly InScopeDiscriminantFact[];
 }
 
@@ -17,11 +18,17 @@ export function renderDefinednessObligation(
   input: DefinednessObligationInput,
 ): DefinednessObligation {
   const ast = getAst();
-  const consequent = discriminantEquality(
-    input.discRule,
-    input.receiver,
-    input.requiredLiteral,
+  const requiredLiterals =
+    input.requiredLiterals ??
+    (input.requiredLiteral ? [input.requiredLiteral] : []);
+  const consequent = disjoin(
+    requiredLiterals.map((literal) =>
+      discriminantEquality(input.discRule, input.receiver, literal),
+    ),
   );
+  if (consequent === null) {
+    throw new Error("definedness obligation requires at least one literal");
+  }
   const antecedents = input.inScope.map((fact) => {
     const equality = discriminantEquality(
       input.discRule,
@@ -56,6 +63,15 @@ function conjoin(exprs: readonly OpaqueExpr[]): OpaqueExpr | null {
   let out: OpaqueExpr | null = null;
   for (const expr of exprs) {
     out = out === null ? expr : ast.binop(ast.opAnd(), out, expr);
+  }
+  return out;
+}
+
+function disjoin(exprs: readonly OpaqueExpr[]): OpaqueExpr | null {
+  const ast = getAst();
+  let out: OpaqueExpr | null = null;
+  for (const expr of exprs) {
+    out = out === null ? expr : ast.binop(ast.opOr(), out, expr);
   }
   return out;
 }

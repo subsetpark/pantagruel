@@ -1219,6 +1219,7 @@ export interface SynthCell {
    * checks doesn't leak the import into the consumer document.
    */
   imports: Set<DepModuleName>;
+  definednessObligations: { text: string }[];
 }
 
 export function newSynthCell(
@@ -1233,6 +1234,7 @@ export function newSynthCell(
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
     imports: new Set(),
+    definednessObligations: [],
   };
   if (sourceFile !== undefined) {
     cell.sourceFile = sourceFile;
