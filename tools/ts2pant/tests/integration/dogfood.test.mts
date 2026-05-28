@@ -469,6 +469,16 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "circleOrZero",
       minChecks: 1,
     },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-corpus.ts"),
+      fn: "litWidth",
+      minChecks: 3,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-corpus.ts"),
+      fn: "ownerOf",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {
