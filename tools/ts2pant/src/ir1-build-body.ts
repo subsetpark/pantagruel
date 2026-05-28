@@ -27,7 +27,13 @@
  */
 
 import ts from "typescript";
-import type { AssumptionEnv } from "./assumption-env.js";
+import {
+  type AssumptionEnv,
+  enterFrame,
+  exitFrame,
+  type Fact,
+  pushFact,
+} from "./assumption-env.js";
 import type { IRBinop } from "./ir.js";
 import {
   type IR1Expr,
@@ -58,6 +64,10 @@ import {
   tryBuildL1PureSubExpression,
 } from "./ir1-build.js";
 import { substituteIR1StmtSubtree } from "./ir1-substitute.js";
+import {
+  negateFact,
+  recognizeNarrowingPredicate,
+} from "./narrowing-recognizer.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
   ambiguousFieldMsg,
@@ -107,6 +117,7 @@ export interface BuildBodyCtx {
   state: SymbolicState;
   supply: UniqueSupply;
   env: AssumptionEnv;
+  recognitionHook?: (env: AssumptionEnv, location: string) => void;
   /**
    * When set, this build is inside a foreach loop body. Carries the
    * TS names of iterator binders in scope so the recursive
@@ -137,6 +148,30 @@ export function isUnsupported<T>(
     x !== null &&
     "unsupported" in (x as Record<string, unknown>)
   );
+}
+
+function withNarrowingFrame<T>(
+  ctx: BuildBodyCtx,
+  location: string,
+  facts: readonly (Fact | null)[],
+  build: () => T,
+): T {
+  const env = (ctx as { env?: BuildBodyCtx["env"] }).env;
+  if (env === undefined) {
+    return build();
+  }
+  enterFrame(env);
+  try {
+    for (const fact of facts) {
+      if (fact !== null) {
+        pushFact(env, fact);
+      }
+    }
+    ctx.recognitionHook?.(env, location);
+    return build();
+  } finally {
+    exitFrame(env);
+  }
 }
 
 /**
@@ -970,14 +1005,22 @@ export function buildL1IfMutation(
     return guard;
   }
 
-  const thenBody = buildL1MutationBody(stmt.thenStatement, ctx);
+  const fact = recognizeNarrowingPredicate(stmt.expression, ctx.checker);
+  const thenBody = withNarrowingFrame(ctx, "if.then", [fact], () =>
+    buildL1MutationBody(stmt.thenStatement, ctx),
+  );
   if (isUnsupported(thenBody)) {
     return thenBody;
   }
 
   let elseBody: IR1Stmt | null = null;
   if (stmt.elseStatement) {
-    const e = buildL1MutationBody(stmt.elseStatement, ctx);
+    const e = withNarrowingFrame(
+      ctx,
+      "if.else",
+      [fact === null ? null : negateFact(fact)],
+      () => buildL1MutationBody(stmt.elseStatement!, ctx),
+    );
     if (isUnsupported(e)) {
       return e;
     }

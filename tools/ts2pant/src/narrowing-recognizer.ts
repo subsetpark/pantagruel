@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { Fact } from "./assumption-env.js";
+import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import {
   isTranslateExprUnsupported,
@@ -68,22 +69,33 @@ function discriminantFactFromParts(
   };
 }
 
-function discriminantFactFromEquality(expr: ts.BinaryExpression): Fact | null {
-  if (expr.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) {
-    return null;
-  }
+function discriminantFactFromEqualityOperands(
+  expr: ts.BinaryExpression,
+): Fact | null {
   return (
     discriminantFactFromParts(expr.left, expr.right) ??
     discriminantFactFromParts(expr.right, expr.left)
   );
 }
 
-/**
- * Recognize a TypeScript boolean test as a narrowing fact.
- *
- * `!==` is intentionally not mapped in Patch 2. The fact is for the opposite
- * branch, and Patch 4 owns the arm-specific negation scaffolding.
- */
+function discriminantFactFromEquality(expr: ts.BinaryExpression): Fact | null {
+  switch (expr.operatorToken.kind) {
+    case ts.SyntaxKind.EqualsEqualsEqualsToken:
+      return discriminantFactFromEqualityOperands(expr);
+    case ts.SyntaxKind.ExclamationEqualsEqualsToken: {
+      const fact = discriminantFactFromEqualityOperands(expr);
+      return fact === null ? null : negateFact(fact);
+    }
+    case ts.SyntaxKind.ExclamationEqualsToken: {
+      const fact = discriminantFactFromEqualityOperands(expr);
+      return fact === null ? null : negateFact(fact);
+    }
+    default:
+      return null;
+  }
+}
+
+/** Recognize a TypeScript boolean test as a narrowing fact. */
 export function recognizeNarrowingPredicate(
   test: ts.Expression,
   checker: ts.TypeChecker,
@@ -97,12 +109,6 @@ export function recognizeNarrowingPredicate(
     const fact = discriminantFactFromEquality(unwrapped);
     if (fact !== null) {
       return fact;
-    }
-    if (
-      unwrapped.operatorToken.kind ===
-      ts.SyntaxKind.ExclamationEqualsEqualsToken
-    ) {
-      return null;
     }
   }
 
@@ -126,4 +132,19 @@ export function recognizeNarrowingFromSwitchCase(
   caseLabel: ts.Expression,
 ): Fact | null {
   return discriminantFactFromParts(switchTest, caseLabel);
+}
+
+export function negateFact(fact: Fact): Fact {
+  if (fact.kind === "discriminant") {
+    const negated = /^!\((.*)\)$/u.exec(fact.literal);
+    return {
+      ...fact,
+      literal: negated === null ? `!(${fact.literal})` : negated[1]!,
+    };
+  }
+  const ast = getAst();
+  return {
+    kind: "predicate",
+    testExpr: ast.unop(ast.opNot(), fact.testExpr),
+  };
 }
