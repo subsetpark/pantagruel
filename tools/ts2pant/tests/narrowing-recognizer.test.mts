@@ -163,6 +163,10 @@ describe("narrowing-recognizer", () => {
     assert.equal(recognizeExpr("5 + 3"), null);
   });
 
+  it("unsupported boolean expression returns null", () => {
+    assert.equal(recognizeExpr('s.kind == "circle"'), null);
+  });
+
   it("switch case label produces DiscriminantFact", () => {
     const { switchTest, caseLabel } = switchParts();
 

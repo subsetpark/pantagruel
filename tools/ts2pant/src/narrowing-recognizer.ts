@@ -1,6 +1,5 @@
 import ts from "typescript";
 import type { Fact } from "./assumption-env.js";
-import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import {
   isTranslateExprUnsupported,
@@ -113,11 +112,12 @@ export function recognizeNarrowingPredicate(
     IntStrategy,
     new Map<string, string>(),
   );
+  if (isTranslateExprUnsupported(translated)) {
+    return null;
+  }
   return {
     kind: "predicate",
-    testExpr: isTranslateExprUnsupported(translated)
-      ? getAst().var(test.getText())
-      : translated,
+    testExpr: translated,
   };
 }
 
