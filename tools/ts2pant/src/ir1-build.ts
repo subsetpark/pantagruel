@@ -101,8 +101,8 @@ import {
 import {
   cellRegisterMap,
   cellRegisterName,
-  detectDiscriminatedUnion,
   type DiscriminantLiteral,
+  detectDiscriminatedUnion,
   fieldRuleName,
   isMapType,
   isSetType,
@@ -1517,7 +1517,9 @@ function queryDiscriminatedUnionFieldDischarge(
     if (fieldRuleName(entry.domain, fieldName) !== qualifiedName) {
       continue;
     }
-    const field = entry.fields.find((candidate) => candidate.name === fieldName);
+    const field = entry.fields.find(
+      (candidate) => candidate.name === fieldName,
+    );
     if (!field) {
       continue;
     }
