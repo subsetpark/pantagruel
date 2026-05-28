@@ -27,6 +27,7 @@ function solverAvailable(): boolean {
 // feature to build.
 
 const SRC = resolve(import.meta.dirname, "../../src");
+const FIXTURES = resolve(import.meta.dirname, "../fixtures/constructs");
 const PANT_TIMEOUT_MS = Number(
   process.env.TS2PANT_DOGFOOD_TIMEOUT_MS ?? 30_000,
 );
@@ -407,6 +408,21 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "prefixedDigitStem", minChecks: 1 },
     { file: "translate-types.ts", fn: "tupleDepModuleName", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyTupleSynth", minChecks: 1 },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
+      fn: "getRadius",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
+      fn: "dispatchOnKind",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
+      fn: "circleOnly",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {

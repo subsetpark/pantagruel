@@ -262,6 +262,18 @@ exports[`expressions-const-side-effectful.ts > constSetHas 1`] = `
 "module CONST_SET_HAS.\\n\\nconst-set-has s: [String], value: String => Bool.\\nx  => Bool.\\n\\n---\\n\\nx = (value in s).\\nconst-set-has s value = x.\\n"
 `;
 
+exports[`expressions-discriminant-narrowing.ts > circleOnly 1`] = `
+"module CIRCLE_ONLY.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\ncircle-only s1: Shape => Int.\\n\\n---\\n\\ncircle-only s1 = (cond shape--kind s1 ~= \\"circle\\" => 0, true => shape--r s1).\\n\\ncheck\\n\\ncircle-only s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, true => 0).\\n"
+`;
+
+exports[`expressions-discriminant-narrowing.ts > dispatchOnKind 1`] = `
+"module DISPATCH_ON_KIND.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\ndispatch-on-kind s1: Shape => Int.\\n\\n---\\n\\ndispatch-on-kind s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, shape--kind s1 = \\"square\\" => shape--s s1, true => 0).\\n\\ncheck\\n\\ndispatch-on-kind s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, shape--kind s1 = \\"square\\" => shape--s s1, true => 0).\\n"
+`;
+
+exports[`expressions-discriminant-narrowing.ts > getRadius 1`] = `
+"module GET_RADIUS.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\nget-radius s1: Shape => Int.\\n\\n---\\n\\nget-radius s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, true => 0).\\n\\ncheck\\n\\nget-radius s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, true => 0).\\n"
+`;
+
 exports[`expressions-discriminated-union.ts > ambiguousOwner 1`] = `
 "module AMBIGUOUS_OWNER.\\n\\nLeftOwnerRec.\\nleft-owner-rec--left r: LeftOwnerRec => Int.\\nleft-owner-rec--owner r: LeftOwnerRec => String.\\nOwnerRightRec.\\nowner-right-rec--owner r1: OwnerRightRec => String.\\nowner-right-rec--right r1: OwnerRightRec => Int.\\nambiguous-owner x: LeftOwnerRec + OwnerRightRec => String.\\n\\n---\\n\\n> UNSUPPORTED: property access .owner: ambiguous owner — union/intersection members declare this field on multiple distinct types, so no single qualified accessor rule applies.\\n"
 `;

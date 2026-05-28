@@ -204,6 +204,50 @@ describe("narrowing integration", () => {
     assert.equal(envDepth(env), 1);
   });
 
+  it("variant field reads record discharged narrowing", () => {
+    const { fn, ctx } = setupFunction(`
+      type Shape =
+        | { kind: "circle"; r: number; shared: string }
+        | { kind: "square"; s: number; shared: string };
+      function f(s: Shape): number {
+        if (s.kind === "circle") return s.r;
+        else return 0;
+      }
+    `);
+    const result = buildL1Conditional(
+      fn.body!.statements[0] as ts.IfStatement,
+      ctx,
+    );
+    assert.equal("unsupported" in result, false);
+    assert.equal(result.kind, "cond");
+    const variantRead = result.arms[0][1];
+    assert.equal(variantRead.kind, "member");
+    assert.equal(variantRead.name, "shape--r");
+    assert.equal(variantRead.narrowingDischarged, true);
+  });
+
+  it("variant field discharge normalizes transparent receiver wrappers", () => {
+    const { fn, ctx } = setupFunction(`
+      type Shape =
+        | { kind: "circle"; r: number; shared: string }
+        | { kind: "square"; s: number; shared: string };
+      function f(s: Shape): number {
+        if (s.kind === "circle") return (s as Shape).r;
+        else return 0;
+      }
+    `);
+    const result = buildL1Conditional(
+      fn.body!.statements[0] as ts.IfStatement,
+      ctx,
+    );
+    assert.equal("unsupported" in result, false);
+    assert.equal(result.kind, "cond");
+    const variantRead = result.arms[0][1];
+    assert.equal(variantRead.kind, "member");
+    assert.equal(variantRead.name, "shape--r");
+    assert.equal(variantRead.narrowingDischarged, true);
+  });
+
   it("nested mutating if pushes both frames", () => {
     const sourceFile = createSourceFileFromSource(
       `

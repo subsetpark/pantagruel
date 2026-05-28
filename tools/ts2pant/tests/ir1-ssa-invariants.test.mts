@@ -43,6 +43,7 @@ import {
   ir1Var,
   ir1While,
 } from "../src/ir1.js";
+import { createL1AssumptionEnv } from "../src/ir1-build.js";
 import {
   type BuildBodyCtx,
   buildL1AssignStmt,
@@ -140,6 +141,7 @@ function buildFixtureSupportedSsaBody(
     },
     supply: { n: 0 } as BuildBodyCtx["supply"],
     applyConst: (expr) => expr,
+    env: createL1AssumptionEnv(),
   };
 
   const stmts: IR1Stmt[] = [];

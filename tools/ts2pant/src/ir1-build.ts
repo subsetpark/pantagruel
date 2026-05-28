@@ -40,6 +40,7 @@ import {
   exitFrame,
   type Fact,
   pushFact,
+  queryFact,
 } from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
 import { lowerExpr } from "./ir-emit.js";
@@ -100,6 +101,9 @@ import {
 import {
   cellRegisterMap,
   cellRegisterName,
+  type DiscriminantLiteral,
+  detectDiscriminatedUnion,
+  fieldRuleName,
   isMapType,
   isSetType,
   isUnsupportedUnknown,
@@ -1377,7 +1381,11 @@ export function buildL1MemberAccess(
       unsupported: "buildL1MemberAccess: unsupported access shape",
     };
   }
-  const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+  const receiverType = receiverTypeForFieldAccess(
+    receiverNode as ts.Expression,
+    fieldName,
+    ctx,
+  );
   const qualifiedStrict = qualifyFieldAccess(
     receiverType,
     fieldName,
@@ -1458,7 +1466,80 @@ export function buildL1MemberAccess(
     }
   }
 
-  return ir1Member(receiverL1, qualified);
+  return ir1Member(
+    receiverL1,
+    qualified,
+    queryDiscriminatedUnionFieldDischarge(
+      ctx,
+      receiverNode as ts.Expression,
+      fieldName,
+      qualified,
+    ),
+  );
+}
+
+function discriminantLiteralToFactLiteral(
+  literal: DiscriminantLiteral,
+): string {
+  return String(literal.value);
+}
+
+function receiverTypeForFieldAccess(
+  receiverNode: ts.Expression,
+  fieldName: string,
+  ctx: L1BuildContext,
+): ts.Type {
+  const declared = getOperandDeclaredType(receiverNode, ctx.checker);
+  const detected = detectDiscriminatedUnion(declared, ctx.checker);
+  if (
+    detected &&
+    (fieldName === detected.discriminant ||
+      detected.variants.some((variant) =>
+        variant.fields.some((field) => field.name === fieldName),
+      ))
+  ) {
+    return declared;
+  }
+  return ctx.checker.getTypeAtLocation(receiverNode);
+}
+
+function queryDiscriminatedUnionFieldDischarge(
+  ctx: L1BuildContext,
+  receiverNode: ts.Expression,
+  fieldName: string,
+  qualifiedName: string,
+): boolean | undefined {
+  const synth = ctx.supply.synthCell?.discriminatedUnionSynth;
+  if (!synth) {
+    return undefined;
+  }
+  for (const entry of synth.byShape.values()) {
+    if (fieldRuleName(entry.domain, fieldName) !== qualifiedName) {
+      continue;
+    }
+    const field = entry.fields.find(
+      (candidate) => candidate.name === fieldName,
+    );
+    if (!field) {
+      continue;
+    }
+    const receiver = unwrapTransparentExpression(receiverNode).getText();
+    return field.variantKeys.some((variantKey) => {
+      const variant = entry.variants.find(
+        (candidate) => candidate.key === variantKey,
+      );
+      if (!variant) {
+        return false;
+      }
+      return queryFact(ctx.env, {
+        kind: "discriminant",
+        receiver,
+        property: entry.discriminant,
+        literal: discriminantLiteralToFactLiteral(variant.literal),
+      });
+    });
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1850,7 +1931,11 @@ function buildL1MemberOrVarForLift(
     if (receiverL1 === null) {
       return null;
     }
-    const receiverType = ctx.checker.getTypeAtLocation(receiverForType);
+    const receiverType = receiverTypeForFieldAccess(
+      receiverForType,
+      stripped.name.text,
+      ctx,
+    );
     const qualified = qualifyFieldAccess(
       receiverType,
       stripped.name.text,
@@ -1861,7 +1946,16 @@ function buildL1MemberOrVarForLift(
     if (qualified === null) {
       return null;
     }
-    return ir1Member(receiverL1, qualified);
+    return ir1Member(
+      receiverL1,
+      qualified,
+      queryDiscriminatedUnionFieldDischarge(
+        ctx,
+        receiverForType,
+        stripped.name.text,
+        qualified,
+      ),
+    );
   }
   if (
     ts.isElementAccessExpression(stripped) &&
@@ -1877,7 +1971,11 @@ function buildL1MemberOrVarForLift(
     if (receiverL1 === null) {
       return null;
     }
-    const receiverType = ctx.checker.getTypeAtLocation(receiverForType);
+    const receiverType = receiverTypeForFieldAccess(
+      receiverForType,
+      fieldName,
+      ctx,
+    );
     const qualified = qualifyFieldAccess(
       receiverType,
       fieldName,
@@ -1888,7 +1986,16 @@ function buildL1MemberOrVarForLift(
     if (qualified === null) {
       return null;
     }
-    return ir1Member(receiverL1, qualified);
+    return ir1Member(
+      receiverL1,
+      qualified,
+      queryDiscriminatedUnionFieldDischarge(
+        ctx,
+        receiverForType,
+        fieldName,
+        qualified,
+      ),
+    );
   }
   return null;
 }

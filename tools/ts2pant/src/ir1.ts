@@ -99,7 +99,12 @@ export type IR1Expr =
    * Property access. Canonicalized form for `obj.f` and `obj["f"]`.
    * Lowering qualifies `name` to a rule (today's `qualifyFieldAccess`).
    */
-  | { kind: "member"; receiver: IR1Expr; name: string }
+  | {
+      kind: "member";
+      receiver: IR1Expr;
+      name: string;
+      narrowingDischarged?: boolean;
+    }
   /**
    * Multi-armed value-position conditional. Canonical form for if-with-
    * returns, ternary chains, switch w/o fall-through, &&/|| when Bool-
@@ -1252,10 +1257,15 @@ export const ir1App = (callee: IR1Expr, args: IR1Expr[]): IR1Expr => ({
   args,
 });
 
-export const ir1Member = (receiver: IR1Expr, name: string): IR1Expr => ({
+export const ir1Member = (
+  receiver: IR1Expr,
+  name: string,
+  narrowingDischarged?: boolean,
+): IR1Expr => ({
   kind: "member",
   receiver,
   name,
+  ...(narrowingDischarged === undefined ? {} : { narrowingDischarged }),
 });
 
 /**
