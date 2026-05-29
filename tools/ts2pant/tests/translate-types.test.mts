@@ -351,7 +351,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
     );
   });
 
-  it("keeps non-discriminated union field access ambiguous", () => {
+  it("refuses non-discriminated union field access unless every member has the same owner", () => {
     const { alias, checker } = extractFirstAlias(`
       type NonDiscriminated =
         | { owner: string; left: number }
@@ -365,7 +365,34 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
       resolveFieldOwner(alias.type, "owner", checker, IntStrategy, cell),
       {
         kind: "ambiguous",
-        owners: mapped.split(" + "),
+        owners: [],
+      },
+    );
+    assert.deepEqual(
+      resolveFieldOwner(alias.type, "left", checker, IntStrategy, cell),
+      {
+        kind: "ambiguous",
+        owners: [],
+      },
+    );
+  });
+
+  it("keeps intersection field access resolved by the declaring owner", () => {
+    const sourceFile = createSourceFileFromSource(`
+      interface HasId { id: number; }
+      interface HasLabel { label: string; }
+      type Both = HasId & HasLabel;
+    `);
+    const extracted = extractAllTypes(sourceFile);
+    const checker = getChecker(sourceFile);
+    const alias = extracted.aliases.find((entry) => entry.name === "Both");
+    assert.ok(alias);
+
+    assert.deepEqual(
+      resolveFieldOwner(alias.type, "id", checker, IntStrategy, newSynthCell()),
+      {
+        kind: "resolved",
+        owner: "HasId",
       },
     );
   });

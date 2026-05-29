@@ -109,6 +109,7 @@ import {
   resolveFieldOwner,
   type SynthCell,
   toPantTermName,
+  UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
   UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import {
@@ -1657,9 +1658,8 @@ export function qualifyFieldAccess(
 
 export function ambiguousFieldMsg(fieldName: string): string {
   return (
-    `property access .${fieldName}: ambiguous owner — ` +
-    `union/intersection members declare this field on multiple distinct ` +
-    `types, so no single qualified accessor rule applies`
+    `property access .${fieldName}: ` +
+    UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON
   );
 }
 

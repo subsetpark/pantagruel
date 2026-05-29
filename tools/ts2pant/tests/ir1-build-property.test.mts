@@ -168,7 +168,10 @@ describe("ir1-build-property", () => {
       `expected unsupported, got Member: ${JSON.stringify(result)}`,
     );
     if ("unsupported" in result) {
-      assert.match(result.unsupported, /ambiguous owner/u);
+      assert.match(
+        result.unsupported,
+        /field access on a non-discriminated union is not expressible in Pantagruel/u,
+      );
     }
   });
 
