@@ -41,6 +41,10 @@ export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 export const UNSUPPORTED_UNKNOWN = "__unsupported_unknown__";
 export const UNSUPPORTED_UNKNOWN_REASON =
   "TS unknown is not expressible in Pantagruel; declare a specific type";
+export const UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON =
+  "field access on a non-discriminated union is not expressible in Pantagruel";
+export const UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON =
+  "discriminated union could not be registered for tagged Pantagruel encoding";
 
 /**
  * True if `pantType` is the `unknown` rejection sentinel. Composite
