@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { emitDocument } from "../src/emit.js";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
@@ -30,17 +29,18 @@ describe("du-cutover", () => {
     const sourceFile = createSourceFileFromSource(`
       interface HasId { id: number; }
       interface HasLabel { label: string; }
+      /** @pant-type x: HasId */
       export function readId(x: HasId & HasLabel): number {
         return x.id;
       }
     `);
 
-    const output = emitDocument(
+    const output = await emitAndCheck(
       await buildDocumentFromSourceFile(sourceFile, "readId"),
     );
 
     assert.match(output, /^has-id--id h: HasId => Int\.$/mu);
-    assert.match(output, /^read-id x: HasId & HasLabel => Int\.$/mu);
+    assert.match(output, /^read-id x: HasId => Int\.$/mu);
     assert.match(output, /^read-id x = has-id--id x\.$/mu);
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });

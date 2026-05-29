@@ -307,7 +307,7 @@ exports[`expressions-discriminated-union.ts > ambiguousOwner 1`] = `
 `;
 
 exports[`expressions-discriminated-union.ts > intersectionField 1`] = `
-"module INTERSECTION_FIELD.\\n\\nHasId.\\nhas-id--id h: HasId => Int.\\nHasLabel.\\nhas-label--label h1: HasLabel => String.\\nintersection-field x: HasId & HasLabel => Int.\\n\\n---\\n\\nintersection-field x = has-id--id x.\\n"
+"module INTERSECTION_FIELD.\\n\\nHasId.\\nhas-id--id h: HasId => Int.\\nHasLabel.\\nhas-label--label h1: HasLabel => String.\\nintersection-field x: HasId => Int.\\n\\n---\\n\\nintersection-field x = has-id--id x.\\n"
 `;
 
 exports[`expressions-discriminated-union.ts > readDiscriminant 1`] = `

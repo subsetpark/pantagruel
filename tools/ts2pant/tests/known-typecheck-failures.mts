@@ -47,9 +47,6 @@
  *   - "annotation-types"  the user's `@pant` annotation is itself
  *                         ill-typed against the emitted signature
  *                         (e.g. comparing a Bool result to an Int).
- *   - "intersection-type" Pantagruel has no intersection type encoding;
- *                         the fixture pins field-access owner resolution
- *                         only and intentionally skips standalone checking.
  */
 export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["control-flow.ts > max", "$-binder-leak"],
@@ -57,10 +54,6 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-boolean.ts > and", "$-binder-leak"],
   ["expressions-boolean.ts > or", "$-binder-leak"],
   ["expressions-discriminated-union.ts > ambiguousOwner", "ambiguous-owner"],
-  [
-    "expressions-discriminated-union.ts > intersectionField",
-    "intersection-type",
-  ],
   [
     "expressions-let-closure-captured.ts > letForEachCapturedTotal",
     "closure-captured-reassignment",

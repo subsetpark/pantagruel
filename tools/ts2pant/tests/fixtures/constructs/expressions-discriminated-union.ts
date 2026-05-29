@@ -35,6 +35,7 @@ export function ambiguousOwner(x: NonDiscriminated): number {
 }
 
 /** Intersections keep AND-semantics field access. */
+/** @pant-type x: HasId */
 export function intersectionField(x: HasId & HasLabel): number {
   return x.id;
 }
