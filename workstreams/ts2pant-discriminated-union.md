@@ -278,18 +278,29 @@ has no remaining advantage for discriminated unions and can be retired.
 
 ---
 
-### Milestone 4: du-cutover
+### Milestone 4: du-cutover — planned (`gameplans/ts2pant-du-cutover.json`)
+
+> **Planned (2026-05-29).** Two "handled-or-refused" choices in the original
+> DoD were resolved while planning: nested DUs are **handled** by recursive
+> synthesis (not refused), and for non-discriminated unions only **field access**
+> is refused — the `A + B` value encoding is **retained**. See Decisions Made.
 
 **Definition of Done**:
 - The `+`-of-records encoding is retired for all discriminated unions; the tagged
-  encoding is the sole path.
+  encoding is the sole path. A detected DU that fails tagged registration is
+  refused with a clear reason rather than falling through to `+`-records.
 - Nested discriminated unions and discriminated unions inside other synthesized
-  types (records, maps, arrays) are handled or explicitly, soundly refused.
-- Non-discriminated unions and intersections retain a clear, sound refusal (no
-  silent unsound accessor); the unique-field-on-the-`+`-records-path unsoundness
-  noted in Current State is eliminated.
-- Documentation under `tools/ts2pant/docs/` describes the tagged-union encoding
-  and its narrowing.
+  types (records, maps, arrays) are **handled** by recursive tagged synthesis
+  (one shape-keyed domain shared with the same DU at top level); their narrowed
+  variant-field reads entail under `pant --check`.
+- Field access on a **non-discriminated** union is soundly refused (no
+  unique-field accessor applied to the whole union — the unsoundness noted in
+  Current State is eliminated); the `A + B` sum **value** encoding is retained
+  for non-discriminated unions, and optionality (`T | null` → `[T]`) is
+  untouched. Intersection field access remains sound (AND semantics) and is
+  unchanged.
+- Documentation under `tools/ts2pant/docs/` describes the tagged-union encoding,
+  its narrowing, and the refusal taxonomy.
 
 **Why this is a safe pause point**: Terminal milestone. Discriminated unions have
 a single, sound, narrowing-capable encoding; the legacy path is gone; the
@@ -327,7 +338,7 @@ completes, M3 waits. M4 depends on M3's narrowing being proven.
 | Gating threshold for proceeding to M3 | Count of real intra-function narrowing sites + encoding-entails verdict. | Milestone 2 |
 | Interface M3 consumes from the guard-analysis flow-narrowing layer | Depends on that workstream being planned. | Milestone 2 / guard-analysis planning |
 | Discriminant disjointness invariant: emit explicitly or rely on congruence? | Affects M1 encoding. | Milestone 1 |
-| Fate of non-discriminated unions | Default: permanently refused, no unsound accessor. | Milestone 4 |
+| Fate of non-discriminated unions | ✅ Resolved (M4 planning, 2026-05-29): **field access** is refused (no unsound accessor); the `A + B` **value** encoding is retained, not wholesale-refused. | Milestone 4 |
 
 ## Decisions Made
 
@@ -345,3 +356,5 @@ Precedents`.
 | Encoding migration staged (M1 introduces tagged encoding for discriminated unions; M4 retires `+`-records) | The tagged encoding is a behavior change to currently-emitted output, including the currently-"working" unique-field case. Staging the cutover into M4 bounds regression risk and keeps every milestone a safe pause point. |
 | Standalone workstream (not part of free-call-decl) | Discriminated-union handling is an independent capability; free-call-decl is complete at M2. |
 | Multi-discriminant tie-break: pick the first qualifying field by **sorted field name** (deterministic) | Decided while planning M1's gameplan. When >1 field is a distinct literal on every member, a deterministic pick keeps detection total and stable (every discriminated union encodes); requiring exactly one would refuse legitimate multi-discriminant unions. Non-chosen qualifying fields still become per-variant guarded rules. |
+| M4 retires `+`-records for discriminated unions and refuses **non-discriminated union field access only** — the `A + B` value encoding is kept | Decided while planning M4's gameplan (2026-05-29). The unsoundness in Current State is the unique-field accessor applied to the whole union — a field-access concern. Bare `A + B` is sound when no field is accessed, so refusing the value encoding too would over-refuse unions used soundly as opaque values for no soundness gain. Matches the DoD's "no silent unsound accessor." Optionality (`T \| null` → `[T]`) and intersection field access (sound by AND semantics) are unchanged. |
+| M4 handles nested/embedded discriminated unions by **recursive tagged synthesis**, not refusal | Decided while planning M4's gameplan (2026-05-29). The Vision targets self-translation of ts2pant's own DU-heavy IR types (`IR1Expr`, `IR1Stmt`), which nest DUs; refusing nesting would leave the headline use case unmet at the terminal milestone. The synth machinery is already shape-keyed and recursive, so this is the same proven encoding rather than a new mechanism. |
