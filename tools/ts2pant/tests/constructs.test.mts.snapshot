@@ -302,6 +302,26 @@ exports[`expressions-discriminant-narrowing.ts > getRadius 1`] = `
 "module GET_RADIUS.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\nget-radius s1: Shape => Int.\\n\\n---\\n\\nall s: Shape | shape--kind s = \\"circle\\" or shape--kind s = \\"square\\".\\nget-radius s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, true => 0).\\n\\ncheck\\n\\nshape--kind s1 = \\"circle\\" -> shape--kind s1 = \\"circle\\".\\nget-radius s1 = (cond shape--kind s1 = \\"circle\\" => shape--r s1, true => 0).\\n"
 `;
 
+exports[`expressions-discriminated-union-nested.ts > arrayElementNarrowed 1`] = `
+"module ARRAY_ELEMENT_NARROWED.\\n\\nArrayHolder.\\narray-holder--items a: ArrayHolder => [Leaf].\\nLeaf.\\nleaf--tag s: Leaf => String.\\nleaf--score s: Leaf, leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\" => Int.\\nleaf--text s: Leaf, leaf--tag s = \\"text\\" => String.\\nleaf--value s: Leaf, leaf--tag s = \\"num\\" => Int.\\narray-element-narrowed h: ArrayHolder, leaf: Leaf => Int.\\n\\n---\\n\\nall s: Leaf | leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\".\\narray-element-narrowed h leaf = (cond leaf--tag leaf = \\"num\\" => leaf--value leaf, true => 0).\\n\\ncheck\\n\\nleaf--tag leaf = \\"num\\" -> leaf--tag leaf = \\"num\\".\\n"
+`;
+
+exports[`expressions-discriminated-union-nested.ts > mapValueNarrowed 1`] = `
+"module MAP_VALUE_NARROWED.\\n\\nMapHolder.\\nmap-holder--by-id-key m: MapHolder, k: String => Bool.\\nmap-holder--by-id m: MapHolder, k: String, map-holder--by-id-key m k => Leaf.\\nLeaf.\\nleaf--tag s: Leaf => String.\\nleaf--score s: Leaf, leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\" => Int.\\nleaf--text s: Leaf, leaf--tag s = \\"text\\" => String.\\nleaf--value s: Leaf, leaf--tag s = \\"num\\" => Int.\\nmap-value-narrowed h: MapHolder, leaf: Leaf => Int.\\n\\n---\\n\\nall s: Leaf | leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\".\\nmap-value-narrowed h leaf = (cond leaf--tag leaf = \\"num\\" => leaf--value leaf, true => 0).\\n\\ncheck\\n\\nleaf--tag leaf = \\"num\\" -> leaf--tag leaf = \\"num\\".\\n"
+`;
+
+exports[`expressions-discriminated-union-nested.ts > nestedVariantFieldNarrowed 1`] = `
+"module NESTED_VARIANT_FIELD_NARROWED.\\n\\nLeaf.\\nleaf--tag s: Leaf => String.\\nleaf--score s: Leaf, leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\" => Int.\\nleaf--text s: Leaf, leaf--tag s = \\"text\\" => String.\\nleaf--value s: Leaf, leaf--tag s = \\"num\\" => Int.\\nEnvelope.\\nenvelope--kind s1: Envelope => String.\\nenvelope--count s1: Envelope, envelope--kind s1 = \\"empty\\" => Int.\\nenvelope--leaf s1: Envelope, envelope--kind s1 = \\"leaf\\" => Leaf.\\nnested-variant-field-narrowed e: Envelope => Int.\\n\\n---\\n\\nall s: Leaf | leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\".\\nall s1: Envelope | envelope--kind s1 = \\"leaf\\" or envelope--kind s1 = \\"empty\\".\\nnested-variant-field-narrowed e = (cond envelope--kind e = \\"leaf\\" => leaf--score (envelope--leaf e), true => 0).\\n\\ncheck\\n\\nenvelope--kind e = \\"leaf\\" -> envelope--kind e = \\"leaf\\".\\nleaf--tag (envelope--leaf e) = \\"num\\" or leaf--tag (envelope--leaf e) = \\"text\\".\\n"
+`;
+
+exports[`expressions-discriminated-union-nested.ts > recordFieldNarrowed 1`] = `
+"module RECORD_FIELD_NARROWED.\\n\\nRecordHolder.\\nrecord-holder--leaf r: RecordHolder => Leaf.\\nLeaf.\\nleaf--tag s: Leaf => String.\\nleaf--score s: Leaf, leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\" => Int.\\nleaf--text s: Leaf, leaf--tag s = \\"text\\" => String.\\nleaf--value s: Leaf, leaf--tag s = \\"num\\" => Int.\\nrecord-field-narrowed h: RecordHolder => Int.\\n\\n---\\n\\nall s: Leaf | leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\".\\nrecord-field-narrowed h = (cond leaf--tag (record-holder--leaf h) = \\"num\\" => leaf--value (record-holder--leaf h), true => 0).\\n\\ncheck\\n\\nleaf--tag (record-holder--leaf h) = \\"num\\" -> leaf--tag (record-holder--leaf h) = \\"num\\".\\n"
+`;
+
+exports[`expressions-discriminated-union-nested.ts > recordFieldUnchecked 1`] = `
+"module RECORD_FIELD_UNCHECKED.\\n\\nRecordHolder.\\nrecord-holder--leaf r: RecordHolder => Leaf.\\nLeaf.\\nleaf--tag s: Leaf => String.\\nleaf--score s: Leaf, leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\" => Int.\\nleaf--text s: Leaf, leaf--tag s = \\"text\\" => String.\\nleaf--value s: Leaf, leaf--tag s = \\"num\\" => Int.\\nrecord-field-unchecked h: RecordHolder => Int.\\n\\n---\\n\\nall s: Leaf | leaf--tag s = \\"num\\" or leaf--tag s = \\"text\\".\\nrecord-field-unchecked h = leaf--value (record-holder--leaf h).\\n\\ncheck\\n\\nleaf--tag (record-holder--leaf h) = \\"num\\".\\n"
+`;
+
 exports[`expressions-discriminated-union.ts > ambiguousOwner 1`] = `
 "module AMBIGUOUS_OWNER.\\n\\nLeftOwnerRec.\\nleft-owner-rec--left r: LeftOwnerRec => Int.\\nleft-owner-rec--owner r: LeftOwnerRec => String.\\nOwnerRightRec.\\nowner-right-rec--owner r1: OwnerRightRec => String.\\nowner-right-rec--right r1: OwnerRightRec => Int.\\nambiguous-owner x: LeftOwnerRec + OwnerRightRec => Int.\\n\\n---\\n\\n> UNSUPPORTED: property access .left: field access on a non-discriminated union is not expressible in Pantagruel.\\n"
 `;

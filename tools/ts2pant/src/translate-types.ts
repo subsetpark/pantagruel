@@ -1786,13 +1786,14 @@ export const RealStrategy: NumericStrategy = {
 /**
  * Map a TypeScript type to a Pantagruel type string.
  *
- * When `synthCell` is provided, `Map<K, V>` in any type position (parameter,
- * return, nested in another Map's V, inside an array/tuple/union) is
- * registered with the synthesizer and replaced with the synthesized domain
- * name. Without `synthCell`, Map types fall through to the caller's fallback
- * (typically `checker.typeToString()` which yields unparseable output).
- * The cell-less behavior is preserved for Stage A: interface-field Maps
- * are handled specially in `translateTypes` and must not be synthesized.
+ * When `synthCell` is provided, synthesized shapes in any type position
+ * (Map value, array/tuple element, anonymous-record field, discriminated-
+ * union variant field, or nested union member) are registered through that
+ * shared cell and replaced with the synthesized domain name. Without
+ * `synthCell`, Map types fall through to the caller's fallback (typically
+ * `checker.typeToString()` which yields unparseable output). The cell-less
+ * behavior is preserved for Stage A: interface-field Maps are handled
+ * specially in `translateTypes` and must not be synthesized.
  */
 export function mapTsType(
   type: ts.Type,
