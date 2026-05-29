@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createSourceFileFromSource } from "../src/extract.js";
+import {
+  createSourceFileFromSource,
+  extractAllTypes,
+  getChecker,
+} from "../src/extract.js";
+import {
+  IntStrategy,
+  mapTsType,
+  newSynthCell,
+  UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
+} from "../src/translate-types.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 describe("du-cutover", () => {
@@ -45,7 +55,27 @@ describe("du-cutover", () => {
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
-  it.skip("detected DU that fails tagged registration is refused (no + fallthrough)", () => {
-    // PENDING: Patch 4.
+  it("detected DU that fails tagged registration is refused (no + fallthrough)", () => {
+    const sourceFile = createSourceFileFromSource(`
+      type MixedDiscriminant =
+        | { kind: "left"; value: number }
+        | { kind: 1; value: number };
+    `);
+    const checker = getChecker(sourceFile);
+    const alias = extractAllTypes(sourceFile).aliases[0];
+    assert.ok(alias);
+
+    const mapped = mapTsType(
+      alias.type,
+      checker,
+      IntStrategy,
+      newSynthCell(),
+    );
+
+    assert.equal(
+      mapped,
+      UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
+    );
+    assert.doesNotMatch(mapped, / \+ /u);
   });
 });
