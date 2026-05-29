@@ -1290,10 +1290,11 @@ export type FieldOwnerResolution =
  *  `Sub extends Base` with `x.baseField` resolves to `Base` (the owner
  *  that translate-types emits the accessor rule under), not `Sub`.
  *  Anonymous record receivers resolve to their synthesized domain via
- *  the synth cell. For unions/intersections, collects distinct owners
- *  across members; >1 distinct owner returns `ambiguous` so callers can
- *  refuse the access rather than emit a semantically wrong qualified
- *  symbol. */
+ *  the synth cell. Intersections collect distinct owners across members.
+ *  Non-discriminated unions resolve only when every non-nullish member
+ *  resolves to the same single owner; otherwise they return `ambiguous`
+ *  so callers refuse the access rather than emit a semantically wrong
+ *  qualified symbol. */
 export function resolveFieldOwner(
   receiverType: ts.Type,
   fieldName: string,
@@ -1310,6 +1311,14 @@ export function resolveFieldOwner(
     synthCell,
     owners,
   );
+  if (
+    owners.size === 0 &&
+    receiverType.isUnion() &&
+    detectDiscriminatedUnion(receiverType, checker) === null &&
+    receiverType.types.some((t) => !isTsNullish(t))
+  ) {
+    return { kind: "ambiguous", owners: [] };
+  }
   if (owners.size === 0) {
     return { kind: "none" };
   }
@@ -1365,7 +1374,39 @@ function collectFieldOwners(
     }
   }
 
-  if (ty.isUnionOrIntersection()) {
+  if (ty.isUnion()) {
+    const nonNullTypes = ty.types.filter((sub) => !isTsNullish(sub));
+    if (nonNullTypes.length === 0) {
+      return;
+    }
+    let commonOwner: string | null = null;
+    for (const sub of nonNullTypes) {
+      const memberOwners = new Set<string>();
+      collectFieldOwners(
+        sub,
+        fieldName,
+        checker,
+        strategy,
+        synthCell,
+        memberOwners,
+      );
+      if (memberOwners.size !== 1) {
+        return;
+      }
+      const owner = [...memberOwners][0]!;
+      if (commonOwner === null) {
+        commonOwner = owner;
+      } else if (commonOwner !== owner) {
+        return;
+      }
+    }
+    if (commonOwner !== null) {
+      out.add(commonOwner);
+    }
+    return;
+  }
+
+  if (ty.isIntersection()) {
     for (const sub of ty.types) {
       collectFieldOwners(sub, fieldName, checker, strategy, synthCell, out);
     }

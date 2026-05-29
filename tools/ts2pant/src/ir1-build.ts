@@ -113,6 +113,7 @@ import {
   mapTsType,
   type NumericStrategy,
   toPantTermName,
+  UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
 } from "./translate-types.js";
 import {
   type ExtractedBlockReturn,
@@ -1408,9 +1409,8 @@ export function buildL1MemberAccess(
   } else {
     return {
       unsupported:
-        `property access .${fieldName}: ambiguous owner — ` +
-        `union/intersection members declare this field on multiple distinct ` +
-        `types, so no single qualified accessor rule applies`,
+        `property access .${fieldName}: ` +
+        UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
     };
   }
 

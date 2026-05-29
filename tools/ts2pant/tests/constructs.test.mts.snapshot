@@ -303,7 +303,11 @@ exports[`expressions-discriminant-narrowing.ts > getRadius 1`] = `
 `;
 
 exports[`expressions-discriminated-union.ts > ambiguousOwner 1`] = `
-"module AMBIGUOUS_OWNER.\\n\\nLeftOwnerRec.\\nleft-owner-rec--left r: LeftOwnerRec => Int.\\nleft-owner-rec--owner r: LeftOwnerRec => String.\\nOwnerRightRec.\\nowner-right-rec--owner r1: OwnerRightRec => String.\\nowner-right-rec--right r1: OwnerRightRec => Int.\\nambiguous-owner x: LeftOwnerRec + OwnerRightRec => String.\\n\\n---\\n\\n> UNSUPPORTED: property access .owner: ambiguous owner — union/intersection members declare this field on multiple distinct types, so no single qualified accessor rule applies.\\n"
+"module AMBIGUOUS_OWNER.\\n\\nLeftOwnerRec.\\nleft-owner-rec--left r: LeftOwnerRec => Int.\\nleft-owner-rec--owner r: LeftOwnerRec => String.\\nOwnerRightRec.\\nowner-right-rec--owner r1: OwnerRightRec => String.\\nowner-right-rec--right r1: OwnerRightRec => Int.\\nambiguous-owner x: LeftOwnerRec + OwnerRightRec => Int.\\n\\n---\\n\\n> UNSUPPORTED: property access .left: field access on a non-discriminated union is not expressible in Pantagruel.\\n"
+`;
+
+exports[`expressions-discriminated-union.ts > intersectionField 1`] = `
+"module INTERSECTION_FIELD.\\n\\nHasId.\\nhas-id--id h: HasId => Int.\\nHasLabel.\\nhas-label--label h1: HasLabel => String.\\nintersection-field x: HasId & HasLabel => Int.\\n\\n---\\n\\nintersection-field x = has-id--id x.\\n"
 `;
 
 exports[`expressions-discriminated-union.ts > readDiscriminant 1`] = `
