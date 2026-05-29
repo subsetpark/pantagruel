@@ -62,6 +62,26 @@ export function isUnsupportedUnknown(pantType: string): boolean {
   return pantType === UNSUPPORTED_UNKNOWN;
 }
 
+export function isUnsupportedDiscriminatedUnionRegistration(
+  pantType: string,
+): boolean {
+  return pantType === UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
+}
+
+function isUnsupportedMappedType(pantType: string): boolean {
+  return (
+    isUnsupportedUnknown(pantType) ||
+    isUnsupportedDiscriminatedUnionRegistration(pantType)
+  );
+}
+
+function unsupportedMappedTypeReason(pantType: string): string {
+  if (isUnsupportedUnknown(pantType)) {
+    return UNSUPPORTED_UNKNOWN_REASON;
+  }
+  return pantType;
+}
+
 /**
  * TypeScript type flags for `null` / `undefined` / `void`. Pantagruel
  * retired `Nothing` from the user-facing type surface — there is no
@@ -1924,6 +1944,7 @@ export function mapTsType(
         if (domain !== null) {
           return domain;
         }
+        return UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
       }
     }
     // List-lift encoding for optionality: strip null/undefined/void before
@@ -2165,10 +2186,15 @@ export function translateTypes(
           // references it.
           const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
           const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
-          if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+          if (
+            isUnsupportedMappedType(kType) ||
+            isUnsupportedMappedType(vType)
+          ) {
             decls.push({
               kind: "unsupported",
-              reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+              reason: `${iface.name}.${prop.name}: ${unsupportedMappedTypeReason(
+                isUnsupportedMappedType(kType) ? kType : vType,
+              )}`,
             });
             continue;
           }
@@ -2201,10 +2227,12 @@ export function translateTypes(
         }
       }
       const fieldType = mapTsType(prop.type, checker, strategy, synthCell);
-      if (isUnsupportedUnknown(fieldType)) {
+      if (isUnsupportedMappedType(fieldType)) {
         decls.push({
           kind: "unsupported",
-          reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+          reason: `${iface.name}.${prop.name}: ${unsupportedMappedTypeReason(
+            fieldType,
+          )}`,
         });
         continue;
       }
@@ -2219,10 +2247,12 @@ export function translateTypes(
 
   for (const alias of extracted.aliases) {
     const aliasType = mapTsType(alias.type, checker, strategy, synthCell);
-    if (isUnsupportedUnknown(aliasType)) {
+    if (isUnsupportedMappedType(aliasType)) {
       decls.push({
         kind: "unsupported",
-        reason: `alias ${alias.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        reason: `alias ${alias.name}: ${unsupportedMappedTypeReason(
+          aliasType,
+        )}`,
       });
       continue;
     }
