@@ -55,7 +55,26 @@ describe("opaque opt-in policy", () => {
     }
   });
 
-  it.skip("body operation with an opaque operand propagates opacity (contagion; PENDING: Patch 3)", () => {
-    // @pant all x: Opaque | true.
+  it("body operation with an opaque operand propagates opacity (contagion; @pant checks)", async (t) => {
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "bodies.ts"),
+    );
+    const targets = [
+      "readUnknown",
+      "arithmeticContagion",
+      "logicalContagion",
+      "callContagion",
+      "memberContagion",
+      "conditionalContagion",
+      "mutatingReturnContagion",
+    ];
+
+    for (const target of targets) {
+      const doc = await buildDocumentFromSourceFile(sourceFile, target, {
+        policy: "opaque",
+      });
+      const output = await emitAndCheck(doc);
+      t.assert.snapshot(output);
+    }
   });
 });

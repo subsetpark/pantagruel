@@ -1316,6 +1316,8 @@ function translatePureBody(
     paramNames,
     supply,
     env,
+    undefined,
+    policy,
   );
   if ("error" in prelude) {
     return [
@@ -1490,6 +1492,7 @@ function translatePureBody(
           state: makeSymbolicState(),
           supply,
           env,
+          policy,
         });
         if (!isUnsupported(terminalL1)) {
           terminalOpaque = lowerL1ToOpaque(terminalL1);
@@ -1516,6 +1519,7 @@ function translatePureBody(
               undefined,
               supply,
               env,
+              policy,
             );
             if (isBodyUnsupported(legacy) || "effect" in legacy) {
               const reason = isBodyUnsupported(legacy)
@@ -1547,15 +1551,32 @@ function translatePureBody(
     }
     rhs = bodyOpaque;
   } else if (ts.isExpression(extracted.returnExpr)) {
-    const ir = buildIR(
-      extracted.returnExpr,
-      checker,
-      strategy,
-      prelude.scopedParams,
-      supply,
-    );
+    const l1Opaque =
+      policy === "opaque"
+        ? buildL1SubExpr(extracted.returnExpr, {
+            checker,
+            strategy,
+            paramNames: prelude.scopedParams,
+            state: makeSymbolicState(),
+            supply,
+            env,
+            policy,
+          })
+        : null;
+    const ir =
+      l1Opaque === null || isUnsupported(l1Opaque)
+        ? buildIR(
+            extracted.returnExpr,
+            checker,
+            strategy,
+            prelude.scopedParams,
+            supply,
+          )
+        : null;
     let bodyOpaque: OpaqueExpr;
-    if (isBuildUnsupported(ir)) {
+    if (l1Opaque !== null && !isUnsupported(l1Opaque)) {
+      bodyOpaque = lowerL1ToOpaque(l1Opaque);
+    } else if (ir !== null && isBuildUnsupported(ir)) {
       // Native pure-IR construction did not cover this surface form.
       // Fall back to `translateBodyExpr` for the OpaqueExpr; the IR
       // pipeline remains the primary path and only specific shapes
@@ -1573,6 +1594,7 @@ function translatePureBody(
         undefined,
         supply,
         env,
+        policy,
       );
       if (isBodyUnsupported(legacy) || "effect" in legacy) {
         const reason = isBodyUnsupported(legacy)
@@ -1588,8 +1610,15 @@ function translatePureBody(
         ];
       }
       bodyOpaque = bodyExpr(legacy);
-    } else {
+    } else if (ir !== null) {
       bodyOpaque = lowerExpr(ir);
+    } else {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — unsupported pure return terminal`,
+        },
+      ];
     }
     rhs = bodyOpaque;
   } else {
@@ -2445,6 +2474,7 @@ function lowerPreludeBindings(
   supply: UniqueSupply,
   env: AssumptionEnv,
   state?: SymbolicState,
+  policy?: OpaquePolicy,
 ): LoweredPreludeBindings | { error: string } {
   // Phase 1: TDZ validation — reject forward/self references on TS AST.
   // For μ-search bindings, validate both the init and the predicate; the
@@ -2650,6 +2680,7 @@ function lowerPreludeBindings(
           state: state ?? makeSymbolicState(),
           supply,
           env,
+          policy,
         });
         if (isUnsupported(built)) {
           return { tag: "error", error: built.unsupported };
@@ -3412,6 +3443,24 @@ export function translateBodyExpr(
         return { unsupported: recognized.unsupported };
       }
       return { expr: lowerL1ToOpaque(recognized) };
+    }
+  }
+
+  if (policy === "opaque" && ts.isExpression(expr)) {
+    const l1 = tryBuildL1PureSubExpression(expr, {
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+      env,
+      policy,
+    });
+    if (l1 !== null) {
+      if (isL1Unsupported(l1)) {
+        return { unsupported: l1.unsupported };
+      }
+      return { expr: lowerL1ToOpaque(l1) };
     }
   }
 
@@ -5051,6 +5100,8 @@ function lowerSupportedSsaMutatingStatements(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.env,
+    ctx.policy,
   );
   if (isBodyUnsupported(gResult)) {
     return ir1SsaBodyLowerUnsupported(gResult.unsupported);
@@ -5203,6 +5254,7 @@ function lowerSupportedSsaMutatingBlock(
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
     env: AssumptionEnv;
+    policy?: OpaquePolicy | undefined;
     recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1SsaBodyLowerResult {
@@ -5216,6 +5268,7 @@ function lowerSupportedSsaMutatingBlock(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.policy,
     ctx.recognitionHook,
   );
 
@@ -5290,6 +5343,7 @@ function buildSupportedSsaMutatingBody(
   supply: UniqueSupply,
   env: AssumptionEnv,
   localRuleDecls?: PropResult[],
+  policy?: OpaquePolicy,
   recognitionHook?: (env: AssumptionEnv, location: string) => void,
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
@@ -5375,6 +5429,7 @@ function buildSupportedSsaMutatingBody(
             supply,
             env,
             state,
+            policy,
           );
           if ("error" in lowered) {
             return { unsupported: lowered.error };
@@ -5422,6 +5477,7 @@ function buildSupportedSsaMutatingBody(
           supply,
           env,
           state,
+          policy,
         );
         if ("error" in lowered) {
           return { unsupported: lowered.error };
@@ -5437,6 +5493,7 @@ function buildSupportedSsaMutatingBody(
       state,
       supply,
       env,
+      policy,
       ...(localRuleDecls === undefined ? {} : { localRuleDecls }),
       ...(recognitionHook === undefined ? {} : { recognitionHook }),
     });
@@ -5464,6 +5521,7 @@ function buildSupportedSsaStatement(
     supply: UniqueSupply;
     env: AssumptionEnv;
     localRuleDecls?: PropResult[];
+    policy?: OpaquePolicy | undefined;
     recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1Stmt | { unsupported: string } {
@@ -5495,6 +5553,7 @@ function buildSupportedSsaStatement(
       ctx.supply,
       ctx.env,
       ctx.localRuleDecls,
+      ctx.policy,
       ctx.recognitionHook,
     );
     return body;
@@ -5587,6 +5646,7 @@ function buildL1BareWhileMutation(
         ctx.supply,
         ctx.env,
         ctx.localRuleDecls,
+        ctx.policy,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
   if (isUnsupported(bodyStmt)) {
@@ -5605,6 +5665,7 @@ function buildL1ForCounterMutation(
     supply: UniqueSupply;
     env: AssumptionEnv;
     localRuleDecls?: PropResult[];
+    policy?: OpaquePolicy | undefined;
   },
 ): IR1Stmt | { unsupported: string } {
   const init = buildL1ForCounterInit(stmt.initializer);
@@ -5639,6 +5700,7 @@ function buildL1ForCounterMutation(
     state: ctx.state,
     supply: ctx.supply,
     env: ctx.env,
+    policy: ctx.policy,
   });
   if (isL1StmtUnsupported(step)) {
     return { unsupported: step.unsupported };
@@ -5654,6 +5716,7 @@ function buildL1ForCounterMutation(
         ctx.supply,
         ctx.env,
         ctx.localRuleDecls,
+        ctx.policy,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
   if (isUnsupported(bodyStmt)) {
@@ -5715,6 +5778,7 @@ function buildL1LetWhileFixedPointMutation(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.policy,
   );
   if (isUnsupported(bodyStmt)) {
     return bodyStmt;
@@ -5817,6 +5881,7 @@ function buildL1LetWhileMutation(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.policy,
   );
   if (isUnsupported(bodyStmt)) {
     return null;

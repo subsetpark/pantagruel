@@ -64,10 +64,13 @@ import {
   ir1LitString,
   ir1MapRead,
   ir1Member,
+  ir1Opaque,
+  ir1OpaqueOriginId,
   ir1SetRead,
   ir1Unop,
   ir1Var,
   ir1While,
+  type SourceRef,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
@@ -83,7 +86,11 @@ import {
   recognizeNullishForm,
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
-import type { OpaquePolicy } from "./opaque.js";
+import {
+  contagiousOpaque,
+  OPAQUE_DOMAIN,
+  type OpaquePolicy,
+} from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
@@ -104,6 +111,7 @@ import {
 import {
   cellRegisterMap,
   cellRegisterName,
+  cellRegisterOpaqueValue,
   type DiscriminantLiteral,
   detectDiscriminatedUnion,
   fieldRuleName,
@@ -120,6 +128,60 @@ import {
   type ExtractedBlockReturn,
   extractBlockReturn,
 } from "./ts-ast-block-return.js";
+
+function sourceRefForNode(node: ts.Node): SourceRef {
+  const sf = node.getSourceFile();
+  const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf, false));
+  return {
+    file: sf.fileName.split(/[\\/]/u).pop() ?? sf.fileName,
+    line: pos.line + 1,
+  };
+}
+
+function registerOpaqueValueForOrigin(
+  ctx: Pick<L1BuildContext, "supply">,
+  origin: SourceRef,
+): void {
+  if (ctx.supply.synthCell !== undefined) {
+    cellRegisterOpaqueValue(ctx.supply.synthCell, ir1OpaqueOriginId(origin));
+  }
+}
+
+function isDynamicTsType(type: ts.Type): boolean {
+  return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0;
+}
+
+function opaqueValueForDynamicExpr(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): IR1Expr | null {
+  if (ctx.policy !== "opaque") {
+    return null;
+  }
+  const type = getOperandDeclaredType(expr, ctx.checker);
+  if (!isDynamicTsType(type)) {
+    return null;
+  }
+  const origin = sourceRefForNode(expr);
+  registerOpaqueValueForOrigin(ctx, origin);
+  return ir1Opaque(OPAQUE_DOMAIN, origin);
+}
+
+export function contagiousOpaqueForOperands(
+  ctx: Pick<L1BuildContext, "policy" | "supply">,
+  operands: readonly IR1Expr[],
+  originNode: ts.Node,
+): IR1Expr | null {
+  if (ctx.policy !== "opaque") {
+    return null;
+  }
+  const origin = sourceRefForNode(originNode);
+  const opaque = contagiousOpaque(operands, origin);
+  if (opaque !== null) {
+    registerOpaqueValueForOrigin(ctx, origin);
+  }
+  return opaque;
+}
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of
@@ -235,6 +297,10 @@ export function tryBuildBuiltinCall(
     }
   }
   ctx.supply.synthCell?.imports.add(spec.mod);
+  const opaque = contagiousOpaqueForOperands(ctx, args, expr);
+  if (opaque !== null) {
+    return opaque;
+  }
   return ir1App(ir1Var(rule), args);
 }
 
@@ -625,6 +691,10 @@ export function tryBuildL1PureSubExpression(
       innerMember?.methodName === "get" &&
       isMapUnionType(ctx.checker.getTypeAtLocation(innerMember.receiver));
     if (isNullableTsType(receiverTsType) && !isMapGetCall) {
+      const opaque = contagiousOpaqueForOperands(ctx, [inner], expr);
+      if (opaque !== null) {
+        return opaque;
+      }
       return ir1App(inner, [ir1LitNat(1)]);
     }
     return inner;
@@ -654,9 +724,17 @@ export function tryBuildL1PureSubExpression(
     return tryBuildL1TemplateExpression(expr, ctx);
   }
   if (ts.isIdentifier(expr)) {
+    const opaque = opaqueValueForDynamicExpr(expr, ctx);
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
+    const opaque = opaqueValueForDynamicExpr(expr as ts.Expression, ctx);
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Var(ctx.paramNames.get("this") ?? "this");
   }
   if (isL1ConditionalForm(expr, ctx.checker)) {
@@ -696,6 +774,10 @@ export function tryBuildL1PureSubExpression(
     const operand = tryBuildL1PureSubExpression(expr.operand, ctx);
     if (operand === null || isL1Unsupported(operand)) {
       return operand;
+    }
+    const opaque = contagiousOpaqueForOperands(ctx, [operand], expr);
+    if (opaque !== null) {
+      return opaque;
     }
     return ir1Unop(op, operand);
   }
@@ -739,6 +821,14 @@ export function tryBuildL1PureSubExpression(
       const present = isNullableTsType(rightTsType)
         ? left
         : ir1App(left, [ir1LitNat(1)]);
+      const opaque = contagiousOpaqueForOperands(
+        ctx,
+        [left, right, present],
+        expr,
+      );
+      if (opaque !== null) {
+        return opaque;
+      }
       return ir1Cond([[ir1IsNullish(left), right]], present);
     }
     let op = binaryOperatorToL1(expr.operatorToken.kind);
@@ -767,6 +857,10 @@ export function tryBuildL1PureSubExpression(
     const right = tryBuildL1PureSubExpression(expr.right, ctx);
     if (right === null || isL1Unsupported(right)) {
       return right;
+    }
+    const opaque = contagiousOpaqueForOperands(ctx, [left, right], expr);
+    if (opaque !== null) {
+      return opaque;
     }
     return ir1Binop(op, left, right);
   }
@@ -840,6 +934,10 @@ export function tryBuildL1PureSubExpression(
               );
             }
           }
+          const opaque = contagiousOpaqueForOperands(ctx, [elem, source], expr);
+          if (opaque !== null) {
+            return opaque;
+          }
           return ir1Binop("in", elem, source);
         }
       }
@@ -882,6 +980,14 @@ export function tryBuildL1PureSubExpression(
             }
           }
           const callee = methodName === "has" ? keyPredName : ruleName;
+          const opaque = contagiousOpaqueForOperands(
+            ctx,
+            [receiver.receiver, key],
+            expr,
+          );
+          if (opaque !== null) {
+            return opaque;
+          }
           return ir1App(ir1Var(callee), [receiver.receiver, key]);
         }
         // For union receivers (`Map<K, V> | ReadonlyMap<K, V>`), pick
@@ -962,6 +1068,10 @@ export function tryBuildL1PureSubExpression(
         }
         const callee =
           methodName === "has" ? info.names.keyPred : info.names.rule;
+        const opaque = contagiousOpaqueForOperands(ctx, [receiver, key], expr);
+        if (opaque !== null) {
+          return opaque;
+        }
         return ir1App(ir1Var(callee), [receiver, key]);
       }
     }
@@ -998,6 +1108,10 @@ export function tryBuildL1PureSubExpression(
         return builtArg;
       }
       args.push(builtArg);
+    }
+    const opaque = contagiousOpaqueForOperands(ctx, [callee, ...args], expr);
+    if (opaque !== null) {
+      return opaque;
     }
     return ir1App(callee, args);
   }
@@ -1047,6 +1161,10 @@ function buildL1Stringification(
     isNullableTsType(declaredTsType) && !isNullableTsType(tsType)
       ? ir1App(inner, [ir1LitNat(1)])
       : inner;
+  const opaque = contagiousOpaqueForOperands(ctx, [value], expr);
+  if (opaque !== null) {
+    return opaque;
+  }
   const pantType = mapTsType(
     tsType,
     ctx.checker,
@@ -1080,7 +1198,13 @@ function buildL1Stringification(
   }
   ctx.supply.synthCell.imports.add("TS_PRELUDE");
   const ruleName = pantType === "Int" ? "int-to-string" : "real-to-string";
-  return ir1App(ir1Var(ruleName), [value]);
+  {
+    const opaque = contagiousOpaqueForOperands(ctx, [value], expr);
+    if (opaque !== null) {
+      return opaque;
+    }
+    return ir1App(ir1Var(ruleName), [value]);
+  }
 }
 
 function tryBuildL1TemplateExpression(
@@ -1113,7 +1237,10 @@ function tryBuildL1TemplateExpression(
   }
   // Left-fold `+` chain. With Pant's `(String, String) → String` overload
   // landed (PR #170), each `add` lowers to `(str.++ a b)` in SMT.
-  return parts.reduce((acc, p) => ir1Binop("add", acc, p));
+  return parts.reduce((acc, p) => {
+    const opaque = contagiousOpaqueForOperands(ctx, [acc, p], expr);
+    return opaque ?? ir1Binop("add", acc, p);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1206,19 +1333,33 @@ export function tryBuildL1Cardinality(
   if (isMemberSurfaceForm(receiverNode)) {
     const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (innerCard !== null) {
+      const opaque = contagiousOpaqueForOperands(ctx, [innerCard], stripped);
+      if (opaque !== null) {
+        return opaque;
+      }
       return ir1Unop("card", innerCard);
     }
     const inner = buildL1MemberAccess(receiverNode, ctx, options);
     if (isL1Unsupported(inner)) {
       return null;
     }
-    return ir1Unop("card", inner);
+    {
+      const opaque = contagiousOpaqueForOperands(ctx, [inner], stripped);
+      if (opaque !== null) {
+        return opaque;
+      }
+      return ir1Unop("card", inner);
+    }
   }
   const nativeReceiver = tryBuildL1PureSubExpression(
     receiverNode as ts.Expression,
     ctx,
   );
   if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
+    const opaque = contagiousOpaqueForOperands(ctx, [nativeReceiver], stripped);
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Unop("card", nativeReceiver);
   }
   return null;
@@ -1394,6 +1535,18 @@ export function buildL1MemberAccess(
       unsupported: "buildL1MemberAccess: unsupported access shape",
     };
   }
+  const receiverDynamicOpaque =
+    ctx.policy === "opaque" && ts.isExpression(receiverNode)
+      ? opaqueValueForDynamicExpr(receiverNode, ctx)
+      : null;
+  if (receiverDynamicOpaque !== null) {
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [receiverDynamicOpaque],
+      stripped,
+    );
+    return opaque ?? receiverDynamicOpaque;
+  }
   const receiverType = receiverTypeForFieldAccess(
     receiverNode as ts.Expression,
     fieldName,
@@ -1454,6 +1607,11 @@ export function buildL1MemberAccess(
         unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
       };
     }
+  }
+
+  const opaque = contagiousOpaqueForOperands(ctx, [receiverL1], stripped);
+  if (opaque !== null) {
+    return opaque;
   }
 
   // Symbolic-state lookup at the outer Member level: when a prior
@@ -2344,6 +2502,14 @@ export function buildL1ConditionalFromArms(
     if (isL1Unsupported(otherwise)) {
       return otherwise;
     }
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [...builtArms.flat(), otherwise],
+      terminal,
+    );
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Cond(
       builtArms as [readonly [IR1Expr, IR1Expr], ...typeof builtArms],
       otherwise,
@@ -2362,6 +2528,14 @@ export function buildL1ConditionalFromArms(
     if (builtArms.length === 0) {
       return { unsupported: "no conditional shape to build" };
     }
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [...builtArms.flat(), terminalL1.otherwise],
+      terminal,
+    );
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Cond(
       builtArms as [readonly [IR1Expr, IR1Expr], ...typeof builtArms],
       terminalL1.otherwise,
@@ -2372,6 +2546,14 @@ export function buildL1ConditionalFromArms(
   // Treat the L1 result as the otherwise.
   if (builtArms.length === 0) {
     return terminalL1;
+  }
+  const opaque = contagiousOpaqueForOperands(
+    ctx,
+    [...builtArms.flat(), terminalL1],
+    terminal,
+  );
+  if (opaque !== null) {
+    return opaque;
   }
   return ir1Cond(
     builtArms as [readonly [IR1Expr, IR1Expr], ...typeof builtArms],
@@ -2436,6 +2618,16 @@ function buildFromTernary(
   if (arms.length === 0) {
     // Cannot happen — we entered the loop because expr is a ternary.
     return { unsupported: "ternary with no arms (unreachable)" };
+  }
+  {
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [...arms.flat(), otherwise],
+      expr,
+    );
+    if (opaque !== null) {
+      return opaque;
+    }
   }
   return ir1Cond(
     arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
@@ -2544,6 +2736,14 @@ function buildFromIfStatement(
         unsupported: "if-statement walk produced no arms (unreachable)",
       };
     }
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [...arms.flat(), elseValue],
+      stmt,
+    );
+    if (opaque !== null) {
+      return opaque;
+    }
     return ir1Cond(
       arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
       elseValue,
@@ -2646,6 +2846,16 @@ function buildFromSwitchStatement(
   if (arms.length === 0) {
     // Switch with only a default: collapse to just the default value.
     return otherwise;
+  }
+  {
+    const opaque = contagiousOpaqueForOperands(
+      ctx,
+      [...arms.flat(), otherwise],
+      stmt,
+    );
+    if (opaque !== null) {
+      return opaque;
+    }
   }
   return ir1Cond(
     arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
@@ -2857,9 +3067,13 @@ function buildFromShortCircuit(
     return right;
   }
   if (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
-    return ir1Binop("and", left, right);
+    const opaque = contagiousOpaqueForOperands(ctx, [left, right], expr);
+    return opaque ?? ir1Binop("and", left, right);
   }
-  return ir1Binop("or", left, right);
+  {
+    const opaque = contagiousOpaqueForOperands(ctx, [left, right], expr);
+    return opaque ?? ir1Binop("or", left, right);
+  }
 }
 
 // ---------------------------------------------------------------------------
