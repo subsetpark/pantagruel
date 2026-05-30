@@ -88,7 +88,7 @@ describe("recognizeBrandedPrecondition", () => {
   it("maps recognized Brand.Brand intersections to predicates", () => {
     withSource(
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Positive = number & Brand.Brand<"Positive">;
         type NonNegative = number & Brand.Brand<"NonNegative">;
         type NonEmptyString = string & Brand.Brand<"NonEmptyString">;
@@ -131,7 +131,7 @@ describe("recognizeBrandedPrecondition", () => {
   it("returns null for unrecognized and unbranded types", () => {
     withSource(
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Custom = number & Brand.Brand<"Custom">;
         export function custom(x: Custom) { return x; }
         export function plain(x: number) { return x; }
@@ -157,7 +157,7 @@ describe("brand-precondition @pant integration stubs", () => {
     writeFileSync(
       file,
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Positive = number & Brand.Brand<"Positive">;
         export function positive(x: Positive): number { return x; }
       `,
@@ -182,7 +182,7 @@ describe("brand-precondition @pant integration stubs", () => {
     writeFileSync(
       file,
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Custom = number & Brand.Brand<"Custom">;
         export function custom(x: Custom): number { return x; }
         export function plain(x: number): number { return x; }

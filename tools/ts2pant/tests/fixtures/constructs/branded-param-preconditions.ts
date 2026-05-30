@@ -1,4 +1,5 @@
-import { Brand, Data, Effect } from "effect";
+import type * as Brand from "effect/Brand";
+import * as Effect from "effect/Effect";
 
 type Positive = number & Brand.Brand<"Positive">;
 type NonNegative = number & Brand.Brand<"NonNegative">;
@@ -6,7 +7,7 @@ type IntBrand = number & Brand.Brand<"Int">;
 type NonEmptyStrings = ReadonlyArray<string> & Brand.Brand<"NonEmpty">;
 type Custom = number & Brand.Brand<"Custom">;
 
-class TooSmallError extends Data.TaggedError("TooSmallError")<{}> {}
+class TooSmallError {}
 
 /** @pant all x: Int | positiveBranded x = x */
 export function positiveBranded(x: Positive): number {
