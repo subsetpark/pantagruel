@@ -799,6 +799,21 @@ export function buildL1SubExpr(
   node: ts.Expression,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Expr> {
+  const ctxOptions = {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: ctx.paramNames,
+    state: ctx.state,
+    supply: ctx.supply,
+    env: ctx.env,
+    policy: ctx.policy,
+  };
+  if (ts.isNonNullExpression(node)) {
+    const nativeNonNull = tryBuildL1PureSubExpression(node, ctxOptions);
+    if (nativeNonNull !== null) {
+      return nativeNonNull;
+    }
+  }
   const stripped = unwrapExpression(node);
   if (
     ts.isPropertyAccessExpression(stripped) ||
@@ -812,15 +827,6 @@ export function buildL1SubExpr(
     // receivers via its `ctx.state !== undefined` branch, but passing
     // the option here keeps both probes consistent.
     const l1Options = { nativeReceiverLeaf: true } as const;
-    const ctxOptions = {
-      checker: ctx.checker,
-      strategy: ctx.strategy,
-      paramNames: ctx.paramNames,
-      state: ctx.state,
-      supply: ctx.supply,
-      env: ctx.env,
-      policy: ctx.policy,
-    };
     const card = tryBuildL1Cardinality(stripped, ctxOptions, l1Options);
     if (card !== null) {
       return card;

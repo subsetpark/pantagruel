@@ -235,6 +235,13 @@ function narrowNullableIdentifierRead(
   value: IR1Expr,
   ctx: L1BuildContext,
 ): IR1Expr {
+  if (
+    expr.parent !== undefined &&
+    ts.isNonNullExpression(expr.parent) &&
+    expr.parent.expression === expr
+  ) {
+    return value;
+  }
   if (value.kind === "var" && /^\$\d+$/u.test(value.name)) {
     return value;
   }
@@ -246,7 +253,10 @@ function narrowNullableIdentifierRead(
   if (!isNullableTsType(declaredTsType)) {
     return value;
   }
-  const inScope = nonNullFactInScope(env, expr.text);
+  const inScope = nonNullFactInScope(env, expr.text).map((fact) => ({
+    ...fact,
+    receiver: ctx.paramNames.get(fact.receiver) ?? fact.receiver,
+  }));
   if (!inScope.some((fact) => !fact.negated)) {
     return value;
   }

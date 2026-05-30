@@ -185,4 +185,47 @@ describe("nullish narrowing helpers", () => {
     assert.doesNotMatch(output, /\$\d+/u);
     assert.doesNotMatch(output, /\$\d+ 1/u);
   });
+
+  it("explicit non-null assertions inside guards extract once", async () => {
+    const sourceFile = createSourceFileFromSource(`
+      export function assertedInsideGuard(
+        x: number | null,
+        fallback: number,
+      ): number {
+        if (x !== null) return x!;
+        return fallback;
+      }
+    `);
+    const doc = await buildDocumentFromSourceFile(
+      sourceFile,
+      "assertedInsideGuard",
+    );
+    const output = await emitAndCheck(doc);
+
+    assert.match(
+      output,
+      /asserted-inside-guard x fallback = \(cond ~\(#x = 0\) => x 1, true => fallback\)\./u,
+    );
+    assert.doesNotMatch(output, /\(x 1\) 1/u);
+  });
+
+  it("nullish facts render obligations with lowered parameter names", async () => {
+    const sourceFile = createSourceFileFromSource(`
+      export function camelNarrow(
+        maybeValue: number | null,
+        fallback: number,
+      ): number {
+        if (maybeValue !== null) return maybeValue;
+        return fallback;
+      }
+    `);
+    const doc = await buildDocumentFromSourceFile(sourceFile, "camelNarrow");
+    const output = await emitAndCheck(doc);
+
+    assert.match(
+      output,
+      /camel-narrow maybe-value fallback = \(cond ~\(#maybe-value = 0\) => maybe-value 1, true => fallback\)\./u,
+    );
+    assert.doesNotMatch(output, /maybeValue/u);
+  });
 });
