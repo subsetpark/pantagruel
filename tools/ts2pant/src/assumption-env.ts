@@ -9,6 +9,7 @@ export type Fact =
       literal: string;
       negated: boolean;
     }
+  | { kind: "non-null"; receiver: string; negated: boolean }
   | { kind: "predicate"; testExpr: OpaqueExpr };
 
 export interface AssumptionEnv {
@@ -17,6 +18,11 @@ export interface AssumptionEnv {
 
 export interface InScopeDiscriminantFact {
   literal: string;
+  negated: boolean;
+}
+
+export interface InScopeNonNullFact {
+  receiver: string;
   negated: boolean;
 }
 
@@ -91,6 +97,33 @@ export function discriminantFactsInScope(
   return out;
 }
 
+export function nonNullFactInScope(
+  env: AssumptionEnv,
+  receiver: string,
+): InScopeNonNullFact[] {
+  const out: InScopeNonNullFact[] = [];
+  const seen = new Set<string>();
+  for (const frame of env.frames) {
+    for (const fact of frame.values()) {
+      if (fact.kind !== "non-null" || fact.receiver !== receiver) {
+        continue;
+      }
+      const inScope: InScopeNonNullFact = {
+        receiver: fact.receiver,
+        negated: fact.negated,
+      };
+      const key = `${inScope.negated ? "!" : "="}:${JSON.stringify(
+        inScope.receiver,
+      )}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(inScope);
+      }
+    }
+  }
+  return out;
+}
+
 function factKey(fact: Fact): string {
   if (fact.kind === "discriminant") {
     return `disc:${JSON.stringify([
@@ -99,6 +132,9 @@ function factKey(fact: Fact): string {
       fact.literal,
       fact.negated,
     ])}`;
+  }
+  if (fact.kind === "non-null") {
+    return `nonnull:${JSON.stringify([fact.receiver, fact.negated])}`;
   }
   return `pred:${JSON.stringify(getAst().strExpr(fact.testExpr))}`;
 }
