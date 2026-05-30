@@ -96,7 +96,7 @@ const NULLISH_FLAGS =
   ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
 
 /** True for TypeScript `null` / `undefined` / `void`. */
-function isTsNullish(type: ts.Type): boolean {
+export function isTsNullish(type: ts.Type): boolean {
   return (type.flags & NULLISH_FLAGS) !== 0;
 }
 
