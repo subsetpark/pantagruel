@@ -40,11 +40,15 @@ import {
   enterFrame,
   exitFrame,
   type Fact,
+  nonNullFactInScope,
   pushFact,
   queryFact,
 } from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
-import { renderDefinednessObligation } from "./definedness-obligation.js";
+import {
+  renderDefinednessObligation,
+  renderNullishObligation,
+} from "./definedness-obligation.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -78,6 +82,7 @@ import {
   negateFact,
   recognizeNarrowingFromSwitchCase,
   recognizeNarrowingPredicate,
+  recognizeNullishNarrowing,
 } from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
@@ -214,6 +219,52 @@ export const isL1Unsupported = (
   r: L1BuildResult,
 ): r is { unsupported: string } =>
   typeof r === "object" && r !== null && "unsupported" in r;
+
+function recognizeBranchFact(
+  test: ts.Expression,
+  checker: ts.TypeChecker,
+): Fact | null {
+  return (
+    recognizeNullishNarrowing(test, checker) ??
+    recognizeNarrowingPredicate(test, checker)
+  );
+}
+
+function narrowNullableIdentifierRead(
+  expr: ts.Identifier,
+  value: IR1Expr,
+  ctx: L1BuildContext,
+): IR1Expr {
+  const env = (ctx as { env?: L1BuildContext["env"] }).env;
+  if (env === undefined) {
+    return value;
+  }
+  const declaredTsType = getOperandDeclaredType(expr, ctx.checker);
+  if (!isNullableTsType(declaredTsType)) {
+    return value;
+  }
+  const inScope = nonNullFactInScope(env, expr.text);
+  if (!inScope.some((fact) => !fact.negated)) {
+    return value;
+  }
+  ctx.supply.synthCell?.definednessObligations.push(
+    renderNullishObligation({
+      receiver: lowerExpr(lowerL1Expr(value)),
+      inScope,
+    }),
+  );
+  return ir1App(value, [ir1LitNat(1)]);
+}
+
+function isSingletonExtraction(expr: IR1Expr): boolean {
+  return (
+    expr.kind === "app" &&
+    expr.args.length === 1 &&
+    expr.args[0]?.kind === "lit" &&
+    expr.args[0].value.kind === "nat" &&
+    expr.args[0].value.value === 1
+  );
+}
 
 function withNarrowingFrame<T>(
   ctx: L1BuildContext,
@@ -728,7 +779,8 @@ export function tryBuildL1PureSubExpression(
     if (opaque !== null) {
       return opaque;
     }
-    return ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
+    const value = ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
+    return narrowNullableIdentifierRead(expr, value, ctx);
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
     const opaque = opaqueValueForDynamicExpr(expr as ts.Expression, ctx);
@@ -1158,7 +1210,9 @@ function buildL1Stringification(
   const declaredTsType = getOperandDeclaredType(expr, ctx.checker);
   const tsType = ctx.checker.getTypeAtLocation(expr);
   const value =
-    isNullableTsType(declaredTsType) && !isNullableTsType(tsType)
+    isNullableTsType(declaredTsType) &&
+    !isNullableTsType(tsType) &&
+    !isSingletonExtraction(inner)
       ? ir1App(inner, [ir1LitNat(1)])
       : inner;
   const opaque = contagiousOpaqueForOperands(ctx, [value], expr);
@@ -2676,10 +2730,7 @@ function buildFromIfStatement(
           "if-without-else cannot lower to value-position cond (need both branches)",
       };
     }
-    const currentFact = recognizeNarrowingPredicate(
-      current.expression,
-      ctx.checker,
-    );
+    const currentFact = recognizeBranchFact(current.expression, ctx.checker);
     const guard = buildSubExpr(current.expression, ctx);
     if (isL1Unsupported(guard)) {
       return guard;

@@ -66,6 +66,7 @@ import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import {
   negateFact,
   recognizeNarrowingPredicate,
+  recognizeNullishNarrowing,
 } from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
@@ -120,6 +121,16 @@ import {
 import type { PantDeclaration, PropResult } from "./types.js";
 
 export { expressionHasSideEffects } from "./purity.js";
+
+function recognizeBranchFact(
+  test: ts.Expression,
+  checker: ts.TypeChecker,
+): Fact | null {
+  return (
+    recognizeNullishNarrowing(test, checker) ??
+    recognizeNarrowingPredicate(test, checker)
+  );
+}
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
@@ -2578,10 +2589,7 @@ function lowerPreludeBindings(
         return acc;
       }
       if (binding.kind === "earlyReturn") {
-        const currentFact = recognizeNarrowingPredicate(
-          binding.predicateExpr,
-          checker,
-        );
+        const currentFact = recognizeBranchFact(binding.predicateExpr, checker);
         const predRes = translateBindingInit(
           binding.predicateExpr,
           checker,
@@ -2602,29 +2610,48 @@ function lowerPreludeBindings(
               pushFact(env, fact);
             }
           }
-          valRes =
-            binding.blockBindings.length === 0
-              ? translateBindingInit(
-                  binding.valueExpr,
-                  checker,
-                  strategy,
-                  acc.scopedParams,
-                  state,
-                  supply,
-                  env,
-                )
-              : translateEarlyReturnBlockValue(
-                  binding.blockBindings,
-                  binding.valueExpr,
-                  {
+          if (binding.blockBindings.length === 0) {
+            const l1Value =
+              currentFact?.kind === "non-null"
+                ? buildL1SubExpr(binding.valueExpr, {
                     checker,
                     strategy,
-                    scopedParams: acc.scopedParams,
+                    paramNames: acc.scopedParams,
                     state: state ?? makeSymbolicState(),
                     supply,
                     env,
-                  },
-                );
+                  })
+                : null;
+            valRes =
+              l1Value !== null &&
+              !isUnsupported(l1Value) &&
+              !isL1Unsupported(l1Value)
+                ? {
+                    value: applyOpaqueAliases(lowerL1ToOpaque(l1Value), supply),
+                  }
+                : translateBindingInit(
+                    binding.valueExpr,
+                    checker,
+                    strategy,
+                    acc.scopedParams,
+                    state,
+                    supply,
+                    env,
+                  );
+          } else {
+            valRes = translateEarlyReturnBlockValue(
+              binding.blockBindings,
+              binding.valueExpr,
+              {
+                checker,
+                strategy,
+                scopedParams: acc.scopedParams,
+                state: state ?? makeSymbolicState(),
+                supply,
+                env,
+              },
+            );
+          }
         } finally {
           exitFrame(env);
         }

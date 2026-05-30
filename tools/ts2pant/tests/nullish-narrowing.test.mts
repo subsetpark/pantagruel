@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import {
@@ -15,6 +17,24 @@ import {
   recognizeNullishNarrowing,
 } from "../src/narrowing-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import {
+  buildDocument,
+  emitAndCheck,
+  getPantBin,
+  PROJECT_ROOT,
+} from "./helpers.mts";
+import { runCheck } from "../src/emit.js";
+
+const FIXTURES = resolve(import.meta.dirname, "fixtures/constructs");
+
+function solverAvailable(): boolean {
+  try {
+    execFileSync("z3", ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 before(async () => {
   await loadAst();
@@ -111,23 +131,66 @@ describe("nullish narrowing helpers", () => {
     ]);
   });
 
-  it("renderNullishObligation renders the cardinality goal", () => {
+  it("renderNullishObligation renders a discharged cardinality goal", () => {
     const ast = getAst();
     const obligation = renderNullishObligation({
       receiver: ast.var("x"),
       inScope: [{ receiver: "x", negated: false }],
     });
 
-    assert.equal(obligation.text, "#x > 0 -> #x > 0");
+    assert.equal(obligation.text, "true");
   });
 
-  it.skip(
-    "x !== null guard discharges optional read (@pant entails) — PENDING: Patch 2",
-    () => {},
+  it(
+    "x !== null guard discharges optional read (@pant entails)",
+    { skip: !solverAvailable() ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocument(
+        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+        "strictNullRead",
+      );
+      const output = await emitAndCheck(doc);
+      assert.match(
+        output,
+        /strict-null-read x d = \(cond ~\(#x = 0\) => x 1, true => d\)\./u,
+      );
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.equal(result.passed, true, result.output);
+      assert.ok(
+        result.checks.some((c) => c.message.startsWith("OK: Entailed:")),
+        result.output,
+      );
+    },
   );
 
-  it.skip(
-    "optional read in the null branch is not entailed (negative control) — PENDING: Patch 2",
-    () => {},
+  it(
+    "optional read in the null branch is not entailed (negative control)",
+    { skip: !solverAvailable() ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocument(
+        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+        "nullBranchControl",
+      );
+      const output = await emitAndCheck(doc);
+      assert.match(
+        output,
+        /null-branch-control x d = \(cond #x = 0 => x, true => d\)\./u,
+      );
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.ok(
+        result.checks.some(
+          (c) =>
+            c.message.startsWith("FAIL: Not entailed:") ||
+            c.message.startsWith("UNKNOWN: Entailed:"),
+        ) || /UNKNOWN: Entailed:|FAIL: Not entailed:/u.test(result.output),
+        result.output,
+      );
+    },
   );
 });

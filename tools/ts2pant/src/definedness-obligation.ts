@@ -57,6 +57,9 @@ export function renderNullishObligation(
   input: NullishObligationInput,
 ): DefinednessObligation {
   const ast = getAst();
+  if (input.inScope.some((fact) => !fact.negated)) {
+    return { text: ast.strExpr(ast.litBool(true)) };
+  }
   const consequent = nonNullExpr(input.receiver);
   const antecedents = input.inScope.map((fact) => {
     const equality = nonNullExpr(ast.var(fact.receiver));

@@ -94,6 +94,22 @@ function assertDiscriminant(
   );
 }
 
+function assertNonNull(
+  env: AssumptionEnv,
+  receiver: string,
+  negated = false,
+): void {
+  const expected: Fact = {
+    kind: "non-null",
+    receiver,
+    negated,
+  };
+  assert.ok(
+    queryFact(env, expected),
+    `missing ${negated ? "nullish" : "non-null"} fact for ${receiver}`,
+  );
+}
+
 describe("narrowing integration", () => {
   it("if-then arm sees discriminant fact", () => {
     const { fn, ctx, captures } = setupFunction(`
@@ -144,6 +160,23 @@ describe("narrowing integration", () => {
     assert.equal("unsupported" in result, false);
     assertDiscriminant(envAt(captures, "if.then"), "kind", "circle", true);
     assertDiscriminant(envAt(captures, "if.else"), "kind", "circle");
+    assert.equal(envDepth(ctx.env), 1);
+  });
+
+  it("if non-null arm sees non-null fact and else sees nullish fact", () => {
+    const { fn, ctx, captures } = setupFunction(`
+      function f(s: number | null): number {
+        if (s !== null) return s;
+        else return 0;
+      }
+    `);
+    const result = buildL1Conditional(
+      fn.body!.statements[0] as ts.IfStatement,
+      ctx,
+    );
+    assert.equal("unsupported" in result, false);
+    assertNonNull(envAt(captures, "if.then"), "s");
+    assertNonNull(envAt(captures, "if.else"), "s", true);
     assert.equal(envDepth(ctx.env), 1);
   });
 
@@ -202,6 +235,35 @@ describe("narrowing integration", () => {
       "circle",
       true,
     );
+    assert.equal(envDepth(env), 1);
+  });
+
+  it("early-return fall-through sees non-null complement", () => {
+    const sourceFile = createSourceFileFromSource(
+      `
+        function f(s: number | null): number {
+          if (s == null) return 0;
+          return s;
+        }
+      `,
+      "narrowing-early-nullish.ts",
+    );
+    const env = createL1AssumptionEnv();
+    const captures: Array<{ location: string; snapshot: AssumptionEnv }> = [];
+    const result = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+      assumptionEnv: env,
+      recognitionHook: (hookEnv, location) => {
+        captures.push({ location, snapshot: cloneEnv(hookEnv) });
+      },
+    });
+    assert.equal(
+      result.some((r) => r.kind === "unsupported"),
+      false,
+    );
+    assertNonNull(envAt(captures, "early-return.fallthrough"), "s");
     assert.equal(envDepth(env), 1);
   });
 

@@ -68,6 +68,7 @@ import { substituteIR1StmtSubtree } from "./ir1-substitute.js";
 import {
   negateFact,
   recognizeNarrowingPredicate,
+  recognizeNullishNarrowing,
 } from "./narrowing-recognizer.js";
 import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -175,6 +176,16 @@ function withNarrowingFrame<T>(
   } finally {
     exitFrame(env);
   }
+}
+
+function recognizeBranchFact(
+  test: ts.Expression,
+  checker: ts.TypeChecker,
+): Fact | null {
+  return (
+    recognizeNullishNarrowing(test, checker) ??
+    recognizeNarrowingPredicate(test, checker)
+  );
 }
 
 /**
@@ -1010,7 +1021,7 @@ export function buildL1IfMutation(
     return guard;
   }
 
-  const fact = recognizeNarrowingPredicate(stmt.expression, ctx.checker);
+  const fact = recognizeBranchFact(stmt.expression, ctx.checker);
   const thenBody = withNarrowingFrame(ctx, "if.then", [fact], () =>
     buildL1MutationBody(stmt.thenStatement, ctx),
   );

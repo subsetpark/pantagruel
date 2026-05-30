@@ -754,6 +754,30 @@ exports[`expressions-misc.ts > parenAdd 1`] = `
 "module PAREN_ADD.\\n\\nparen-add a: Int, b: Int => Int.\\n\\n---\\n\\nparen-add a b = a + b.\\n"
 `;
 
+exports[`expressions-nullish-narrowing.ts > earlyReturnComplement 1`] = `
+"module EARLY_RETURN_COMPLEMENT.\\n\\nearly-return-complement x: [Int], d: Int => Int.\\n\\n---\\n\\nearly-return-complement x d = (cond #x = 0 => d, true => x 1).\\n\\ncheck\\n\\ntrue.\\ntrue.\\n"
+`;
+
+exports[`expressions-nullish-narrowing.ts > longFormRead 1`] = `
+"module LONG_FORM_READ.\\n\\nlong-form-read x: [Int], d: Int => Int.\\n\\n---\\n\\nlong-form-read x d = (cond ~(#x = 0) => x 1, true => d).\\n\\ncheck\\n\\ntrue.\\ntrue.\\n"
+`;
+
+exports[`expressions-nullish-narrowing.ts > looseNullRead 1`] = `
+"module LOOSE_NULL_READ.\\n\\nloose-null-read x: [Int], d: Int => Int.\\n\\n---\\n\\nloose-null-read x d = (cond ~(#x = 0) => x 1, true => d).\\n\\ncheck\\n\\ntrue.\\ntrue.\\n"
+`;
+
+exports[`expressions-nullish-narrowing.ts > nullBranchControl 1`] = `
+"module NULL_BRANCH_CONTROL.\\n\\nnull-branch-control x: [Int], d: [Int] => [Int].\\n\\n---\\n\\nnull-branch-control x d = (cond #x = 0 => x, true => d).\\n\\ncheck\\n\\nsome n: Nat | n ~= n.\\n"
+`;
+
+exports[`expressions-nullish-narrowing.ts > strictNullRead 1`] = `
+"module STRICT_NULL_READ.\\n\\nstrict-null-read x: [Int], d: Int => Int.\\n\\n---\\n\\nstrict-null-read x d = (cond ~(#x = 0) => x 1, true => d).\\n\\ncheck\\n\\ntrue.\\ntrue.\\n"
+`;
+
+exports[`expressions-nullish-narrowing.ts > strictUndefinedRead 1`] = `
+"module STRICT_UNDEFINED_READ.\\n\\nstrict-undefined-read x: [Int], d: Int => Int.\\n\\n---\\n\\nstrict-undefined-read x d = (cond ~(#x = 0) => x 1, true => d).\\n\\ncheck\\n\\ntrue.\\ntrue.\\n"
+`;
+
 exports[`expressions-nullish.ts > defaultToZero 1`] = `
 "module DEFAULT_TO_ZERO.\\n\\ndefault-to-zero x: [Int] => Int.\\n\\n---\\n\\ndefault-to-zero x = (cond #x = 0 => 0, true => x 1).\\n"
 `;
@@ -1031,7 +1055,7 @@ exports[`expressions-template-literal.ts > labelCount 1`] = `
 `;
 
 exports[`expressions-template-literal.ts > labelGuarded 1`] = `
-"module LABEL_GUARDED.\\nimport TS_PRELUDE.\\n\\nlabel-guarded n: [Int] => String.\\n\\n---\\n\\nlabel-guarded n = (cond #n = 0 => \\"missing\\", true => \\"count: \\" + int-to-string (n 1)).\\n"
+"module LABEL_GUARDED.\\nimport TS_PRELUDE.\\n\\nlabel-guarded n: [Int] => String.\\n\\n---\\n\\nlabel-guarded n = (cond #n = 0 => \\"missing\\", true => \\"count: \\" + int-to-string (n 1)).\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`expressions-template-literal.ts > rejectListSubstitution 1`] = `
