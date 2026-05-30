@@ -494,6 +494,21 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "arrayElementNarrowed",
       minChecks: 1,
     },
+    {
+      file: resolve(FIXTURES, "branded-param-preconditions.ts"),
+      fn: "positiveBranded",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "branded-param-preconditions.ts"),
+      fn: "nonNegativeBranded",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "branded-param-preconditions.ts"),
+      fn: "nonEmptyBranded",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {
@@ -527,6 +542,81 @@ describe("dogfood: @pant annotations entail", () => {
       },
     );
   }
+});
+
+describe("dogfood: branded-parameter preconditions", () => {
+  const hasSolver = solverAvailable();
+
+  it("recognized brand predicates are checkable in skeleton declarations", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    for (const fn of [
+      "positiveBranded",
+      "nonNegativeBranded",
+      "nonEmptyBranded",
+    ]) {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "branded-param-preconditions.ts"),
+        fn,
+        { noBody: true },
+      );
+      const output = emitDocument(doc);
+      assert.doesNotMatch(output, /> UNSUPPORTED:/u);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.ok(
+        result.passed,
+        `pant --check failed for ${fn}:\n${result.output}`,
+      );
+    }
+  });
+
+  it("brand and Effect guards are AND-combined", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "branded-param-preconditions.ts"),
+      "brandAndEffect",
+      { noBody: true },
+    );
+    const output = emitDocument(doc);
+    assert.match(
+      output,
+      /brand-and-effect x: Int, ~\(x < 10\) and x > 0 => Effect\./u,
+    );
+    const result = runCheck(withOpaqueEffectDomain(output), {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+  });
+
+  it("unrecognized and unbranded parameters keep the unguarded base type", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    for (const fn of ["unrecognizedBrand", "unbrandedControl"]) {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "branded-param-preconditions.ts"),
+        fn,
+        { noBody: true },
+      );
+      const output = emitDocument(doc);
+      const decl = output
+        .split("\n")
+        .find((line) => line.startsWith(toPantFixtureName(fn)));
+      assert.equal(decl?.trim(), `${toPantFixtureName(fn)} x: Int => Int.`);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.ok(
+        result.passed,
+        `pant --check failed for ${fn}:\n${result.output}`,
+      );
+    }
+  });
 });
 
 describe("dogfood: Effect error-channel preconditions", () => {

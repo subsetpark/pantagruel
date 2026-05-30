@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { recognizeBrandedPrecondition } from "./brand-precondition.js";
 import {
   extractEffectErrorModes,
   recognizeErrorYield,
@@ -1590,6 +1591,7 @@ export function translateSignature(
   // Build params, prepending `this` for class methods
   const params: Array<{ name: string; type: string }> = [];
   const paramNameMap = new Map<string, string>();
+  const brandGuards: OpaqueExpr[] = [];
 
   if (className) {
     const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
@@ -1628,6 +1630,10 @@ export function translateSignature(
       : toPantTermName(param.name);
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);
+    const brandGuard = recognizeBrandedPrecondition(symbolType, pantName);
+    if (brandGuard) {
+      brandGuards.push(brandGuard);
+    }
   }
 
   const guard = detectGuard(
@@ -1646,7 +1652,14 @@ export function translateSignature(
     synthCell,
     program,
   );
-  const combinedGuard = combineGuards(guard, effectGuard);
+  const brandGuard = brandGuards.reduce<OpaqueExpr | undefined>(
+    (acc, g) => combineGuards(acc, g),
+    undefined,
+  );
+  const combinedGuard = combineGuards(
+    combineGuards(guard, effectGuard),
+    brandGuard,
+  );
 
   if (classification === "pure") {
     // Map-partial signature alignment: when the body is exactly a
