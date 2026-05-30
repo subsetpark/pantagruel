@@ -1,4 +1,7 @@
-import type { InScopeDiscriminantFact } from "./assumption-env.js";
+import type {
+  InScopeDiscriminantFact,
+  InScopeNonNullFact,
+} from "./assumption-env.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 
@@ -12,6 +15,11 @@ export interface DefinednessObligationInput {
 
 export interface DefinednessObligation {
   text: string;
+}
+
+export interface NullishObligationInput {
+  receiver: OpaqueExpr;
+  inScope: readonly InScopeNonNullFact[];
 }
 
 export function renderDefinednessObligation(
@@ -45,6 +53,23 @@ export function renderDefinednessObligation(
   return { text: ast.strExpr(result) };
 }
 
+export function renderNullishObligation(
+  input: NullishObligationInput,
+): DefinednessObligation {
+  const ast = getAst();
+  const consequent = nonNullExpr(input.receiver);
+  const antecedents = input.inScope.map((fact) => {
+    const equality = nonNullExpr(ast.var(fact.receiver));
+    return fact.negated ? ast.unop(ast.opNot(), equality) : equality;
+  });
+  const antecedent = conjoin(antecedents);
+  const result =
+    antecedent === null
+      ? consequent
+      : ast.binop(ast.opImpl(), antecedent, consequent);
+  return { text: ast.strExpr(result) };
+}
+
 function discriminantEquality(
   discRule: string,
   receiver: OpaqueExpr,
@@ -56,6 +81,11 @@ function discriminantEquality(
     ast.app(ast.var(discRule), [receiver]),
     ast.litString(literal),
   );
+}
+
+function nonNullExpr(receiver: OpaqueExpr): OpaqueExpr {
+  const ast = getAst();
+  return ast.binop(ast.opGt(), ast.unop(ast.opCard(), receiver), ast.litNat(0));
 }
 
 function conjoin(exprs: readonly OpaqueExpr[]): OpaqueExpr | null {
