@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { ir1Binop, ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
 import { OPAQUE_DOMAIN, contagiousOpaque, isOpaqueExpr } from "../src/opaque.js";
+import { createSourceFile } from "../src/extract.js";
+import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
+
+const OPAQUE_FIXTURE_DIR = resolve(import.meta.dirname, "fixtures/opaque");
 
 describe("opaque opt-in policy", () => {
   const origin = { file: "tests/opaque-opt-in.ts", line: 1 };
@@ -25,8 +30,29 @@ describe("opaque opt-in policy", () => {
     });
   });
 
-  it.skip("signature composite opacity is precision-preserving under policy opaque (@pant checks; PENDING: Patch 2)", () => {
-    // @pant all x: [Int * Opaque] | true.
+  it("signature composite opacity is precision-preserving under policy opaque (@pant checks)", async (t) => {
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "signatures.ts"),
+    );
+    const targets = [
+      "scalarUnknown",
+      "scalarAny",
+      "unknownArray",
+      "numberUnknownTuple",
+      "stringUnknownMap",
+      "numberUnknownUnion",
+      "nullableUnknown",
+      "anonymousRecord",
+    ];
+
+    for (const target of targets) {
+      const doc = await buildDocumentFromSourceFile(sourceFile, target, {
+        noBody: true,
+        policy: "opaque",
+      });
+      const output = await emitAndCheck(doc);
+      t.assert.snapshot(output);
+    }
   });
 
   it.skip("body operation with an opaque operand propagates opacity (contagion; PENDING: Patch 3)", () => {

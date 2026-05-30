@@ -1,0 +1,31 @@
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 1`] = `
+"module SCALAR_UNKNOWN.\\n\\nOpaque.\\nscalar-unknown value: Opaque => Opaque.\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 2`] = `
+"module SCALAR_ANY.\\n\\nOpaque.\\nscalar-any value: Opaque => Opaque.\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 3`] = `
+"module UNKNOWN_ARRAY.\\n\\nOpaque.\\nunknown-array value: [Opaque] => [Opaque].\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 4`] = `
+"module NUMBER_UNKNOWN_TUPLE.\\n\\nOpaque.\\nnumber-unknown-tuple value: Int * Opaque => Int * Opaque.\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 5`] = `
+"module STRING_UNKNOWN_MAP.\\n\\nOpaque.\\nStringToOpaqueMap.\\nstring-to-opaque-map-key m: StringToOpaqueMap, k: String => Bool.\\nstring-to-opaque-map m: StringToOpaqueMap, k: String, string-to-opaque-map-key m k => Opaque.\\nstring-unknown-map value: StringToOpaqueMap => StringToOpaqueMap.\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 6`] = `
+"module NUMBER_UNKNOWN_UNION.\\n\\nOpaque.\\nnumber-unknown-union value: Int + Opaque => Int + Opaque.\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 7`] = `
+"module NULLABLE_UNKNOWN.\\n\\nOpaque.\\nnullable-unknown value: [Opaque] => [Opaque].\\n\\n---\\n\\ntrue.\\n"
+`;
+
+exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 8`] = `
+"module ANONYMOUS_RECORD.\\n\\nOpaque.\\nKnownMysteryRec.\\nknown-mystery-rec--known r: KnownMysteryRec => Int.\\nknown-mystery-rec--mystery r: KnownMysteryRec => Opaque.\\nanonymous-record value: KnownMysteryRec => KnownMysteryRec.\\n\\n---\\n\\ntrue.\\n"
+`;
