@@ -1,5 +1,10 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import {
+  extractEffectErrorModes,
+  recognizeErrorYield,
+  recoverErrorModeGuard,
+} from "./effect-error-channel.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type BuildL1MemberAccessOptions,
@@ -19,7 +24,11 @@ import {
 } from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { isEffectFree, isStaticallyBoolTyped } from "./purity.js";
+import {
+  isEffectFree,
+  isStaticallyBoolTyped,
+  resolveEffectLibraryExport,
+} from "./purity.js";
 import {
   cellIsUsed,
   cellRegisterName,
@@ -972,6 +981,129 @@ export function detectGuard(
   return guards.reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
 }
 
+function detectEffectErrorChannelGuard(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  synthCell?: SynthCell,
+  program?: ts.Program,
+): OpaqueExpr | undefined {
+  if (!node.body) {
+    return undefined;
+  }
+
+  const sig = checker.getSignatureFromDeclaration(node);
+  if (!sig) {
+    return undefined;
+  }
+  const modes = extractEffectErrorModes(sig.getReturnType(), checker);
+  if (!modes) {
+    return undefined;
+  }
+
+  const genBody = findReturnedEffectGenBody(node.body, checker);
+  if (!genBody) {
+    return undefined;
+  }
+
+  const ast = getAst();
+  const recovered = new Map<string, OpaqueExpr>();
+
+  for (const stmt of genBody.statements) {
+    if (!ts.isIfStatement(stmt)) {
+      if (nodeContainsErrorYield(stmt)) {
+        return undefined;
+      }
+      continue;
+    }
+
+    if (nodeContainsErrorYield(stmt)) {
+      const modeGuard = recoverErrorModeGuard(stmt, modes, checker);
+      if (!modeGuard || recovered.has(modeGuard.mode.name)) {
+        return undefined;
+      }
+      const translated = tryTranslateGuardExpr(
+        modeGuard.condition,
+        checker,
+        strategy,
+        paramNames,
+        synthCell,
+        program,
+      );
+      if (translated === null) {
+        return undefined;
+      }
+      recovered.set(modeGuard.mode.name, ast.unop(ast.opNot(), translated));
+    }
+  }
+
+  if (modes.some((mode) => !recovered.has(mode.name))) {
+    return undefined;
+  }
+
+  return modes
+    .map((mode) => recovered.get(mode.name)!)
+    .reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
+}
+
+function findReturnedEffectGenBody(
+  body: ts.Block,
+  checker: ts.TypeChecker,
+): ts.Block | null {
+  for (const stmt of body.statements) {
+    if (!ts.isReturnStatement(stmt) || !stmt.expression) {
+      continue;
+    }
+    const expr = unwrapTransparentExpression(stmt.expression);
+    if (!ts.isCallExpression(expr)) {
+      continue;
+    }
+    const effectExport = resolveEffectLibraryExport(expr.expression, checker);
+    if (effectExport?.module !== "Effect" || effectExport.name !== "gen") {
+      continue;
+    }
+    const generator = expr.arguments[0];
+    if (!generator || !ts.isFunctionExpression(generator)) {
+      return null;
+    }
+    if (!generator.asteriskToken) {
+      return null;
+    }
+    return generator.body;
+  }
+  return null;
+}
+
+function nodeContainsErrorYield(node: ts.Node): boolean {
+  let found = false;
+  function visit(current: ts.Node): void {
+    if (found) {
+      return;
+    }
+    if (recognizeErrorYield(current)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  }
+  visit(node);
+  return found;
+}
+
+function combineGuards(
+  first: OpaqueExpr | undefined,
+  second: OpaqueExpr | undefined,
+): OpaqueExpr | undefined {
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+  return getAst().binop(getAst().opAnd(), first, second);
+}
+
 function blockThrows(node: ts.Statement, _checker: ts.TypeChecker): boolean {
   if (ts.isThrowStatement(node)) {
     return true;
@@ -1506,6 +1638,15 @@ export function translateSignature(
     synthCell,
     program,
   );
+  const effectGuard = detectEffectErrorChannelGuard(
+    node,
+    checker,
+    strategy,
+    paramNameMap,
+    synthCell,
+    program,
+  );
+  const combinedGuard = combineGuards(guard, effectGuard);
 
   if (classification === "pure") {
     // Map-partial signature alignment: when the body is exactly a
@@ -1539,8 +1680,8 @@ export function translateSignature(
       params,
       returnType,
     };
-    if (guard) {
-      decl.guard = guard;
+    if (combinedGuard) {
+      decl.guard = combinedGuard;
     }
     return { declaration: decl, classification, paramNameMap, synthCell };
   } else {
@@ -1549,8 +1690,8 @@ export function translateSignature(
       label: capitalize(baseName),
       params,
     };
-    if (guard) {
-      decl.guard = guard;
+    if (combinedGuard) {
+      decl.guard = combinedGuard;
     }
     return { declaration: decl, classification, paramNameMap, synthCell };
   }
