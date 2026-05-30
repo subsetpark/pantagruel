@@ -9,6 +9,7 @@ import {
 import { createSourceFile, type SourceFile } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
+import type { OpaquePolicy } from "../src/opaque.js";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PantDocument } from "../src/types.js";
 
@@ -73,7 +74,7 @@ export function assertPantTypeChecks(output: string, timeoutMs = 30_000): void {
 export async function buildDocument(
   fileName: string,
   functionName: string,
-  opts: { noBody?: boolean } = {},
+  opts: { noBody?: boolean; policy?: OpaquePolicy } = {},
 ): Promise<PantDocument> {
   return buildDocumentFromSourceFile(
     createSourceFile(fileName),
@@ -85,13 +86,14 @@ export async function buildDocument(
 export async function buildDocumentFromSourceFile(
   sourceFile: SourceFile,
   functionName: string,
-  opts: { noBody?: boolean } = {},
+  opts: { noBody?: boolean; policy?: OpaquePolicy } = {},
 ): Promise<PantDocument> {
   return buildPantDocument({
     sourceFile,
     functionName,
     strategy: IntStrategy,
     noBody: opts.noBody,
+    policy: opts.policy,
   });
 }
 

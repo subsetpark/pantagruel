@@ -1098,7 +1098,7 @@ function translateReferencedCallable(
       strategy,
       synthCell,
       undefined,
-      { typeMapping: { opaqueFallback: true } },
+      { typeMapping: { policy: "opaque" } },
     );
     if (sig.declaration.kind !== "rule") {
       return null;
@@ -1121,7 +1121,7 @@ function translateReferencedCallable(
     const paramDecl = param.valueDeclaration ?? decl;
     const paramType = checker.getTypeOfSymbolAtLocation(param, paramDecl);
     const pantType = mapTsType(paramType, checker, strategy, synthCell, {
-      opaqueFallback: true,
+      policy: "opaque",
     });
     const pantName = synthCell
       ? cellRegisterName(synthCell, toPantTermName(param.name))
@@ -1129,7 +1129,7 @@ function translateReferencedCallable(
     return { name: pantName, type: pantType };
   });
   const pantReturnType = mapTsType(returnType, checker, strategy, synthCell, {
-    opaqueFallback: true,
+    policy: "opaque",
   });
   return {
     kind: "rule",

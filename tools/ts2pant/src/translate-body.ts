@@ -72,6 +72,7 @@ import {
   type NullishTranslate,
   recognizeNullishForm,
 } from "./nullish-recognizer.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -1082,6 +1083,7 @@ export interface TranslateBodyOptions {
   paramNameMap?: ReadonlyMap<string, string> | undefined;
   assumptionEnv?: AssumptionEnv | undefined;
   recognitionHook?: (env: AssumptionEnv, location: string) => void;
+  policy?: OpaquePolicy | undefined;
 }
 
 /**
@@ -1101,6 +1103,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
     paramNameMap,
     assumptionEnv,
     recognitionHook,
+    policy,
   } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const program = sourceFile.getProject().getProgram().compilerObject;
@@ -1154,7 +1157,9 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       // Pass the synthesizer so Map parameters resolve to their synthesized
       // domain names (idempotent; the signature pass already registered
       // them, so this is a lookup rather than a fresh registration).
-      const typeName = mapTsType(paramType, checker, strategy, synthCell);
+      const typeName = mapTsType(paramType, checker, strategy, synthCell, {
+        policy,
+      });
       // Body-level Forall quantifiers carry param Pant types in their
       // binding heads (`all x: <typeName> | ...`); letting the unknown
       // sentinel reach `paramList` would emit it inside emitted
@@ -1212,6 +1217,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       program,
       assumptionEnv,
       recognitionHook,
+      policy,
     );
   } else {
     return translateMutatingBody(
@@ -1225,6 +1231,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       program,
       assumptionEnv,
       recognitionHook,
+      policy,
     );
   }
 }
@@ -1240,6 +1247,7 @@ function translatePureBody(
   program?: ts.Program,
   suppliedEnv?: AssumptionEnv,
   recognitionHook?: (env: AssumptionEnv, location: string) => void,
+  policy?: OpaquePolicy,
 ): PropResult[] {
   const ast = getAst();
 
@@ -1407,6 +1415,7 @@ function translatePureBody(
       state: undefined as SymbolicState | undefined,
       supply,
       env,
+      policy,
       ...(recognitionHook === undefined ? {} : { recognitionHook }),
     };
     let bodyOpaque: OpaqueExpr;
@@ -3297,6 +3306,7 @@ export function translateBodyExpr(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
   env: AssumptionEnv = createL1AssumptionEnv(),
+  policy?: OpaquePolicy,
 ): BodyResult {
   const ast = getAst();
 
@@ -3387,6 +3397,7 @@ export function translateBodyExpr(
       state,
       supply,
       env,
+      policy,
     };
     const translate: NullishTranslate = (sub) => {
       const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
@@ -3417,7 +3428,7 @@ export function translateBodyExpr(
   ) {
     const l1 = buildL1Conditional(
       expr as ts.Expression | ts.IfStatement | ts.SwitchStatement,
-      { checker, strategy, paramNames, state, supply, env },
+      { checker, strategy, paramNames, state, supply, env, policy },
     );
     if (isL1Unsupported(l1)) {
       return { unsupported: l1.unsupported };
@@ -3490,6 +3501,7 @@ export function translateBodyExpr(
       state,
       supply,
       env,
+      policy,
     };
     const card = tryBuildL1Cardinality(expr, l1Ctx);
     if (card !== null) {
@@ -3522,6 +3534,7 @@ export function translateBodyExpr(
       state,
       supply,
       env,
+      policy,
     };
     const member = buildL1MemberAccess(expr, l1Ctx);
     if ("unsupported" in member) {
@@ -4893,6 +4906,7 @@ function translateMutatingBody(
   program?: ts.Program,
   suppliedEnv?: AssumptionEnv,
   recognitionHook?: (env: AssumptionEnv, location: string) => void,
+  policy?: OpaquePolicy,
 ): PropResult[] {
   if (!node.body) {
     return [];
@@ -4912,6 +4926,7 @@ function translateMutatingBody(
       declarations,
       localRuleDecls,
       env,
+      policy,
       ...(recognitionHook === undefined ? {} : { recognitionHook }),
     }),
     declarations,
@@ -4935,6 +4950,7 @@ function lowerSupportedSsaMutatingStatements(
     declarations: readonly PantDeclaration[];
     localRuleDecls: PropResult[];
     env: AssumptionEnv;
+    policy?: OpaquePolicy | undefined;
     recognitionHook?: (env: AssumptionEnv, location: string) => void;
   },
 ): IR1SsaBodyLowerResult {
@@ -4955,6 +4971,7 @@ function lowerSupportedSsaMutatingStatements(
       ctx.state,
       ctx.supply,
       ctx.env,
+      ctx.policy,
     );
     if (isBodyUnsupported(returnExpr)) {
       return ir1SsaBodyLowerUnsupported(returnExpr.unsupported);

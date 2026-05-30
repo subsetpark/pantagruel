@@ -6,7 +6,11 @@ import {
   type NameRegistry,
   registerName,
 } from "./name-registry.js";
-import { OPAQUE_DOMAIN, opaqueValueRuleName } from "./opaque.js";
+import {
+  OPAQUE_DOMAIN,
+  type OpaquePolicy,
+  opaqueValueRuleName,
+} from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration, PropResult } from "./types.js";
@@ -1794,7 +1798,7 @@ export const IntStrategy: NumericStrategy = {
 };
 
 export interface MapTsTypeOptions {
-  readonly opaqueFallback?: boolean;
+  readonly policy?: OpaquePolicy | undefined;
 }
 
 export const RealStrategy: NumericStrategy = {
@@ -1829,7 +1833,7 @@ export function mapTsType(
   // move is to refuse and steer the user toward a declared type. Mapping
   // to a generic placeholder would silently let type errors through.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
-    if (opts?.opaqueFallback) {
+    if (opts?.policy === "opaque") {
       if (!synthCell) {
         return UNSUPPORTED_UNKNOWN;
       }
@@ -2157,6 +2161,7 @@ export function translateTypes(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
+  opts?: MapTsTypeOptions,
 ): PantDeclaration[] {
   const decls: PantDeclaration[] = [];
 
@@ -2184,8 +2189,20 @@ export function translateTypes(
           // nested Map inside V (e.g., `inner: Map<K, Map<K', V'>>`)
           // registers its own synthesized domain and the Stage A rule's V
           // references it.
-          const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
-          const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+          const kType = mapTsType(
+            typeArgs[0]!,
+            checker,
+            strategy,
+            synthCell,
+            opts,
+          );
+          const vType = mapTsType(
+            typeArgs[1]!,
+            checker,
+            strategy,
+            synthCell,
+            opts,
+          );
           if (
             isUnsupportedMappedType(kType) ||
             isUnsupportedMappedType(vType)
@@ -2226,7 +2243,13 @@ export function translateTypes(
           continue;
         }
       }
-      const fieldType = mapTsType(prop.type, checker, strategy, synthCell);
+      const fieldType = mapTsType(
+        prop.type,
+        checker,
+        strategy,
+        synthCell,
+        opts,
+      );
       if (isUnsupportedMappedType(fieldType)) {
         decls.push({
           kind: "unsupported",
@@ -2246,7 +2269,7 @@ export function translateTypes(
   }
 
   for (const alias of extracted.aliases) {
-    const aliasType = mapTsType(alias.type, checker, strategy, synthCell);
+    const aliasType = mapTsType(alias.type, checker, strategy, synthCell, opts);
     if (isUnsupportedMappedType(aliasType)) {
       decls.push({
         kind: "unsupported",

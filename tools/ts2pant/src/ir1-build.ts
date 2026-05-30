@@ -83,6 +83,7 @@ import {
   recognizeNullishForm,
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
@@ -131,6 +132,7 @@ export interface L1BuildContext {
   state: SymbolicState | undefined;
   supply: UniqueSupply;
   env: AssumptionEnv;
+  policy?: OpaquePolicy | undefined;
   recognitionHook?: (env: AssumptionEnv, location: string) => void;
 }
 
@@ -226,6 +228,7 @@ export function tryBuildBuiltinCall(
       ctx.checker,
       ctx.strategy,
       ctx.supply.synthCell,
+      { policy: ctx.policy },
     );
     if (sourceType === "[String * Int]") {
       rule = "JS_ARRAY::from-entries";
@@ -515,6 +518,7 @@ function resolveStageASetReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
+    { policy: ctx.policy },
   );
   const setType = ctx.checker.getTypeAtLocation(unwrapped);
   const setTypeArgs = ctx.checker.getTypeArguments(setType as ts.TypeReference);
@@ -526,6 +530,7 @@ function resolveStageASetReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
+    { policy: ctx.policy },
   );
   if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(elemType)) {
     return null;
@@ -564,12 +569,14 @@ function resolveStageAMapReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
+    { policy: ctx.policy },
   );
   const keyType = mapTsType(
     typeArgs[0]!,
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
+    { policy: ctx.policy },
   );
   if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(keyType)) {
     return null;
@@ -903,12 +910,14 @@ export function tryBuildL1PureSubExpression(
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
+          { policy: ctx.policy },
         );
         const vType = mapTsType(
           typeArgs[1]!,
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
+          { policy: ctx.policy },
         );
         // mapTsType returns the unsupported-unknown sentinel for
         // unresolvable TS types (e.g., raw `unknown`). Bail before
@@ -1043,6 +1052,7 @@ function buildL1Stringification(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
+    { policy: ctx.policy },
   );
   if (!STRINGIFIABLE_PRIMITIVES.has(pantType)) {
     return {
