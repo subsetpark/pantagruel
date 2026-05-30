@@ -1,11 +1,11 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { lowerExpr } from "./ir-emit.js";
 import {
   extractEffectErrorModes,
-  recoverErrorModeGuard,
   recognizeErrorYield,
+  recoverErrorModeGuard,
 } from "./effect-error-channel.js";
+import { lowerExpr } from "./ir-emit.js";
 import {
   type BuildL1MemberAccessOptions,
   buildL1MemberAccess,
