@@ -27,6 +27,7 @@ import {
   isUnsupportedUnknown,
   type MapTsTypeOptions,
   mapTsType,
+  mapTsTypeFromTypeNode,
   type NumericStrategy,
   type SynthCell,
   toPantTermName,
@@ -1468,13 +1469,24 @@ export function translateSignature(
 
   for (const param of sig.getParameters()) {
     const symbolType = checker.getTypeOfSymbol(param);
-    const defaultType = mapTsType(
-      symbolType,
-      checker,
-      strategy,
-      synthCell,
-      opts?.typeMapping,
-    );
+    const paramDecl = param.valueDeclaration;
+    const defaultType =
+      paramDecl && ts.isParameter(paramDecl) && paramDecl.type
+        ? mapTsTypeFromTypeNode(
+            paramDecl.type,
+            symbolType,
+            checker,
+            strategy,
+            synthCell,
+            opts?.typeMapping,
+          )
+        : mapTsType(
+            symbolType,
+            checker,
+            strategy,
+            synthCell,
+            opts?.typeMapping,
+          );
     const paramType = overrides?.get(param.name) ?? defaultType;
     if (isUnsupportedUnknown(paramType)) {
       // Don't let the sentinel reach the emitted rule head — route
@@ -1512,16 +1524,27 @@ export function translateSignature(
     // bare `m.get(k)` return, narrow `V | undefined` to `V` so the
     // signature matches the unboxed Pant emission. See
     // `bodyIsBareMapGet` for the rationale.
-    const tsReturnType = bodyIsBareMapGet(node, checker)
+    const bareMapGetReturn = bodyIsBareMapGet(node, checker);
+    const tsReturnType = bareMapGetReturn
       ? checker.getNonNullableType(sig.getReturnType())
       : sig.getReturnType();
-    const returnType = mapTsType(
-      tsReturnType,
-      checker,
-      strategy,
-      synthCell,
-      opts?.typeMapping,
-    );
+    const returnType =
+      !bareMapGetReturn && node.type
+        ? mapTsTypeFromTypeNode(
+            node.type,
+            tsReturnType,
+            checker,
+            strategy,
+            synthCell,
+            opts?.typeMapping,
+          )
+        : mapTsType(
+            tsReturnType,
+            checker,
+            strategy,
+            synthCell,
+            opts?.typeMapping,
+          );
     if (isUnsupportedUnknown(returnType)) {
       return {
         declaration: {

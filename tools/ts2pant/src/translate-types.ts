@@ -1834,10 +1834,9 @@ export function mapTsType(
   // to a generic placeholder would silently let type errors through.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
     if (opts?.policy === "opaque") {
-      if (!synthCell) {
-        return UNSUPPORTED_UNKNOWN;
+      if (synthCell) {
+        cellRegisterOpaqueDomain(synthCell);
       }
-      cellRegisterOpaqueDomain(synthCell);
       return OPAQUE_DOMAIN;
     }
     return UNSUPPORTED_UNKNOWN;
@@ -2009,6 +2008,93 @@ export function mapTsType(
   }
 
   return checker.typeToString(type);
+}
+
+function isDynamicTypeNode(node: ts.TypeNode): boolean {
+  return (
+    node.kind === ts.SyntaxKind.AnyKeyword ||
+    node.kind === ts.SyntaxKind.UnknownKeyword
+  );
+}
+
+function isNullishTypeNode(node: ts.TypeNode): boolean {
+  return (
+    node.kind === ts.SyntaxKind.UndefinedKeyword ||
+    node.kind === ts.SyntaxKind.VoidKeyword ||
+    (ts.isLiteralTypeNode(node) &&
+      node.literal.kind === ts.SyntaxKind.NullKeyword)
+  );
+}
+
+function mapDynamicTypeNode(
+  synthCell: SynthCell | undefined,
+  opts: MapTsTypeOptions | undefined,
+): string {
+  if (opts?.policy === "opaque") {
+    if (synthCell) {
+      cellRegisterOpaqueDomain(synthCell);
+    }
+    return OPAQUE_DOMAIN;
+  }
+  return UNSUPPORTED_UNKNOWN;
+}
+
+function mapTsTypeNodePart(
+  node: ts.TypeNode,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+  opts?: MapTsTypeOptions,
+): string {
+  if (isDynamicTypeNode(node)) {
+    return mapDynamicTypeNode(synthCell, opts);
+  }
+  return mapTsType(
+    checker.getTypeFromTypeNode(node),
+    checker,
+    strategy,
+    synthCell,
+    opts,
+  );
+}
+
+/**
+ * Map an explicitly declared TS type node when the syntactic union shape
+ * carries precision the checker erases. In particular, TypeScript reduces
+ * `unknown | null` and `number | unknown` to plain `unknown`; opaque policy
+ * needs to preserve the declared composite positions as `[Opaque]` and
+ * `Int + Opaque` rather than collapsing them to `Opaque`.
+ */
+export function mapTsTypeFromTypeNode(
+  node: ts.TypeNode,
+  fallbackType: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+  opts?: MapTsTypeOptions,
+): string {
+  if (!ts.isUnionTypeNode(node) || !node.types.some(isDynamicTypeNode)) {
+    return mapTsType(fallbackType, checker, strategy, synthCell, opts);
+  }
+
+  const hasNullish = node.types.some(isNullishTypeNode);
+  const nonNullTypes = node.types.filter((part) => !isNullishTypeNode(part));
+  if (nonNullTypes.length === 0) {
+    return checker.typeToString(fallbackType);
+  }
+
+  const parts = nonNullTypes.map((part) =>
+    mapTsTypeNodePart(part, checker, strategy, synthCell, opts),
+  );
+  if (parts.some(isUnsupportedUnknown)) {
+    return UNSUPPORTED_UNKNOWN;
+  }
+
+  const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
+  if (hasNullish) {
+    return `[${unique.join(" + ")}]`;
+  }
+  return unique.join(" + ");
 }
 
 function getBuiltinIteratorElementType(

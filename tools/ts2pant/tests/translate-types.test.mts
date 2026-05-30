@@ -472,7 +472,7 @@ describe("mapTsType", () => {
     );
   });
 
-  it("opaque policy without a synth cell keeps `any` unsupported", () => {
+  it("opaque policy without a synth cell maps `any` to Opaque", () => {
     const source = `interface Foo { val: any; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -482,7 +482,7 @@ describe("mapTsType", () => {
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "opaque",
       }),
-      UNSUPPORTED_UNKNOWN,
+      OPAQUE_DOMAIN,
     );
   });
 
