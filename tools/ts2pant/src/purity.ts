@@ -1070,7 +1070,7 @@ function userExpressionIsPure(
  *
  * Handles: Effect.succeed(x), E.map(fn) (aliased import), pipe(x, ...) (bare).
  */
-function resolveEffectLibraryExport(
+export function resolveEffectLibraryExport(
   callee: ts.Expression,
   checker: ts.TypeChecker,
 ): { module: string; name: string } | null {
