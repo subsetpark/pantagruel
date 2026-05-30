@@ -18,6 +18,34 @@ exports[`annotations.ts > sum 1`] = `
 "module SUM.\\n\\nsum a: Int, b: Int => Int.\\n\\n---\\n\\nsum a b = a + b.\\n\\ncheck\\n\\nall a: Int, b: Int | sum a b >= a.\\nall a: Int, b: Int | sum a b >= b.\\n"
 `;
 
+exports[`branded-param-preconditions.ts > brandAndEffect 1`] = `
+"module BRAND_AND_EFFECT.\\n\\nbrand-and-effect x: Int, ~(x < 10) and x > 0 => Effect.\\n\\n---\\n\\n> UNSUPPORTED: brand-and-effect — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | brand-and-effect x = x.\\n"
+`;
+
+exports[`branded-param-preconditions.ts > intBranded 1`] = `
+"module INT_BRANDED.\\n\\nint-branded x: Int, integral x => Int.\\n\\n---\\n\\n> UNSUPPORTED: int-branded — var bindings are not supported (use let or const).\\n"
+`;
+
+exports[`branded-param-preconditions.ts > nonEmptyBranded 1`] = `
+"module NON_EMPTY_BRANDED.\\n\\nnon-empty-branded xs: [String], #xs > 0 => [String].\\n\\n---\\n\\nnon-empty-branded xs = xs.\\n\\ncheck\\n\\nall xs: [String] | non-empty-branded xs = xs.\\n"
+`;
+
+exports[`branded-param-preconditions.ts > nonNegativeBranded 1`] = `
+"module NON_NEGATIVE_BRANDED.\\n\\nnon-negative-branded x: Int, x >= 0 => Int.\\n\\n---\\n\\nnon-negative-branded x = x.\\n\\ncheck\\n\\nall x: Int | non-negative-branded x = x.\\n"
+`;
+
+exports[`branded-param-preconditions.ts > positiveBranded 1`] = `
+"module POSITIVE_BRANDED.\\n\\npositive-branded x: Int, x > 0 => Int.\\n\\n---\\n\\npositive-branded x = x.\\n\\ncheck\\n\\nall x: Int | positive-branded x = x.\\n"
+`;
+
+exports[`branded-param-preconditions.ts > unbrandedControl 1`] = `
+"module UNBRANDED_CONTROL.\\n\\nunbranded-control x: Int => Int.\\n\\n---\\n\\nunbranded-control x = x.\\n"
+`;
+
+exports[`branded-param-preconditions.ts > unrecognizedBrand 1`] = `
+"module UNRECOGNIZED_BRAND.\\n\\nunrecognized-brand x: Int => Int.\\n\\n---\\n\\nunrecognized-brand x = x.\\n"
+`;
+
 exports[`control-flow.ts > abs 1`] = `
 "module ABS.\\n\\nabs n: Int => Int.\\n\\n---\\n\\nabs n = (cond n >= 0 => n, true => 0 - n).\\n"
 `;

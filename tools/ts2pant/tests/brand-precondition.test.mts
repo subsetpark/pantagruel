@@ -7,8 +7,11 @@ import {
   BRAND_PREDICATES,
   recognizeBrandedPrecondition,
 } from "../src/brand-precondition.js";
+import { emitDocument } from "../src/emit.js";
 import { createSourceFile, getChecker } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { buildPantDocument } from "../src/pipeline.js";
+import { IntStrategy } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -85,7 +88,7 @@ describe("recognizeBrandedPrecondition", () => {
   it("maps recognized Brand.Brand intersections to predicates", () => {
     withSource(
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Positive = number & Brand.Brand<"Positive">;
         type NonNegative = number & Brand.Brand<"NonNegative">;
         type NonEmptyString = string & Brand.Brand<"NonEmptyString">;
@@ -128,7 +131,7 @@ describe("recognizeBrandedPrecondition", () => {
   it("returns null for unrecognized and unbranded types", () => {
     withSource(
       `
-        import { Brand } from "effect";
+        import type * as Brand from "effect/Brand";
         type Custom = number & Brand.Brand<"Custom">;
         export function custom(x: Custom) { return x; }
         export function plain(x: number) { return x; }
@@ -148,6 +151,56 @@ describe("recognizeBrandedPrecondition", () => {
 });
 
 describe("brand-precondition @pant integration stubs", () => {
-  it.skip("PENDING: Patch 3 emits a recognized brand predicate as a precondition", () => {});
-  it.skip("PENDING: Patch 3 emits no precondition for unrecognized or absent brands", () => {});
+  it("emits a recognized brand predicate as a precondition", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".tmp-brand-"));
+    const file = join(dir, "fixture.ts");
+    writeFileSync(
+      file,
+      `
+        import type * as Brand from "effect/Brand";
+        type Positive = number & Brand.Brand<"Positive">;
+        export function positive(x: Positive): number { return x; }
+      `,
+    );
+    try {
+      const doc = await buildPantDocument({
+        sourceFile: createSourceFile(file),
+        functionName: "positive",
+        strategy: IntStrategy,
+        noBody: true,
+      });
+      const output = emitDocument(doc);
+      assert.match(output, /positive x: Int, x > 0 => Int\./u);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("emits no precondition for unrecognized or absent brands", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".tmp-brand-"));
+    const file = join(dir, "fixture.ts");
+    writeFileSync(
+      file,
+      `
+        import type * as Brand from "effect/Brand";
+        type Custom = number & Brand.Brand<"Custom">;
+        export function custom(x: Custom): number { return x; }
+        export function plain(x: number): number { return x; }
+      `,
+    );
+    try {
+      for (const functionName of ["custom", "plain"]) {
+        const doc = await buildPantDocument({
+          sourceFile: createSourceFile(file),
+          functionName,
+          strategy: IntStrategy,
+          noBody: true,
+        });
+        const output = emitDocument(doc);
+        assert.match(output, new RegExp(`${functionName} x: Int => Int\\.`));
+      }
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
 });

@@ -78,7 +78,7 @@ function collectBrandNames(type: ts.Type): string[] | null {
       return;
     }
 
-    const brandArg = brandTypeArgument(current);
+    const brandArg = effectBrandTypeArgument(current);
     if (brandArg !== undefined) {
       if (brandArg === null) {
         sawUnknownBrand = true;
@@ -98,7 +98,9 @@ function collectBrandNames(type: ts.Type): string[] | null {
   return sawUnknownBrand ? null : [...new Set(brands)];
 }
 
-function brandTypeArgument(type: ts.Type): string | null | undefined {
+export function effectBrandTypeArgument(
+  type: ts.Type,
+): string | null | undefined {
   const ref = type as ts.TypeReference;
   const target = ref.target;
   const symbol =

@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { effectBrandTypeArgument } from "./brand-precondition.js";
 import type { DepModuleName } from "./builtins.js";
 import type { ExtractedTypes } from "./extract.js";
 import {
@@ -1925,6 +1926,27 @@ export function mapTsType(
       if (domain !== null) {
         return domain;
       }
+    }
+  }
+
+  // Effect Brand<T> intersections refine a value without changing its
+  // base representation. Strip Brand.Brand<...> constituents before
+  // mapping so precondition recovery does not alter parameter types.
+  if (type.isIntersection()) {
+    const nonBrandParts = type.types.filter(
+      (part) => effectBrandTypeArgument(part) === undefined,
+    );
+    if (nonBrandParts.length > 0 && nonBrandParts.length < type.types.length) {
+      if (nonBrandParts.length === 1) {
+        return mapTsType(nonBrandParts[0]!, checker, strategy, synthCell, opts);
+      }
+      const parts = nonBrandParts.map((part) =>
+        mapTsType(part, checker, strategy, synthCell, opts),
+      );
+      if (parts.some(isUnsupportedUnknown)) {
+        return UNSUPPORTED_UNKNOWN;
+      }
+      return parts.filter((v, i, a) => a.indexOf(v) === i).join(" + ");
     }
   }
 
