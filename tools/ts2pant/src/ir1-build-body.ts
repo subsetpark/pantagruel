@@ -57,6 +57,7 @@ import {
 } from "./ir1.js";
 import {
   buildL1MemberAccess,
+  contagiousOpaqueForOperands,
   elementAccessLiteralKey,
   isCollectionMutationCall,
   isL1Unsupported,
@@ -68,6 +69,7 @@ import {
   negateFact,
   recognizeNarrowingPredicate,
 } from "./narrowing-recognizer.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
   ambiguousFieldMsg,
@@ -117,6 +119,7 @@ export interface BuildBodyCtx {
   state: SymbolicState;
   supply: UniqueSupply;
   env: AssumptionEnv;
+  policy?: OpaquePolicy | undefined;
   recognitionHook?: (env: AssumptionEnv, location: string) => void;
   /**
    * When set, this build is inside a foreach loop body. Carries the
@@ -805,6 +808,7 @@ export function buildL1SubExpr(
       state: ctx.state,
       supply: ctx.supply,
       env: ctx.env,
+      policy: ctx.policy,
     };
     const card = tryBuildL1Cardinality(stripped, ctxOptions, l1Options);
     if (card !== null) {
@@ -823,6 +827,7 @@ export function buildL1SubExpr(
     state: ctx.state,
     supply: ctx.supply,
     env: ctx.env,
+    policy: ctx.policy,
   });
   if (native !== null) {
     return native;
@@ -1448,7 +1453,12 @@ export function buildL1AssignStmt(
     }
     const rhs: IR1Expr =
       compoundOp !== undefined
-        ? { kind: "binop", op: irOp!, lhs: target, rhs: rhsExpr }
+        ? (contagiousOpaqueForOperands(ctx, [target, rhsExpr], expr) ?? {
+            kind: "binop",
+            op: irOp!,
+            lhs: target,
+            rhs: rhsExpr,
+          })
         : rhsExpr;
     return ir1Assign(target, rhs);
   }
