@@ -25,7 +25,6 @@ import {
   ir1Var,
   ir1While,
 } from "./ir1.js";
-import type { OpaquePolicy } from "./opaque.js";
 import {
   buildL1Conditional,
   buildL1IncrementStep,
@@ -73,6 +72,7 @@ import {
   type NullishTranslate,
   recognizeNullishForm,
 } from "./nullish-recognizer.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,

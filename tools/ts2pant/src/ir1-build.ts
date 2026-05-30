@@ -83,6 +83,7 @@ import {
   recognizeNullishForm,
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
@@ -119,7 +120,6 @@ import {
   type ExtractedBlockReturn,
   extractBlockReturn,
 } from "./ts-ast-block-return.js";
-import type { OpaquePolicy } from "./opaque.js";
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of

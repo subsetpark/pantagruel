@@ -8,8 +8,8 @@ import {
 } from "./name-registry.js";
 import {
   OPAQUE_DOMAIN,
-  opaqueValueRuleName,
   type OpaquePolicy,
+  opaqueValueRuleName,
 } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
