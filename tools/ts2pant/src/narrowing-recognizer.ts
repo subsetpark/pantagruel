@@ -147,8 +147,7 @@ export function recognizeTypePredicateNarrowing(
     return null;
   }
   const signature = checker.getResolvedSignature(unwrapped);
-  const typeNode = signature?.declaration?.type;
-  if (!typeNode || !ts.isTypePredicateNode(typeNode)) {
+  if (!signature || !checker.getTypePredicateOfSignature(signature)) {
     return null;
   }
   const translated = translateExpr(

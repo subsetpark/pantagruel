@@ -17,12 +17,8 @@ function parseReturnExpr(source: string): {
   const checker = getChecker(sf);
   let expr: ts.Expression | undefined;
   function visit(node: ts.Node): void {
-    if (expr) {
-      return;
-    }
     if (ts.isReturnStatement(node) && node.expression) {
       expr = node.expression;
-      return;
     }
     ts.forEachChild(node, visit);
   }
@@ -61,6 +57,25 @@ describe("predicate narrowing helpers", () => {
     `);
 
     assert.equal(recognizeTypePredicateNarrowing(expr, checker), null);
+  });
+
+  it("recognizeTypePredicateNarrowing maps an inferred type-predicate call to a fact", () => {
+    const { expr, checker } = parseReturnExpr(`
+      function isString(x: string | number) {
+        return typeof x === "string";
+      }
+      function f(x: string | number): boolean {
+        return isString(x);
+      }
+    `);
+
+    const fact = recognizeTypePredicateNarrowing(expr, checker);
+
+    assert.equal(fact?.kind, "predicate");
+    assert.equal(
+      fact?.kind === "predicate" ? getAst().strExpr(fact.testExpr) : null,
+      "isString x",
+    );
   });
 
   it.skip(
