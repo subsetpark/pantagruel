@@ -399,7 +399,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
 });
 
 describe("mapTsType", () => {
-  it("opaque fallback maps `any` to the shared Opaque sort", async () => {
+  it("opaque policy maps `any` to the shared Opaque sort", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: any; }`;
@@ -409,7 +409,7 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, cell, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       OPAQUE_DOMAIN,
     );
@@ -419,7 +419,7 @@ describe("mapTsType", () => {
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
-  it("opaque fallback maps `unknown` to the shared Opaque sort", async () => {
+  it("opaque policy maps `unknown` to the shared Opaque sort", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: unknown; }`;
@@ -429,7 +429,7 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, cell, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       OPAQUE_DOMAIN,
     );
@@ -438,7 +438,7 @@ describe("mapTsType", () => {
     ]);
   });
 
-  it("opaque fallback leaves concrete types unchanged", async () => {
+  it("opaque policy leaves concrete types unchanged", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: number; }`;
@@ -448,14 +448,14 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, cell, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       "Int",
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
-  it("opaque fallback disabled keeps `any` and `unknown` unsupported", () => {
+  it("reject policy keeps `any` and `unknown` unsupported", () => {
     const source = `interface Foo { anyVal: any; unknownVal: unknown; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -472,7 +472,7 @@ describe("mapTsType", () => {
     );
   });
 
-  it("opaque fallback without a synth cell keeps `any` unsupported", () => {
+  it("opaque policy without a synth cell keeps `any` unsupported", () => {
     const source = `interface Foo { val: any; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -480,13 +480,13 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       UNSUPPORTED_UNKNOWN,
     );
   });
 
-  it("opaque fallback domain emission dedupes with opaque value emission", async () => {
+  it("opaque policy domain emission dedupes with opaque value emission", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: any; }`;
@@ -496,7 +496,7 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, cell, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       OPAQUE_DOMAIN,
     );
@@ -523,7 +523,7 @@ describe("mapTsType", () => {
     ]);
   });
 
-  it("opaque fallback propagates through nested composite positions", async () => {
+  it("opaque policy propagates through nested composite positions", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: Map<string, any[]>; }`;
@@ -533,7 +533,7 @@ describe("mapTsType", () => {
 
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, cell, {
-        opaqueFallback: true,
+        policy: "opaque",
       }),
       "StringToListOpaqueMap",
     );

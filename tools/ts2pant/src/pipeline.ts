@@ -8,6 +8,7 @@ import {
   extractReferencedTypes,
   getChecker,
 } from "./extract.js";
+import { DEFAULT_OPAQUE_POLICY, type OpaquePolicy } from "./opaque.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { findFunction, translateSignature } from "./translate-signature.js";
@@ -29,6 +30,7 @@ export interface PipelineOptions {
   functionName: string;
   strategy: NumericStrategy;
   noBody?: boolean;
+  policy?: OpaquePolicy | undefined;
 }
 
 function mutatingReturnValueDeclarations(
@@ -38,6 +40,7 @@ function mutatingReturnValueDeclarations(
   strategy: NumericStrategy,
   synthCell: ReturnType<typeof newSynthCell>,
   sigDecl: PantDeclaration,
+  policy: OpaquePolicy,
 ): PantDeclaration[] {
   if (sigDecl.kind !== "action") {
     return [];
@@ -57,7 +60,9 @@ function mutatingReturnValueDeclarations(
   const baseName = toPantTermName(
     functionName.includes(".") ? functionName.split(".", 2)[1]! : functionName,
   );
-  const returnType = mapTsType(tsReturnType, checker, strategy, synthCell);
+  const returnType = mapTsType(tsReturnType, checker, strategy, synthCell, {
+    policy,
+  });
   if (isUnsupportedUnknown(returnType)) {
     return [
       {
@@ -113,7 +118,13 @@ function filterRuleCollisions(
 export async function buildPantDocument(
   opts: PipelineOptions,
 ): Promise<PantDocument> {
-  const { sourceFile, functionName, strategy, noBody } = opts;
+  const {
+    sourceFile,
+    functionName,
+    strategy,
+    noBody,
+    policy = DEFAULT_OPAQUE_POLICY,
+  } = opts;
 
   // Ensure wasm AST module is loaded before any translation
   await loadAst();
@@ -147,6 +158,7 @@ export async function buildPantDocument(
     strategy,
     synthCell,
     overrides,
+    { typeMapping: { policy } },
   );
   const returnValueDecls = mutatingReturnValueDeclarations(
     sourceFile,
@@ -155,6 +167,7 @@ export async function buildPantDocument(
     strategy,
     synthCell,
     sigDecl,
+    policy,
   );
   const returnValueRuleUnavailable = returnValueDecls.some(
     (decl) => decl.kind === "unsupported",
@@ -163,7 +176,9 @@ export async function buildPantDocument(
   // Extract and translate types (type-derived param names adapt to registry).
   // Pass the synthesizer so nested Maps inside interface-field V register too.
   const extracted = extractReferencedTypes(sourceFile, functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy, synthCell);
+  const typeDecls = translateTypes(extracted, checker, strategy, synthCell, {
+    policy,
+  });
   // After both sig and types have registered their Maps, emit the synth
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
@@ -277,6 +292,7 @@ export async function buildPantDocument(
       declarations,
       synthCell,
       paramNameMap,
+      policy,
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
 

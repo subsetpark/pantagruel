@@ -1,4 +1,10 @@
+import { type IR1Expr, type SourceRef, ir1Opaque } from "./ir1.js";
+
 export const OPAQUE_DOMAIN = "Opaque";
+
+export type OpaquePolicy = "reject" | "opaque";
+
+export const DEFAULT_OPAQUE_POLICY: OpaquePolicy = "reject";
 
 /**
  * Return the Pant-safe nullary rule name for one opaque value identity.
@@ -14,4 +20,15 @@ export function opaqueValueRuleName(id: string): string {
   return codeUnits.length === 0
     ? "opaque_value_0"
     : `opaque_value_${id.length}_${codeUnits.join("_")}`;
+}
+
+export function isOpaqueExpr(expr: IR1Expr): boolean {
+  return expr.kind === "opaque";
+}
+
+export function contagiousOpaque(
+  operands: readonly IR1Expr[],
+  origin: SourceRef,
+): IR1Expr | null {
+  return operands.some(isOpaqueExpr) ? ir1Opaque(OPAQUE_DOMAIN, origin) : null;
 }
