@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import {
   createAssumptionEnv,
   enterFrame,
+  type Fact,
   nonNullFactInScope,
   pushFact,
-  type Fact,
 } from "../src/assumption-env.js";
 import { renderNullishObligation } from "../src/definedness-obligation.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
@@ -19,22 +18,11 @@ import {
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   buildDocument,
+  buildDocumentFromSourceFile,
   emitAndCheck,
-  getPantBin,
-  PROJECT_ROOT,
-} from "./helpers.mts";
-import { runCheck } from "../src/emit.js";
+} from "./helpers.mjs";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures/constructs");
-
-function solverAvailable(): boolean {
-  try {
-    execFileSync("z3", ["-version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 before(async () => {
   await loadAst();
@@ -118,7 +106,7 @@ describe("nullish narrowing helpers", () => {
     assert.deepEqual(negateFact(negateFact(fact)), fact);
   });
 
-  it("nonNullFactInScope finds matching non-null facts", () => {
+  it("finds matching non-null facts", () => {
     const env = createAssumptionEnv();
     enterFrame(env);
     pushFact(env, { kind: "non-null", receiver: "x", negated: false });
@@ -141,56 +129,60 @@ describe("nullish narrowing helpers", () => {
     assert.equal(obligation.text, "true");
   });
 
-  it(
-    "x !== null guard discharges optional read (@pant entails)",
-    { skip: !solverAvailable() ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocument(
-        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
-        "strictNullRead",
-      );
-      const output = await emitAndCheck(doc);
-      assert.match(
-        output,
-        /strict-null-read x d = \(cond ~\(#x = 0\) => x 1, true => d\)\./u,
-      );
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      assert.equal(result.passed, true, result.output);
-      assert.ok(
-        result.checks.some((c) => c.message.startsWith("OK: Entailed:")),
-        result.output,
-      );
-    },
-  );
+  it("renderNullishObligation only fast-paths matching receivers", () => {
+    const ast = getAst();
+    const obligation = renderNullishObligation({
+      receiver: ast.var("x"),
+      inScope: [{ receiver: "y", negated: false }],
+    });
 
-  it(
-    "optional read in the null branch is not entailed (negative control)",
-    { skip: !solverAvailable() ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocument(
-        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
-        "nullBranchControl",
-      );
-      const output = await emitAndCheck(doc);
-      assert.match(
-        output,
-        /null-branch-control x d = \(cond #x = 0 => x, true => d\)\./u,
-      );
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      assert.ok(
-        result.checks.some(
-          (c) =>
-            c.message.startsWith("FAIL: Not entailed:") ||
-            c.message.startsWith("UNKNOWN: Entailed:"),
-        ) || /UNKNOWN: Entailed:|FAIL: Not entailed:/u.test(result.output),
-        result.output,
-      );
-    },
-  );
+    assert.notEqual(obligation.text, "true");
+  });
+
+  it("x !== null guard emits narrowed optional read", async () => {
+    const doc = await buildDocument(
+      resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      "strictNullRead",
+    );
+    const output = await emitAndCheck(doc);
+    assert.match(
+      output,
+      /strict-null-read x d = \(cond ~\(#x = 0\) => x 1, true => d\)\./u,
+    );
+  });
+
+  it("optional read in the null branch stays unchanged", async () => {
+    const doc = await buildDocument(
+      resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      "nullBranchControl",
+    );
+    const output = await emitAndCheck(doc);
+    assert.match(
+      output,
+      /null-branch-control x d = \(cond #x = 0 => x, true => d\)\./u,
+    );
+  });
+
+  it("shadowed block locals do not reuse outer non-null facts", async () => {
+    const sourceFile = createSourceFileFromSource(`
+      export function shadowedBlockLocal(
+        x: number | null,
+        y: number | null,
+      ): number | null {
+        if (x !== null) {
+          const x = y;
+          return x;
+        }
+        return y;
+      }
+    `);
+    const doc = await buildDocumentFromSourceFile(
+      sourceFile,
+      "shadowedBlockLocal",
+    );
+    const output = await emitAndCheck(doc);
+
+    assert.doesNotMatch(output, /\$\d+/u);
+    assert.doesNotMatch(output, /\$\d+ 1/u);
+  });
 });

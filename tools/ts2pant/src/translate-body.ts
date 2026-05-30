@@ -2611,6 +2611,9 @@ function lowerPreludeBindings(
             }
           }
           if (binding.blockBindings.length === 0) {
+            const definednessSnapshot = supply.synthCell
+              ? [...supply.synthCell.definednessObligations]
+              : null;
             const l1Value =
               currentFact?.kind === "non-null"
                 ? buildL1SubExpr(binding.valueExpr, {
@@ -2629,15 +2632,21 @@ function lowerPreludeBindings(
                 ? {
                     value: applyOpaqueAliases(lowerL1ToOpaque(l1Value), supply),
                   }
-                : translateBindingInit(
-                    binding.valueExpr,
-                    checker,
-                    strategy,
-                    acc.scopedParams,
-                    state,
-                    supply,
-                    env,
-                  );
+                : (() => {
+                    if (supply.synthCell && definednessSnapshot !== null) {
+                      supply.synthCell.definednessObligations =
+                        definednessSnapshot;
+                    }
+                    return translateBindingInit(
+                      binding.valueExpr,
+                      checker,
+                      strategy,
+                      acc.scopedParams,
+                      state,
+                      supply,
+                      env,
+                    );
+                  })();
           } else {
             valRes = translateEarlyReturnBlockValue(
               binding.blockBindings,

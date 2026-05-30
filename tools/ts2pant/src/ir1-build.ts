@@ -235,6 +235,9 @@ function narrowNullableIdentifierRead(
   value: IR1Expr,
   ctx: L1BuildContext,
 ): IR1Expr {
+  if (value.kind === "var" && /^\$\d+$/u.test(value.name)) {
+    return value;
+  }
   const env = (ctx as { env?: L1BuildContext["env"] }).env;
   if (env === undefined) {
     return value;
