@@ -43,11 +43,13 @@ import {
   nonNullFactInScope,
   pushFact,
   queryFact,
+  typePredicateFactsInScope,
 } from "./assumption-env.js";
 import { lookupBuiltinByCall } from "./builtins.js";
 import {
   renderDefinednessObligation,
   renderNullishObligation,
+  renderTypePredicateObligation,
 } from "./definedness-obligation.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
@@ -83,6 +85,7 @@ import {
   recognizeNarrowingFromSwitchCase,
   recognizeNarrowingPredicate,
   recognizeNullishNarrowing,
+  recognizeTypePredicateNarrowing,
 } from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
@@ -226,6 +229,7 @@ function recognizeBranchFact(
 ): Fact | null {
   return (
     recognizeNullishNarrowing(test, checker) ??
+    recognizeTypePredicateNarrowing(test, checker) ??
     recognizeNarrowingPredicate(test, checker)
   );
 }
@@ -257,14 +261,21 @@ function narrowNullableIdentifierRead(
     ...fact,
     receiver: ctx.paramNames.get(fact.receiver) ?? fact.receiver,
   }));
-  if (!inScope.some((fact) => !fact.negated)) {
+  if (inScope.some((fact) => !fact.negated)) {
+    ctx.supply.synthCell?.definednessObligations.push(
+      renderNullishObligation({
+        receiver: lowerExpr(lowerL1Expr(value)),
+        inScope,
+      }),
+    );
+    return ir1App(value, [ir1LitNat(1)]);
+  }
+  const predicateInScope = typePredicateFactsInScope(env, expr.text);
+  if (!predicateInScope.some((fact) => !fact.negated && fact.tractable)) {
     return value;
   }
   ctx.supply.synthCell?.definednessObligations.push(
-    renderNullishObligation({
-      receiver: lowerExpr(lowerL1Expr(value)),
-      inScope,
-    }),
+    renderTypePredicateObligation({ inScope: predicateInScope }),
   );
   return ir1App(value, [ir1LitNat(1)]);
 }
@@ -1703,16 +1714,18 @@ export function buildL1MemberAccess(
     }
   }
 
+  const discriminantDischarge = queryDiscriminatedUnionFieldDischarge(
+    ctx,
+    receiverNode as ts.Expression,
+    receiverL1,
+    fieldName,
+    qualified,
+  );
   return ir1Member(
     receiverL1,
     qualified,
-    queryDiscriminatedUnionFieldDischarge(
-      ctx,
-      receiverNode as ts.Expression,
-      receiverL1,
-      fieldName,
-      qualified,
-    ),
+    discriminantDischarge ??
+      queryTypePredicateFieldDischarge(ctx, receiverNode as ts.Expression),
   );
 }
 
@@ -1801,6 +1814,31 @@ function queryDiscriminatedUnionFieldDischarge(
     );
   }
   return undefined;
+}
+
+function queryTypePredicateFieldDischarge(
+  ctx: L1BuildContext,
+  receiverNode: ts.Expression,
+): boolean | undefined {
+  const env = (ctx as { env?: L1BuildContext["env"] }).env;
+  if (env === undefined) {
+    return undefined;
+  }
+  const receiver = unwrapTransparentExpression(receiverNode);
+  if (!ts.isIdentifier(receiver)) {
+    return undefined;
+  }
+  if (isNullableTsType(getOperandDeclaredType(receiver, ctx.checker))) {
+    return undefined;
+  }
+  const inScope = typePredicateFactsInScope(env, receiver.text);
+  if (!inScope.some((fact) => !fact.negated && fact.tractable)) {
+    return undefined;
+  }
+  ctx.supply.synthCell?.definednessObligations.push(
+    renderTypePredicateObligation({ inScope }),
+  );
+  return true;
 }
 
 // ---------------------------------------------------------------------------

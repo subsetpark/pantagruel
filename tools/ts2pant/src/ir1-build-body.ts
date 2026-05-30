@@ -69,6 +69,7 @@ import {
   negateFact,
   recognizeNarrowingPredicate,
   recognizeNullishNarrowing,
+  recognizeTypePredicateNarrowing,
 } from "./narrowing-recognizer.js";
 import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -184,6 +185,7 @@ function recognizeBranchFact(
 ): Fact | null {
   return (
     recognizeNullishNarrowing(test, checker) ??
+    recognizeTypePredicateNarrowing(test, checker) ??
     recognizeNarrowingPredicate(test, checker)
   );
 }

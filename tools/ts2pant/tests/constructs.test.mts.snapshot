@@ -814,6 +814,14 @@ exports[`expressions-optional-default.ts > usesOptionalDirectly 1`] = `
 "module USES_OPTIONAL_DIRECTLY.\\n\\nuses-optional-directly value: [Int] => Int.\\n\\n---\\n\\nuses-optional-directly value = (cond #value = 0 => 0 + (cond #value = 0 => 1, true => value 1), true => value 1).\\n"
 `;
 
+exports[`expressions-predicate-narrowing.ts > predicateCircleRadius 1`] = `
+"module PREDICATE_CIRCLE_RADIUS.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nis-circle s2: Shape => Bool.\\npredicate-circle-radius s1: Shape => Int.\\n\\n---\\n\\nall s: Shape | shape--kind s = \\"circle\\" or shape--kind s = \\"square\\".\\npredicate-circle-radius s1 = (cond is-circle s1 => shape--r s1, true => 0).\\n\\ncheck\\n\\nshape--kind s1 = \\"circle\\".\\nshape--kind s1 = \\"circle\\".\\n"
+`;
+
+exports[`expressions-predicate-narrowing.ts > predicateValue 1`] = `
+"module PREDICATE_VALUE.\\n\\nis-number x1: [Int] => Bool.\\npredicate-value x: [Int], fallback: Int => Int.\\n\\n---\\n\\npredicate-value x fallback = (cond is-number x => x 1, true => fallback).\\n\\ncheck\\n\\ntrue.\\npredicate-value x fallback = (cond is-number x => x 1, true => fallback).\\n"
+`;
+
 exports[`expressions-property-element-access.ts > effectiveBalanceByLiteral 1`] = `
 "module EFFECTIVE_BALANCE_BY_LITERAL.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\neffective-balance-by-literal a: Account => Int.\\n\\n---\\n\\neffective-balance-by-literal a = (cond account--active a => account--balance a, true => 0).\\n"
 `;

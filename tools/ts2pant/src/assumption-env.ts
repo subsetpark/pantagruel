@@ -1,6 +1,12 @@
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 
+export interface TypePredicateFactInfo {
+  receiver: string;
+  negated: boolean;
+  tractable: boolean;
+}
+
 export type Fact =
   | {
       kind: "discriminant";
@@ -10,7 +16,11 @@ export type Fact =
       negated: boolean;
     }
   | { kind: "non-null"; receiver: string; negated: boolean }
-  | { kind: "predicate"; testExpr: OpaqueExpr };
+  | {
+      kind: "predicate";
+      testExpr: OpaqueExpr;
+      typePredicate?: TypePredicateFactInfo;
+    };
 
 export interface AssumptionEnv {
   frames: Map<string, Fact>[];
@@ -24,6 +34,13 @@ export interface InScopeDiscriminantFact {
 export interface InScopeNonNullFact {
   receiver: string;
   negated: boolean;
+}
+
+export interface InScopeTypePredicateFact {
+  testExpr: OpaqueExpr;
+  receiver: string;
+  negated: boolean;
+  tractable: boolean;
 }
 
 export function createAssumptionEnv(): AssumptionEnv {
@@ -124,6 +141,37 @@ export function nonNullFactInScope(
   return out;
 }
 
+export function typePredicateFactsInScope(
+  env: AssumptionEnv,
+  receiver: string,
+): InScopeTypePredicateFact[] {
+  const out: InScopeTypePredicateFact[] = [];
+  const seen = new Set<string>();
+  for (const frame of env.frames) {
+    for (const fact of frame.values()) {
+      if (
+        fact.kind !== "predicate" ||
+        fact.typePredicate === undefined ||
+        fact.typePredicate.receiver !== receiver
+      ) {
+        continue;
+      }
+      const inScope: InScopeTypePredicateFact = {
+        testExpr: fact.testExpr,
+        receiver: fact.typePredicate.receiver,
+        negated: fact.typePredicate.negated,
+        tractable: fact.typePredicate.tractable,
+      };
+      const key = `${inScope.negated ? "!" : "="}:${inScope.tractable ? "t" : "b"}:${getAst().strExpr(inScope.testExpr)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(inScope);
+      }
+    }
+  }
+  return out;
+}
+
 function factKey(fact: Fact): string {
   if (fact.kind === "discriminant") {
     return `disc:${JSON.stringify([
@@ -136,5 +184,10 @@ function factKey(fact: Fact): string {
   if (fact.kind === "non-null") {
     return `nonnull:${JSON.stringify([fact.receiver, fact.negated])}`;
   }
-  return `pred:${JSON.stringify(getAst().strExpr(fact.testExpr))}`;
+  return `pred:${JSON.stringify([
+    getAst().strExpr(fact.testExpr),
+    fact.typePredicate?.receiver,
+    fact.typePredicate?.negated,
+    fact.typePredicate?.tractable,
+  ])}`;
 }

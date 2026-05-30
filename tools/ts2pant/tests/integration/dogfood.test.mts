@@ -534,6 +534,11 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "earlyReturnComplement",
       minChecks: 1,
     },
+    {
+      file: resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
+      fn: "predicateValue",
+      minChecks: 2,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {
@@ -790,6 +795,36 @@ describe("dogfood: nullish definedness", () => {
           /UNKNOWN: Entailed:/u.test(result.output),
         result.output,
       );
+    },
+  );
+});
+
+describe("dogfood: predicate definedness", () => {
+  const hasSolver = solverAvailable();
+
+  it(
+    "intractable type-predicate read is not discharged",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
+        "predicateCircleRadius",
+      );
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      const entailments = result.checks.filter((c) =>
+        c.message.startsWith("OK: Entailed:") ||
+        c.message.startsWith("FAIL: Not entailed:"),
+      );
+      assert.ok(
+        entailments.length >= 1,
+        `expected at least one entailment result, got ${entailments.length}`,
+      );
+      assert.equal(result.passed, false, result.output);
+      assert.ok(entailments.some((c) => !c.passed), result.output);
     },
   );
 });
