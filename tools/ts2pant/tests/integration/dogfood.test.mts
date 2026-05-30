@@ -509,6 +509,31 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "nonEmptyBranded",
       minChecks: 1,
     },
+    {
+      file: resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      fn: "strictNullRead",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      fn: "looseNullRead",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      fn: "strictUndefinedRead",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      fn: "longFormRead",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      fn: "earlyReturnComplement",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {
@@ -730,6 +755,41 @@ describe("dogfood: DU definedness", () => {
       );
       assert.equal(result.passed, false, result.output);
       assert.ok(entailments.some((c) => !c.passed), result.output);
+    },
+  );
+});
+
+describe("dogfood: nullish definedness", () => {
+  const hasSolver = solverAvailable();
+
+  it(
+    "optional read in null branch is not entailed",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+        "nullBranchControl",
+      );
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      const entailments = result.checks.filter((c) =>
+        c.message.startsWith("OK: Entailed:") ||
+        c.message.startsWith("FAIL: Not entailed:") ||
+        c.message.startsWith("UNKNOWN: Entailed:"),
+      );
+      assert.ok(
+        entailments.length >= 1 || /UNKNOWN: Entailed:/u.test(result.output),
+        `expected at least one entailment result, got ${entailments.length}`,
+      );
+      assert.ok(
+        entailments.some((c) => !c.passed) ||
+          result.checks.some((c) => c.message.startsWith("UNKNOWN: Entailed:")) ||
+          /UNKNOWN: Entailed:/u.test(result.output),
+        result.output,
+      );
     },
   );
 });

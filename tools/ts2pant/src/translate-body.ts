@@ -66,6 +66,7 @@ import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import {
   negateFact,
   recognizeNarrowingPredicate,
+  recognizeNullishNarrowing,
 } from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
@@ -120,6 +121,16 @@ import {
 import type { PantDeclaration, PropResult } from "./types.js";
 
 export { expressionHasSideEffects } from "./purity.js";
+
+function recognizeBranchFact(
+  test: ts.Expression,
+  checker: ts.TypeChecker,
+): Fact | null {
+  return (
+    recognizeNullishNarrowing(test, checker) ??
+    recognizeNarrowingPredicate(test, checker)
+  );
+}
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
@@ -1292,6 +1303,7 @@ function translatePureBody(
         state: undefined,
         supply,
         env,
+        policy,
       },
     );
     if (lifted !== null) {
@@ -2578,10 +2590,7 @@ function lowerPreludeBindings(
         return acc;
       }
       if (binding.kind === "earlyReturn") {
-        const currentFact = recognizeNarrowingPredicate(
-          binding.predicateExpr,
-          checker,
-        );
+        const currentFact = recognizeBranchFact(binding.predicateExpr, checker);
         const predRes = translateBindingInit(
           binding.predicateExpr,
           checker,
@@ -2590,6 +2599,7 @@ function lowerPreludeBindings(
           state,
           supply,
           env,
+          policy,
         );
         if ("error" in predRes) {
           return { tag: "error", error: predRes.error };
@@ -2602,29 +2612,60 @@ function lowerPreludeBindings(
               pushFact(env, fact);
             }
           }
-          valRes =
-            binding.blockBindings.length === 0
-              ? translateBindingInit(
-                  binding.valueExpr,
-                  checker,
-                  strategy,
-                  acc.scopedParams,
-                  state,
-                  supply,
-                  env,
-                )
-              : translateEarlyReturnBlockValue(
-                  binding.blockBindings,
-                  binding.valueExpr,
-                  {
+          if (binding.blockBindings.length === 0) {
+            const definednessSnapshot = supply.synthCell
+              ? [...supply.synthCell.definednessObligations]
+              : null;
+            const l1Value =
+              currentFact?.kind === "non-null"
+                ? buildL1SubExpr(binding.valueExpr, {
                     checker,
                     strategy,
-                    scopedParams: acc.scopedParams,
+                    paramNames: acc.scopedParams,
                     state: state ?? makeSymbolicState(),
                     supply,
                     env,
-                  },
-                );
+                    policy,
+                  })
+                : null;
+            valRes =
+              l1Value !== null &&
+              !isUnsupported(l1Value) &&
+              !isL1Unsupported(l1Value)
+                ? {
+                    value: applyOpaqueAliases(lowerL1ToOpaque(l1Value), supply),
+                  }
+                : (() => {
+                    if (supply.synthCell && definednessSnapshot !== null) {
+                      supply.synthCell.definednessObligations =
+                        definednessSnapshot;
+                    }
+                    return translateBindingInit(
+                      binding.valueExpr,
+                      checker,
+                      strategy,
+                      acc.scopedParams,
+                      state,
+                      supply,
+                      env,
+                      policy,
+                    );
+                  })();
+          } else {
+            valRes = translateEarlyReturnBlockValue(
+              binding.blockBindings,
+              binding.valueExpr,
+              {
+                checker,
+                strategy,
+                scopedParams: acc.scopedParams,
+                state: state ?? makeSymbolicState(),
+                supply,
+                env,
+                policy,
+              },
+            );
+          }
         } finally {
           exitFrame(env);
         }
@@ -2651,6 +2692,7 @@ function lowerPreludeBindings(
           state: state ?? makeSymbolicState(),
           supply,
           env,
+          policy,
         });
         if (isUnsupported(value)) {
           return { tag: "error", error: value.unsupported };
@@ -2706,6 +2748,7 @@ function lowerPreludeBindings(
               checker,
               strategy,
               supply.synthCell,
+              { policy },
             )
           : strategy.mapNumber();
       if (isUnsupportedUnknown(returnType)) {
@@ -2723,6 +2766,7 @@ function lowerPreludeBindings(
               state: state ?? makeSymbolicState(),
               supply,
               env,
+              policy,
             })
           : buildL1MuSearchCombTyped(binding.mu, {
               checker,
@@ -2731,6 +2775,7 @@ function lowerPreludeBindings(
               state,
               supply,
               env,
+              policy,
             });
       if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
         if (
@@ -2798,6 +2843,7 @@ function translateEarlyReturnBlockValue(
     state: SymbolicState;
     supply: UniqueSupply;
     env: AssumptionEnv;
+    policy?: OpaquePolicy | undefined;
   },
 ): BindingInitResult {
   let scopedParams: ReadonlyMap<string, string> = new Map(ctx.scopedParams);
@@ -2815,6 +2861,7 @@ function translateEarlyReturnBlockValue(
       state: ctx.state,
       supply: ctx.supply,
       env: ctx.env,
+      policy: ctx.policy,
     });
     if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
       return { error: initExpr.unsupported };
@@ -2830,6 +2877,7 @@ function translateEarlyReturnBlockValue(
     state: ctx.state,
     supply: ctx.supply,
     env: ctx.env,
+    policy: ctx.policy,
   });
   if (isUnsupported(value) || isL1Unsupported(value)) {
     return { error: value.unsupported };
@@ -2851,6 +2899,7 @@ function translateBindingInit(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
   env: AssumptionEnv,
+  policy?: OpaquePolicy,
 ): BindingInitResult {
   const result = translateBodyExpr(
     initializer,
@@ -2860,6 +2909,7 @@ function translateBindingInit(
     state,
     supply,
     env,
+    policy,
   );
   if (isBodyUnsupported(result)) {
     return { error: result.unsupported };
@@ -3366,6 +3416,8 @@ export function translateBodyExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(innerResult)) {
         return innerResult;
@@ -3516,6 +3568,7 @@ export function translateBodyExpr(
           state,
           supply,
           env,
+          policy,
         );
         if (isBodyUnsupported(obj)) {
           return obj;
@@ -3607,6 +3660,7 @@ export function translateBodyExpr(
         state,
         supply,
         env,
+        policy,
       ),
     );
   }
@@ -3621,6 +3675,7 @@ export function translateBodyExpr(
       state,
       supply,
       env,
+      policy,
     );
     if (isBodyUnsupported(operand)) {
       return operand;
@@ -3664,6 +3719,8 @@ export function translateBodyExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(leftResult)) {
         return leftResult;
@@ -3679,6 +3736,8 @@ export function translateBodyExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(rightResult)) {
         return rightResult;
@@ -3732,6 +3791,8 @@ export function translateBodyExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(left)) {
         return left;
@@ -3743,6 +3804,8 @@ export function translateBodyExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(right)) {
         return right;
@@ -3780,6 +3843,8 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
+      policy,
     );
     if (isBodyUnsupported(left)) {
       return left;
@@ -3791,6 +3856,8 @@ export function translateBodyExpr(
       paramNames,
       state,
       supply,
+      env,
+      policy,
     );
     if (isBodyUnsupported(right)) {
       return right;
@@ -3867,6 +3934,7 @@ function getArrayElementType(
   tsExpr: ts.Expression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  policy?: OpaquePolicy,
 ): string | null {
   const sourceType = checker.getTypeAtLocation(tsExpr);
   if (!checker.isArrayType(sourceType)) {
@@ -3874,7 +3942,7 @@ function getArrayElementType(
   }
   const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
   return typeArgs.length === 1
-    ? mapTsType(typeArgs[0]!, checker, strategy)
+    ? mapTsType(typeArgs[0]!, checker, strategy, undefined, { policy })
     : "?";
 }
 
@@ -3896,10 +3964,12 @@ function translateArrayMethod(
   paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
+  env: AssumptionEnv,
+  policy?: OpaquePolicy,
 ): BodyResult | null {
   const ast = getAst();
 
-  if (!getArrayElementType(tsReceiver, checker, strategy)) {
+  if (!getArrayElementType(tsReceiver, checker, strategy, policy)) {
     return null;
   }
 
@@ -3910,6 +3980,8 @@ function translateArrayMethod(
     paramNames,
     state,
     supply,
+    env,
+    policy,
   );
   const receiver = rejectEffect(receiverRaw);
   if (isBodyUnsupported(receiver)) {
@@ -3937,6 +4009,8 @@ function translateArrayMethod(
     checker,
     strategy,
     supply,
+    env,
+    policy,
   );
   if (!rawBody) {
     return { unsupported: expr.getText() };
@@ -4008,6 +4082,8 @@ function translateReduceCall(
   paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
+  env: AssumptionEnv,
+  policy?: OpaquePolicy,
 ): BodyResult | null {
   const ast = getAst();
 
@@ -4015,7 +4091,7 @@ function translateReduceCall(
     return { unsupported: `.${methodName} requires an explicit initial value` };
   }
 
-  if (!getArrayElementType(tsReceiver, checker, strategy)) {
+  if (!getArrayElementType(tsReceiver, checker, strategy, policy)) {
     return null;
   }
 
@@ -4026,6 +4102,8 @@ function translateReduceCall(
     paramNames,
     state,
     supply,
+    env,
+    policy,
   );
   const receiver = rejectEffect(receiverRaw);
   if (isBodyUnsupported(receiver)) {
@@ -4131,6 +4209,8 @@ function translateReduceCall(
     extendedParams,
     state,
     supply,
+    env,
+    policy,
   );
   if (isBodyUnsupported(innerResult)) {
     return innerResult;
@@ -4174,6 +4254,8 @@ function translateReduceCall(
     paramNames,
     state,
     supply,
+    env,
+    policy,
   );
   if (isBodyUnsupported(initResult)) {
     return initResult;
@@ -4208,6 +4290,7 @@ export function translateCallExpr(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
   env: AssumptionEnv = createL1AssumptionEnv(),
+  policy?: OpaquePolicy,
 ): BodyResult {
   const ast = getAst();
   const builtin = tryBuildBuiltinCall(expr, {
@@ -4217,6 +4300,7 @@ export function translateCallExpr(
     state,
     supply,
     env,
+    policy,
   });
   if (builtin !== null) {
     if (isL1Unsupported(builtin)) {
@@ -4271,6 +4355,7 @@ export function translateCallExpr(
           state,
           supply,
           env,
+          policy,
         },
         { requireMember: true },
       );
@@ -4289,6 +4374,7 @@ export function translateCallExpr(
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       const setTypeArgs = checker.getTypeArguments(
         checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
@@ -4301,6 +4387,7 @@ export function translateCallExpr(
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       const objOpaque = lowerL1ToOpaque(memberR.receiver);
       let elemOpaque: OpaqueExpr | null = null;
@@ -4312,6 +4399,8 @@ export function translateCallExpr(
           paramNames,
           state,
           supply,
+          env,
+          policy,
         );
         const eExpr = rejectEffect(eRaw);
         if (isBodyUnsupported(eExpr)) {
@@ -4355,6 +4444,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       const kExpr = rejectEffect(kExprRaw);
       if (isBodyUnsupported(kExpr)) {
@@ -4370,6 +4461,8 @@ export function translateCallExpr(
           paramNames,
           state,
           supply,
+          env,
+          policy,
         );
         const vExpr = rejectEffect(vRaw);
         if (isBodyUnsupported(vExpr)) {
@@ -4392,6 +4485,7 @@ export function translateCallExpr(
             state,
             supply,
             env,
+            policy,
           },
           { requireMember: true },
         );
@@ -4410,6 +4504,7 @@ export function translateCallExpr(
           checker,
           strategy,
           supply.synthCell,
+          { policy },
         );
         const typeArgs = checker.getTypeArguments(
           checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
@@ -4422,6 +4517,7 @@ export function translateCallExpr(
           checker,
           strategy,
           supply.synthCell,
+          { policy },
         );
         return {
           effect: {
@@ -4451,12 +4547,14 @@ export function translateCallExpr(
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       const vType = mapTsType(
         typeArgs[1]!,
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       let info = supply.synthCell
         ? lookupMapKV(supply.synthCell.synth, kType, vType)
@@ -4477,6 +4575,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       const objExpr = rejectEffect(objRaw);
       if (isBodyUnsupported(objExpr)) {
@@ -4531,6 +4631,7 @@ export function translateCallExpr(
             state,
             supply,
             env,
+            policy,
           },
           { requireMember: true },
         );
@@ -4551,6 +4652,8 @@ export function translateCallExpr(
           paramNames,
           state,
           supply,
+          env,
+          policy,
         );
         if (isBodyUnsupported(kExpr)) {
           return kExpr;
@@ -4566,12 +4669,14 @@ export function translateCallExpr(
           checker,
           strategy,
           supply.synthCell,
+          { policy },
         );
         const keyType = mapTsType(
           typeArgs[0]!,
           checker,
           strategy,
           supply.synthCell,
+          { policy },
         );
         return {
           expr: readMapThroughWrites(
@@ -4605,12 +4710,14 @@ export function translateCallExpr(
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       const vType = mapTsType(
         typeArgs[1]!,
         checker,
         strategy,
         supply.synthCell,
+        { policy },
       );
       let info = supply.synthCell
         ? lookupMapKV(supply.synthCell.synth, kType, vType)
@@ -4634,6 +4741,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(objExpr)) {
         return objExpr;
@@ -4645,6 +4754,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(kExpr)) {
         return kExpr;
@@ -4687,6 +4798,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(arg)) {
         return arg;
@@ -4698,6 +4811,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       const objExpr = rejectEffect(objRaw);
       if (isBodyUnsupported(objExpr)) {
@@ -4728,6 +4843,7 @@ export function translateCallExpr(
               state,
               supply,
               env,
+              policy,
             },
             { requireMember: true },
           );
@@ -4738,13 +4854,16 @@ export function translateCallExpr(
               checker,
               strategy,
               supply.synthCell,
+              { policy },
             );
             const typeArgs = checker.getTypeArguments(
               receiverType as ts.TypeReference,
             );
             const elemType =
               typeArgs.length === 1
-                ? mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell)
+                ? mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell, {
+                    policy,
+                  })
                 : null;
             if (elemType !== null) {
               return {
@@ -4778,6 +4897,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (result) {
         return result;
@@ -4795,6 +4916,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (result) {
         return result;
@@ -4818,6 +4941,8 @@ export function translateCallExpr(
       paramNames,
       state,
       supply,
+      env,
+      policy,
     );
     if (isBodyUnsupported(receiver)) {
       return receiver;
@@ -4831,6 +4956,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(a)) {
         return a;
@@ -4869,6 +4996,8 @@ export function translateCallExpr(
         paramNames,
         state,
         supply,
+        env,
+        policy,
       );
       if (isBodyUnsupported(a)) {
         return a;
@@ -4889,6 +5018,8 @@ function extractArrowBody(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   supply: UniqueSupply,
+  env: AssumptionEnv,
+  policy?: OpaquePolicy,
 ): BodyResult | null {
   if (!ts.isArrowFunction(expr)) {
     return null;
@@ -4925,6 +5056,8 @@ function extractArrowBody(
           arrowParams,
           undefined,
           supply,
+          env,
+          policy,
         );
       }
     }
@@ -4939,6 +5072,8 @@ function extractArrowBody(
     arrowParams,
     undefined,
     supply,
+    env,
+    policy,
   );
 }
 
@@ -5268,8 +5403,8 @@ function lowerSupportedSsaMutatingBlock(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
-    ctx.policy,
     ctx.recognitionHook,
+    ctx.policy,
   );
 
   if (isUnsupported(ssaBody)) {
@@ -5343,8 +5478,8 @@ function buildSupportedSsaMutatingBody(
   supply: UniqueSupply,
   env: AssumptionEnv,
   localRuleDecls?: PropResult[],
-  policy?: OpaquePolicy,
   recognitionHook?: (env: AssumptionEnv, location: string) => void,
+  policy?: OpaquePolicy,
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
@@ -5383,6 +5518,7 @@ function buildSupportedSsaMutatingBody(
           state,
           supply,
           env,
+          policy,
           ...(recognitionHook === undefined ? {} : { recognitionHook }),
         },
       );
@@ -5401,6 +5537,7 @@ function buildSupportedSsaMutatingBody(
           state,
           supply,
           env,
+          policy,
           ...(recognitionHook === undefined ? {} : { recognitionHook }),
         },
       );
@@ -5553,8 +5690,8 @@ function buildSupportedSsaStatement(
       ctx.supply,
       ctx.env,
       ctx.localRuleDecls,
-      ctx.policy,
       ctx.recognitionHook,
+      ctx.policy,
     );
     return body;
   }
@@ -5646,6 +5783,7 @@ function buildL1BareWhileMutation(
         ctx.supply,
         ctx.env,
         ctx.localRuleDecls,
+        ctx.recognitionHook,
         ctx.policy,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
@@ -5665,6 +5803,7 @@ function buildL1ForCounterMutation(
     supply: UniqueSupply;
     env: AssumptionEnv;
     localRuleDecls?: PropResult[];
+    recognitionHook?: (env: AssumptionEnv, location: string) => void;
     policy?: OpaquePolicy | undefined;
   },
 ): IR1Stmt | { unsupported: string } {
@@ -5716,6 +5855,7 @@ function buildL1ForCounterMutation(
         ctx.supply,
         ctx.env,
         ctx.localRuleDecls,
+        ctx.recognitionHook,
         ctx.policy,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
@@ -5778,6 +5918,7 @@ function buildL1LetWhileFixedPointMutation(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.recognitionHook,
     ctx.policy,
   );
   if (isUnsupported(bodyStmt)) {
@@ -5881,6 +6022,7 @@ function buildL1LetWhileMutation(
     ctx.supply,
     ctx.env,
     ctx.localRuleDecls,
+    ctx.recognitionHook,
     ctx.policy,
   );
   if (isUnsupported(bodyStmt)) {

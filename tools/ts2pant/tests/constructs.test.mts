@@ -45,8 +45,11 @@ const fixtureFiles = readdirSync(CONSTRUCTS_DIR)
 for (const file of fixtureFiles) {
   describe(file, () => {
     const filePath = resolve(CONSTRUCTS_DIR, file);
-    const sourceFile = createSourceFile(filePath);
-    const targets = discoverTestTargets(sourceFile);
+    const discoverySourceFile = createSourceFile(filePath);
+    const targets = discoverTestTargets(discoverySourceFile);
+    discoverySourceFile
+      .getProject()
+      .removeSourceFile(discoverySourceFile);
     if (targets.length === 0) {
       throw new Error(`No exported snapshot targets found in ${file}`);
     }
@@ -55,11 +58,16 @@ for (const file of fixtureFiles) {
       const key = `${file} > ${funcName}`;
       const knownBad = KNOWN_TYPECHECK_FAILURES.get(key);
       it(funcName, async (t) => {
-        const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
-        const output = knownBad
-          ? emitDocument(doc) // skip wasm typecheck — see KNOWN_TYPECHECK_FAILURES.
-          : await emitAndCheck(doc);
-        t.assert.snapshot(output);
+        const sourceFile = createSourceFile(filePath);
+        try {
+          const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
+          const output = knownBad
+            ? emitDocument(doc) // skip wasm typecheck — see KNOWN_TYPECHECK_FAILURES.
+            : await emitAndCheck(doc);
+          t.assert.snapshot(output);
+        } finally {
+          sourceFile.getProject().removeSourceFile(sourceFile);
+        }
       });
     }
   });
