@@ -9,8 +9,11 @@ import {
   recognizeErrorYield,
   recoverErrorModeGuard,
 } from "../src/effect-error-channel.js";
+import { emitDocument } from "../src/emit.js";
 import { createSourceFile, getChecker } from "../src/extract.js";
 import { loadAst } from "../src/pant-wasm.js";
+import { buildPantDocument } from "../src/pipeline.js";
+import { IntStrategy } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -91,6 +94,10 @@ function findIf(sourceFile: ts.SourceFile, index = 0): ts.IfStatement {
     throw new Error(`No if statement at index ${index}`);
   }
   return stmt;
+}
+
+function toPantName(name: string): string {
+  return name.replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`);
 }
 
 describe("extractEffectErrorModes", () => {
@@ -251,6 +258,99 @@ describe("recoverErrorModeGuard", () => {
 });
 
 describe("effect-error-channel @pant integration stubs", () => {
-  it.skip("PENDING: Patch 2 emits a negated-conjunction precondition when all modes are recovered", () => {});
-  it.skip("PENDING: Patch 2 emits no precondition for incomplete, impure, or unmatched recovery", () => {});
+  it("emits a negated-conjunction precondition when all modes are recovered", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".tmp-effect-error-"));
+    const file = join(dir, "fixture.ts");
+    writeFileSync(
+      file,
+      `
+        import { Data, Effect } from "effect";
+        class FooError extends Data.TaggedError("FooError")<{}> {}
+        class BarError extends Data.TaggedError("BarError")<{}> {}
+        export function recovered(x: number): Effect.Effect<number, FooError | BarError, never> {
+          return Effect.gen(function* () {
+            if (x < 0) { yield* new FooError(); }
+            if (x > 10) { yield* new BarError(); }
+            return x;
+          });
+        }
+      `,
+    );
+    try {
+      const doc = await buildPantDocument({
+        sourceFile: createSourceFile(file),
+        functionName: "recovered",
+        strategy: IntStrategy,
+        noBody: true,
+      });
+      const output = emitDocument(doc);
+      assert.match(output, /recovered x: Int, ~\(x < 0\) and ~\(x > 10\) =>/u);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("emits no precondition for incomplete, impure, or unmatched recovery", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".tmp-effect-error-"));
+    const file = join(dir, "fixture.ts");
+    writeFileSync(
+      file,
+      `
+        import { Data, Effect } from "effect";
+        class FooError extends Data.TaggedError("FooError")<{}> {}
+        class BarError extends Data.TaggedError("BarError")<{}> {}
+        declare function blocked(): boolean;
+        export function partial(x: number): Effect.Effect<number, FooError | BarError, never> {
+          return Effect.gen(function* () {
+            if (x < 0) { yield* new FooError(); }
+            return x;
+          });
+        }
+        export function impure(x: number): Effect.Effect<number, FooError, never> {
+          return Effect.gen(function* () {
+            if (blocked()) { yield* new FooError(); }
+            return x;
+          });
+        }
+        export function unmatched(x: number): Effect.Effect<number, FooError, never> {
+          return Effect.gen(function* () {
+            if (x < 0) { yield* new BarError(); }
+            return x;
+          });
+        }
+        export function unmatchedShape(x: number): Effect.Effect<number, FooError, never> {
+          return Effect.gen(function* () {
+            yield* new FooError();
+            return x;
+          });
+        }
+      `,
+    );
+    try {
+      for (const functionName of [
+        "partial",
+        "impure",
+        "unmatched",
+        "unmatchedShape",
+      ]) {
+        const pantName = toPantName(functionName);
+        const doc = await buildPantDocument({
+          sourceFile: createSourceFile(file),
+          functionName,
+          strategy: IntStrategy,
+          noBody: true,
+        });
+        const declaration = emitDocument(doc)
+          .split("\n")
+          .find((line) => line.startsWith(`${pantName} `));
+        assert.ok(declaration, `missing declaration for ${functionName}`);
+        assert.equal(
+          declaration.split("=>", 1)[0]!.trim(),
+          `${pantName} x: Int`,
+        );
+      }
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
 });

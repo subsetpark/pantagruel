@@ -30,6 +30,30 @@ exports[`control-flow.ts > max 1`] = `
 "module MAX.\\n\\nmax a: Int, b: Int => Int.\\n\\n---\\n\\nmax a b = (cond a >= b => a, true => b).\\n"
 `;
 
+exports[`effect-gen-error-guards.ts > combinedWithThrow 1`] = `
+"module COMBINED_WITH_THROW.\\n\\ncombined-with-throw x: Int, x <= 1000 and ~(x < 0) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: combined-with-throw — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | combined-with-throw x = x.\\n"
+`;
+
+exports[`effect-gen-error-guards.ts > impureCond 1`] = `
+"module IMPURE_COND.\\n\\nis-blocked  => Bool.\\nimpure-cond x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: impure-cond — var bindings are not supported (use let or const).\\n"
+`;
+
+exports[`effect-gen-error-guards.ts > multiError 1`] = `
+"module MULTI_ERROR.\\n\\nmulti-error x: Int, ~(x < 0) and ~(x > 100) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: multi-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | multi-error x = x.\\n"
+`;
+
+exports[`effect-gen-error-guards.ts > partialRecovery 1`] = `
+"module PARTIAL_RECOVERY.\\n\\npartial-recovery x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: partial-recovery — var bindings are not supported (use let or const).\\n"
+`;
+
+exports[`effect-gen-error-guards.ts > singleError 1`] = `
+"module SINGLE_ERROR.\\n\\nsingle-error x: Int, ~(x < 0) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: single-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | single-error x = x.\\n"
+`;
+
+exports[`effect-gen-error-guards.ts > unmatchedShape 1`] = `
+"module UNMATCHED_SHAPE.\\n\\nunmatched-shape x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: unmatched-shape — var bindings are not supported (use let or const).\\n"
+`;
+
 exports[`expressions-arithmetic.ts > add 1`] = `
 "module ADD.\\n\\nadd a: Int, b: Int => Int.\\n\\n---\\n\\nadd a b = a + b.\\n"
 `;

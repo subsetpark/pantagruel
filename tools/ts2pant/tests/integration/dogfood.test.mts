@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import { runCheck } from "../../src/emit.js";
+import { emitDocument, runCheck } from "../../src/emit.js";
 import {
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
@@ -528,6 +528,65 @@ describe("dogfood: @pant annotations entail", () => {
     );
   }
 });
+
+describe("dogfood: Effect error-channel preconditions", () => {
+  const hasSolver = solverAvailable();
+
+  it(
+    "fully recovered Effect-generator preconditions are checkable",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      for (const fn of ["singleError", "multiError", "combinedWithThrow"]) {
+        const doc = await buildDocumentFromPath(
+          resolve(FIXTURES, "effect-gen-error-guards.ts"),
+          fn,
+          { noBody: true },
+        );
+        const output = emitDocument(doc);
+        assert.doesNotMatch(output, /> UNSUPPORTED:/u);
+        const result = runCheck(withOpaqueEffectDomain(output), {
+          projectRoot: PROJECT_ROOT,
+          pantBin: getPantBin(),
+        });
+        assert.ok(
+          result.passed,
+          `pant --check failed for ${fn}:\n${result.output}`,
+        );
+      }
+    },
+  );
+
+  it(
+    "partial and impure Effect-generator recovery bail without a guard",
+    { skip: !hasSolver ? "z3 not available" : undefined },
+    async () => {
+      for (const fn of ["partialRecovery", "impureCond", "unmatchedShape"]) {
+        const doc = await buildDocumentFromPath(
+          resolve(FIXTURES, "effect-gen-error-guards.ts"),
+          fn,
+          { noBody: true },
+        );
+        const output = emitDocument(doc);
+        const decl = output
+          .split("\n")
+          .find((line) => line.startsWith(toPantFixtureName(fn)));
+        assert.ok(decl, `missing declaration for ${fn}`);
+        assert.equal(
+          decl.split("=>", 1)[0]!.trim(),
+          `${toPantFixtureName(fn)} x: Int`,
+        );
+      }
+    },
+  );
+});
+
+function toPantFixtureName(name: string): string {
+  return name.replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`);
+}
+
+function withOpaqueEffectDomain(output: string): string {
+  return output.replace(/\n\n/u, "\n\nEffect.\n");
+}
 
 describe("dogfood: DU definedness", () => {
   const hasSolver = solverAvailable();
