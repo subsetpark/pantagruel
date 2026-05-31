@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
@@ -12,18 +11,10 @@ import {
   emitAndCheck,
   getPantBin,
   PROJECT_ROOT,
+  solverAvailable,
 } from "./helpers.mts";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures/constructs");
-
-function solverAvailable(): boolean {
-  try {
-    execFileSync("z3", ["-version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 before(async () => {
   await loadAst();

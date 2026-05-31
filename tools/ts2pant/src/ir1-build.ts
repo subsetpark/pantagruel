@@ -40,6 +40,7 @@ import {
   enterFrame,
   exitFrame,
   type Fact,
+  type InScopeTypePredicateFact,
   nonNullFactInScope,
   pushFact,
   queryFact,
@@ -100,6 +101,7 @@ import {
   type OpaquePolicy,
 } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
   MuSearch,
@@ -270,7 +272,10 @@ function narrowNullableIdentifierRead(
     );
     return ir1App(value, [ir1LitNat(1)]);
   }
-  const predicateInScope = typePredicateFactsInScope(env, expr.text);
+  const predicateInScope = rebindTypePredicateFacts(
+    ctx,
+    typePredicateFactsInScope(env, expr.text),
+  );
   if (!predicateInScope.some((fact) => !fact.negated && fact.tractable)) {
     return value;
   }
@@ -278,6 +283,33 @@ function narrowNullableIdentifierRead(
     renderTypePredicateObligation({ inScope: predicateInScope }),
   );
   return ir1App(value, [ir1LitNat(1)]);
+}
+
+function rebindTypePredicateFacts(
+  ctx: L1BuildContext,
+  facts: readonly InScopeTypePredicateFact[],
+): InScopeTypePredicateFact[] {
+  if (facts.length === 0 || ctx.paramNames.size === 0) {
+    return [...facts];
+  }
+  const ast = getAst();
+  return facts.map((fact) => {
+    let testExpr = fact.testExpr;
+    for (const [sourceName, pantName] of ctx.paramNames) {
+      if (sourceName !== pantName) {
+        testExpr = ast.substituteBinder(
+          testExpr,
+          sourceName,
+          ast.var(pantName),
+        );
+      }
+    }
+    return {
+      ...fact,
+      receiver: ctx.paramNames.get(fact.receiver) ?? fact.receiver,
+      testExpr,
+    };
+  });
 }
 
 function isSingletonExtraction(expr: IR1Expr): boolean {
@@ -1831,7 +1863,10 @@ function queryTypePredicateFieldDischarge(
   if (isNullableTsType(getOperandDeclaredType(receiver, ctx.checker))) {
     return undefined;
   }
-  const inScope = typePredicateFactsInScope(env, receiver.text);
+  const inScope = rebindTypePredicateFacts(
+    ctx,
+    typePredicateFactsInScope(env, receiver.text),
+  );
   if (!inScope.some((fact) => !fact.negated && fact.tractable)) {
     return undefined;
   }

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { emitDocument, runCheck } from "../../src/emit.js";
@@ -9,16 +8,8 @@ import {
   emitAndCheck,
   getPantBin,
   PROJECT_ROOT,
+  solverAvailable,
 } from "../helpers.mjs";
-
-function solverAvailable(): boolean {
-  try {
-    execFileSync("z3", ["-version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Dogfood: translate ts2pant's own source files with ts2pant itself.
 // Depth-first — one target module at a time, smallest function first.
