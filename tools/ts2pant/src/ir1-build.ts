@@ -293,17 +293,15 @@ function rebindTypePredicateFacts(
     return [...facts];
   }
   const ast = getAst();
+  const substitutions = [...ctx.paramNames.entries()]
+    .filter(([sourceName, pantName]) => sourceName !== pantName)
+    .reverse();
   return facts.map((fact) => {
-    let testExpr = fact.testExpr;
-    for (const [sourceName, pantName] of ctx.paramNames) {
-      if (sourceName !== pantName) {
-        testExpr = ast.substituteBinder(
-          testExpr,
-          sourceName,
-          ast.var(pantName),
-        );
-      }
-    }
+    const testExpr = substitutions.reduce(
+      (acc, [sourceName, pantName]) =>
+        ast.substituteBinder(acc, sourceName, ast.var(pantName)),
+      fact.testExpr,
+    );
     return {
       ...fact,
       receiver: ctx.paramNames.get(fact.receiver) ?? fact.receiver,
