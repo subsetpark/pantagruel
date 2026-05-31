@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
+import { runCheck } from "../src/emit.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { recognizeTypePredicateNarrowing } from "../src/narrowing-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import {
+  buildDocument,
+  emitAndCheck,
+  getPantBin,
+  PROJECT_ROOT,
+  solverAvailable,
+} from "./helpers.mts";
+
+const FIXTURES = resolve(import.meta.dirname, "fixtures/constructs");
 
 before(async () => {
   await loadAst();
@@ -46,6 +57,10 @@ describe("predicate narrowing helpers", () => {
       fact?.kind === "predicate" ? getAst().strExpr(fact.testExpr) : null,
       "isUser x",
     );
+    assert.deepEqual(
+      fact?.kind === "predicate" ? fact.typePredicate : undefined,
+      { receiver: "x", negated: false, tractable: true },
+    );
   });
 
   it("recognizeTypePredicateNarrowing ignores ordinary boolean calls", () => {
@@ -78,13 +93,43 @@ describe("predicate narrowing helpers", () => {
     );
   });
 
-  it.skip(
-    "tractable x is T refinement is discharged (@pant entails) — PENDING: Patch 3",
-    () => {},
-  );
+  it("tractable x is T refinement is discharged (@pant entails)", {
+    skip: !solverAvailable() ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocument(
+      resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
+      "predicateValue",
+    );
+    const output = await emitAndCheck(doc);
+    assert.match(output, /^true\.$/mu);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    assert.equal(result.passed, true, result.output);
+    assert.ok(
+      result.checks.some((c) => c.message.startsWith("OK: Entailed:")),
+      result.output,
+    );
+  });
 
-  it.skip(
-    "cross-call/opaque x is T is soundly not discharged — PENDING: Patch 3",
-    () => {},
-  );
+  it("cross-call/opaque x is T is soundly not discharged", {
+    skip: !solverAvailable() ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocument(
+      resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
+      "predicateCircleRadius",
+    );
+    const output = await emitAndCheck(doc);
+    assert.doesNotMatch(output, /^true\.$/mu);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    assert.equal(result.passed, false, result.output);
+    assert.ok(
+      result.checks.some((c) => c.message.startsWith("FAIL: Not entailed:")),
+      result.output,
+    );
+  });
 });

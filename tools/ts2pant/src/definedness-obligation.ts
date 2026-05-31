@@ -1,6 +1,7 @@
 import type {
   InScopeDiscriminantFact,
   InScopeNonNullFact,
+  InScopeTypePredicateFact,
 } from "./assumption-env.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -20,6 +21,10 @@ export interface DefinednessObligation {
 export interface NullishObligationInput {
   receiver: OpaqueExpr;
   inScope: readonly InScopeNonNullFact[];
+}
+
+export interface TypePredicateObligationInput {
+  inScope: readonly InScopeTypePredicateFact[];
 }
 
 export function renderDefinednessObligation(
@@ -77,6 +82,21 @@ export function renderNullishObligation(
       ? consequent
       : ast.binop(ast.opImpl(), antecedent, consequent);
   return { text: ast.strExpr(result) };
+}
+
+export function renderTypePredicateObligation(
+  input: TypePredicateObligationInput,
+): DefinednessObligation {
+  const ast = getAst();
+  if (input.inScope.some((fact) => !fact.negated && fact.tractable)) {
+    return { text: ast.strExpr(ast.litBool(true)) };
+  }
+  const antecedent = conjoin(
+    input.inScope.map((fact) =>
+      fact.negated ? ast.unop(ast.opNot(), fact.testExpr) : fact.testExpr,
+    ),
+  );
+  return { text: ast.strExpr(antecedent ?? ast.litBool(false)) };
 }
 
 function discriminantEquality(

@@ -2,14 +2,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  type CheckOptions,
   emitDocument,
   runCheck as runCheckWithOptions,
-  type CheckOptions,
 } from "../src/emit.js";
 import { createSourceFile, type SourceFile } from "../src/extract.js";
+import type { OpaquePolicy } from "../src/opaque.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
-import type { OpaquePolicy } from "../src/opaque.js";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PantDocument } from "../src/types.js";
 
@@ -52,6 +52,15 @@ export function getPantBin(): string {
   }
   cachedPantBin = binPath;
   return binPath;
+}
+
+export function solverAvailable(): boolean {
+  try {
+    execFileSync("z3", ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function assertPantTypeChecks(output: string, timeoutMs = 30_000): void {

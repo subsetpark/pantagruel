@@ -67,6 +67,7 @@ import {
   negateFact,
   recognizeNarrowingPredicate,
   recognizeNullishNarrowing,
+  recognizeTypePredicateNarrowing,
 } from "./narrowing-recognizer.js";
 import {
   getOperandDeclaredType,
@@ -128,6 +129,7 @@ function recognizeBranchFact(
 ): Fact | null {
   return (
     recognizeNullishNarrowing(test, checker) ??
+    recognizeTypePredicateNarrowing(test, checker) ??
     recognizeNarrowingPredicate(test, checker)
   );
 }
@@ -2617,7 +2619,9 @@ function lowerPreludeBindings(
               ? [...supply.synthCell.definednessObligations]
               : null;
             const l1Value =
-              currentFact?.kind === "non-null"
+              currentFact?.kind === "non-null" ||
+              (currentFact?.kind === "predicate" &&
+                currentFact.typePredicate !== undefined)
                 ? buildL1SubExpr(binding.valueExpr, {
                     checker,
                     strategy,

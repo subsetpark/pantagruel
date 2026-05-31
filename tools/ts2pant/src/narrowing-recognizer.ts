@@ -8,7 +8,12 @@ import {
   isTranslateExprUnsupported,
   translateExpr,
 } from "./translate-signature.js";
-import { IntStrategy } from "./translate-types.js";
+import {
+  detectDiscriminatedUnion,
+  IntStrategy,
+  isUnsupportedUnknown,
+  mapTsType,
+} from "./translate-types.js";
 
 type LiteralValue = string;
 
@@ -147,7 +152,19 @@ export function recognizeTypePredicateNarrowing(
     return null;
   }
   const signature = checker.getResolvedSignature(unwrapped);
-  if (!signature || !checker.getTypePredicateOfSignature(signature)) {
+  const predicate = signature
+    ? checker.getTypePredicateOfSignature(signature)
+    : undefined;
+  if (
+    !signature ||
+    !predicate ||
+    predicate.kind !== ts.TypePredicateKind.Identifier ||
+    predicate.type === undefined
+  ) {
+    return null;
+  }
+  const argument = unwrapped.arguments[predicate.parameterIndex];
+  if (argument === undefined || !ts.isIdentifier(unwrapParens(argument))) {
     return null;
   }
   const translated = translateExpr(
@@ -162,7 +179,23 @@ export function recognizeTypePredicateNarrowing(
   return {
     kind: "predicate",
     testExpr: translated,
+    typePredicate: {
+      receiver: unwrapParens(argument).getText(),
+      negated: false,
+      tractable: isTractableTypePredicateTarget(predicate.type, checker),
+    },
   };
+}
+
+function isTractableTypePredicateTarget(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): boolean {
+  if (detectDiscriminatedUnion(type, checker) !== null) {
+    return false;
+  }
+  const mapped = mapTsType(type, checker, IntStrategy, undefined);
+  return !isUnsupportedUnknown(mapped);
 }
 
 /** Recognize a TypeScript boolean test as a narrowing fact. */
@@ -221,5 +254,13 @@ export function negateFact(fact: Fact): Fact {
   return {
     kind: "predicate",
     testExpr: ast.unop(ast.opNot(), fact.testExpr),
+    ...(fact.typePredicate === undefined
+      ? {}
+      : {
+          typePredicate: {
+            ...fact.typePredicate,
+            negated: !fact.typePredicate.negated,
+          },
+        }),
   };
 }
