@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-boundary *)
+
 (** Module system: loading and import resolution *)
 
 module StringMap = Map.Make (String)
@@ -29,28 +32,11 @@ let parse_module_header path =
   try
     let channel = open_in path in
     let lexer = Lexer.create_from_channel path channel in
-    (* Read tokens until we find MODULE <name> DOT *)
-    let rec find_module () =
-      match[@warning "-4"] Lexer.token lexer with
-      | Parser.MODULE -> (
-          match[@warning "-4"] Lexer.token lexer with
-          | Parser.UPPER_IDENT name -> (
-              match[@warning "-4"] Lexer.token lexer with
-              | Parser.DOT ->
-                  close_in channel;
-                  Ok name
-              | _ ->
-                  close_in channel;
-                  Error "Expected '.' after module name")
-          | _ ->
-              close_in channel;
-              Error "Expected module name")
-      | Parser.EOF ->
-          close_in channel;
-          Error "No module declaration found"
-      | _ -> find_module ()
+    let result =
+      Module_header.parse_module_header_tokens (fun () -> Lexer.token lexer)
     in
-    find_module ()
+    close_in channel;
+    result
   with
   | Lexer.Lexer_error (_, msg) -> Error msg
   | Sys_error msg -> Error msg

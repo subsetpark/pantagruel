@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.normalize *)
+
 (** Top-down normal form transformation for Pantagruel documents.
 
     A document is normalized top-down with respect to a chosen root term.
@@ -25,7 +28,7 @@ type decl_info = {
   is_void : bool;  (** true for actions *)
   decl : declaration located;
   dependencies : StringSet.t;  (** Type names this declaration depends on *)
-  mutable level : int;  (** Topological level, computed later *)
+  level : int;  (** Initial topological level; final levels are local state. *)
 }
 (** Information about a declaration *)
 
@@ -298,6 +301,10 @@ let normalize (doc : document) (root_term : string) : document =
     in
     let by_name = Hashtbl.create 32 in
     List.iter (fun d -> Hashtbl.replace by_name d.name d) all_decls;
+    let levels = Hashtbl.create 32 in
+    let level_of d =
+      Hashtbl.find_opt levels d.name |> Option.value ~default:d.level
+    in
 
     (* Step 2: BFS from root term *)
     (* Level 0: root term + transitive declaration-level deps *)
@@ -307,7 +314,7 @@ let normalize (doc : document) (root_term : string) : document =
     StringSet.iter
       (fun name ->
         match Hashtbl.find_opt by_name name with
-        | Some d -> d.level <- 0
+        | Some d -> Hashtbl.replace levels d.name 0
         | None -> ())
       level_0;
     let assigned = ref level_0 in
@@ -326,7 +333,7 @@ let normalize (doc : document) (root_term : string) : document =
         StringSet.filter
           (fun name ->
             match Hashtbl.find_opt by_name name with
-            | Some d -> d.level = !current_level
+            | Some d -> level_of d = !current_level
             | None -> false)
           !assigned
       in
@@ -375,7 +382,7 @@ let normalize (doc : document) (root_term : string) : document =
           StringSet.iter
             (fun name ->
               match Hashtbl.find_opt by_name name with
-              | Some d -> d.level <- next_level
+              | Some d -> Hashtbl.replace levels d.name next_level
               | None -> ())
             truly_new;
           assigned := StringSet.union !assigned truly_new;
@@ -392,7 +399,9 @@ let normalize (doc : document) (root_term : string) : document =
     in
     let has_appendix = unreachable <> [] in
     let appendix_level = max_level + 1 in
-    List.iter (fun d -> d.level <- appendix_level) unreachable;
+    List.iter
+      (fun d -> Hashtbl.replace levels d.name appendix_level)
+      unreachable;
     let num_chapters =
       if has_appendix then appendix_level + 1 else max_level + 1
     in
@@ -430,13 +439,15 @@ let normalize (doc : document) (root_term : string) : document =
     (* Step 5: Assign non-action declarations to chapters by level *)
     let decl_assignments = Array.make num_chapters [] in
     List.iter
-      (fun d -> decl_assignments.(d.level) <- d :: decl_assignments.(d.level))
+      (fun d ->
+        let level = level_of d in
+        decl_assignments.(level) <- d :: decl_assignments.(level))
       non_action_decls;
 
     (* Step 6: Place action units - spread conflicts across adjacent chapters *)
     let sorted_action_units =
       List.sort
-        (fun a b -> compare a.action_decl.level b.action_decl.level)
+        (fun a b -> compare (level_of a.action_decl) (level_of b.action_decl))
         action_units
     in
 
@@ -444,10 +455,10 @@ let normalize (doc : document) (root_term : string) : document =
     let next_available = ref 0 in
     List.iter
       (fun au ->
-        let min_level = au.action_decl.level in
+        let min_level = level_of au.action_decl in
         let target = max min_level !next_available in
         Hashtbl.add action_chapter_assignments au.action_decl.name target;
-        au.action_decl.level <- target;
+        Hashtbl.replace levels au.action_decl.name target;
         next_available := target + 1)
       sorted_action_units;
 
@@ -463,13 +474,15 @@ let normalize (doc : document) (root_term : string) : document =
 
     List.iter
       (fun au ->
-        let level = au.action_decl.level in
+        let level = level_of au.action_decl in
         decl_assignments.(level) <- au.action_decl :: decl_assignments.(level))
       action_units;
 
     (* Build level lookup table (after action reassignment so levels are final) *)
     let decl_levels = Hashtbl.create 32 in
-    List.iter (fun d -> Hashtbl.replace decl_levels d.name d.level) all_decls;
+    List.iter
+      (fun d -> Hashtbl.replace decl_levels d.name (level_of d))
+      all_decls;
 
     (* Step 7: Assign propositions to chapters *)
     let body_assignments = Array.make num_chapters [] in
@@ -478,7 +491,7 @@ let normalize (doc : document) (root_term : string) : document =
     (* Action-tied props go with their action *)
     List.iter
       (fun au ->
-        let level = au.action_decl.level in
+        let level = level_of au.action_decl in
         body_assignments.(level) <- au.tied_props @ body_assignments.(level))
       action_units;
 
@@ -507,7 +520,7 @@ let normalize (doc : document) (root_term : string) : document =
                     orig_ch.head)
                 action_units
             with
-            | Some au -> Some au.action_decl.level
+            | Some au -> Some (level_of au.action_decl)
             | None -> None
           in
           (* Compute max level where this chapter's body props were placed *)

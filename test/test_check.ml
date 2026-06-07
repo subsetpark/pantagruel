@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** Type checker tests *)
 
 open Alcotest

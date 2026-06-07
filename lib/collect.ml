@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.collect *)
+
 (** Pass 1: Collect declarations from all chapters *)
 
 open Ast

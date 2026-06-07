@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.env *)
+
 (** Type environment for Pantagruel *)
 
 open Types
@@ -100,14 +103,6 @@ let empty module_name =
     action_contexts = [];
     local_vars = [];
   }
-
-(** Callback for reporting that an [add_var] call shadowed a nullary rule of the
-    same name. Installed by [check.ml] so the existing warning pipeline picks up
-    the event without creating a circular dependency between [env.ml] and
-    [check.ml]. Default is no-op so tests that use the env directly don't
-    require setting it. *)
-let shadow_reporter : (string -> ty -> ty -> Ast.loc -> Ast.loc -> unit) ref =
-  ref (fun _ _ _ _ _ -> ())
 
 (** Extract the arity implied by a KRule / KClosure entry's type. For any
     TyFunc, arity is the length of the param list. Non-TyFunc kinds shouldn't
@@ -235,19 +230,20 @@ let overloads_of name env =
     decide whether to mangle the output symbol with an arity suffix. *)
 let name_is_overloaded name env = List.length (overloads_of name env) >= 2
 
-(** Add a variable to the var namespace (also tracks as local var). If [name]
-    matches a nullary declaration in [terms] (rule or closure), fire the shadow
-    reporter so the check layer can emit a warning — nullary rules/closures
-    auto-apply in bare-atom position, so a same-named variable genuinely
-    eclipses a binding the user could otherwise reach by bare reference. Non-
-    nullary collisions are not shadowing (syntactic position disambiguates) and
-    don't warn. *)
+(** Return the nullary declaration shadowed by adding [name] as a variable, if
+    any. Nullary rules/closures auto-apply in bare-atom position, so a same-
+    named variable eclipses a binding the user could otherwise reach by bare
+    reference. Non-nullary collisions are not shadowing because syntactic
+    position disambiguates them. *)
+let nullary_shadow name env =
+  match[@warning "-4"] TermMap.find_opt (name, 0) env.terms with
+  | Some { kind = KRule (TyFunc ([], Some ret)); loc; _ }
+  | Some { kind = KClosure (TyFunc ([], Some ret), _); loc; _ } ->
+      Some (ret, loc)
+  | _ -> None
+
+(** Add a variable to the var namespace (also tracks as local var). *)
 let add_var name ty env =
-  (match[@warning "-4"] TermMap.find_opt (name, 0) env.terms with
-  | Some { kind = KRule (TyFunc ([], Some ret)); loc = rule_loc; _ }
-  | Some { kind = KClosure (TyFunc ([], Some ret), _); loc = rule_loc; _ } ->
-      !shadow_reporter name ret ty rule_loc Ast.dummy_loc
-  | _ -> ());
   let entry =
     {
       kind = KVar ty;

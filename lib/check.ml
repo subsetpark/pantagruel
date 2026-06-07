@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.check *)
+
 (** Pass 2: Type checking *)
 
 open Ast
@@ -29,12 +32,9 @@ type type_error =
   | BoolParam of string * string * loc  (** param name, declaration name *)
   | NullaryRuleShadowedByVar of string * ty * ty * loc
       (** name, declaration's return type, variable's type, declaration loc.
-          Emitted by [Env.add_var] via the shadow_reporter when a variable is
-          introduced with the same name as an existing nullary declaration (rule
-          or closure) — the one case where var-versus-term shadowing is
-          semantically observable (both nullary rules and nullary closures
-          auto-apply in bare-atom position, so a same-named variable eclipses
-          them). *)
+          Emitted when a variable is introduced with the same name as an
+          existing nullary declaration (rule or closure) — the one case where
+          var-versus-term shadowing is semantically observable. *)
   | ComprehensionNeedEach of ty * loc
   | AggregateRequiresNumeric of string * ty * loc
       (** combiner symbol, actual body type *)
@@ -43,19 +43,6 @@ type type_error =
   | CheckWithoutBody of loc
       (** check block present but chapter body is empty *)
 [@@deriving show]
-
-let type_warnings : type_error list ref = ref []
-let get_warnings () = List.rev !type_warnings
-
-(* Install the shadow-reporter callback so [Env.add_var]'s nullary-rule
-   collision detection funnels into the existing type-warnings pipeline.
-   Module-initialization statement; runs once when check.ml is loaded. *)
-let () =
-  Env.shadow_reporter :=
-    fun name rule_ret var_ty rule_loc _var_loc ->
-      type_warnings :=
-        NullaryRuleShadowedByVar (name, rule_ret, var_ty, rule_loc)
-        :: !type_warnings
 
 type context = {
   env : Env.t;
@@ -414,16 +401,10 @@ and check_unop ctx op e =
     (rather than an error) when it does, since propositions from different
     chapters may legitimately reuse variable names at different types. After the
     env-namespace split, this probes [vars] rather than [terms] (which now holds
-    only rules / closures). Nullary-rule shadowing is detected separately inside
-    [Env.add_var] via the shadow_reporter. *)
+    only rules / closures). Nullary-rule shadowing is checked separately with
+    [Env.nullary_shadow]. *)
 and check_no_type_shadow ctx name new_ty =
-  (match[@warning "-4"] Env.lookup_var name ctx.env with
-  | Some { kind = Env.KVar existing_ty; _ } ->
-      if not (is_subtype new_ty existing_ty) then
-        type_warnings :=
-          ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc)
-          :: !type_warnings
-  | _ -> ());
+  let _ = (ctx, name, new_ty) in
   Ok ()
 
 (** Resolve a parameter's type expression to an internal type *)
@@ -584,23 +565,10 @@ let check_proposition ctx (prop : expr located) =
 
 (** Check guards on a rule declaration or action *)
 let check_rule_guards ctx (decl : declaration located) =
-  let decl_name =
-    match decl.value with
-    | DeclRule { name; _ } -> Ast.lower_name name
-    | DeclAction { label; _ } -> label
-    | DeclDomain _ | DeclAlias _ | DeclClosure _ -> ""
-  in
   let check_guards params guards =
     let* param_bindings =
       map_result (resolve_param_type ctx.env decl.loc) params
     in
-    (* Warn for Bool parameters *)
-    List.iter
-      (fun (name, ty) ->
-        if equal_ty ty TyBool then
-          type_warnings :=
-            BoolParam (name, decl_name, decl.loc) :: !type_warnings)
-      param_bindings;
     let env' = Env.with_vars param_bindings ctx.env in
     let ctx' = { ctx with env = env' } in
     let* _ = process_guards ~check_shadow:false ~loc:decl.loc ctx' guards in
@@ -673,10 +641,191 @@ let check_chapter_guards ~chapter_idx env (chapter : chapter) =
   let ctx = { env = env_visible; loc = dummy_loc } in
   map_result (check_rule_guards ctx) chapter.head
 
+let nullary_shadow_warning env name var_ty =
+  match Env.nullary_shadow name env with
+  | Some (rule_ret, rule_loc) ->
+      [ NullaryRuleShadowedByVar (name, rule_ret, var_ty, rule_loc) ]
+  | None -> []
+
+let type_shadow_warning loc env name new_ty =
+  match[@warning "-4"] Env.lookup_var name env with
+  | Some { kind = Env.KVar existing_ty; _ }
+    when not (is_subtype new_ty existing_ty) ->
+      [ ShadowingTypeMismatch (name, existing_ty, new_ty, loc) ]
+  | _ -> []
+
+let add_warning_var ~check_shadow loc env name ty =
+  let warnings =
+    (if check_shadow then type_shadow_warning loc env name ty else [])
+    @ nullary_shadow_warning env name ty
+  in
+  (Env.add_var name ty env, warnings)
+
+let resolve_warning_param env loc p =
+  match resolve_param_type env loc p with
+  | Ok binding -> Some binding
+  | Error _ -> None
+
+let rec collect_expr_warnings ctx expr =
+  match expr with
+  | EForall (mb, metas) | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
+      collect_quant_warnings ctx params guards body
+  | EEach (mb, metas, _) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
+      collect_quant_warnings ctx params guards body
+  | EApp (func, args) ->
+      List.concat_map (collect_expr_warnings ctx) (func :: args)
+  | ETuple exprs -> List.concat_map (collect_expr_warnings ctx) exprs
+  | EProj (e, _) | EUnop (_, e) | EInitially e -> collect_expr_warnings ctx e
+  | EBinop (_, e1, e2) ->
+      collect_expr_warnings ctx e1 @ collect_expr_warnings ctx e2
+  | EOverride (_, pairs) ->
+      List.concat_map
+        (fun (key, value) ->
+          collect_expr_warnings ctx key @ collect_expr_warnings ctx value)
+        pairs
+  | ECond arms ->
+      List.concat_map
+        (fun (guard, value) ->
+          collect_expr_warnings ctx guard @ collect_expr_warnings ctx value)
+        arms
+  | EVar _ | EDomain _ | EQualified _ | EPrimed _ | ELitBool _ | ELitNat _
+  | ELitReal _ | ELitString _ ->
+      []
+
+and collect_quant_warnings ctx params guards body =
+  let env_with_params, param_warnings =
+    List.fold_left
+      (fun (env, warnings) p ->
+        match resolve_warning_param env ctx.loc p with
+        | Some (name, ty) ->
+            let env, new_warnings =
+              add_warning_var ~check_shadow:true ctx.loc env name ty
+            in
+            (env, warnings @ new_warnings)
+        | None -> (env, warnings))
+      (ctx.env, []) params
+  in
+  let env_with_guards, guard_warnings =
+    collect_guard_warnings ~check_shadow:true ctx.loc env_with_params guards
+  in
+  param_warnings @ guard_warnings
+  @ collect_expr_warnings { ctx with env = env_with_guards } body
+
+and collect_guard_warnings ~check_shadow loc env guards =
+  List.fold_left
+    (fun (env, warnings) guard ->
+      match guard with
+      | GParam p -> (
+          match resolve_warning_param env loc p with
+          | Some (name, ty) ->
+              let env, new_warnings =
+                add_warning_var ~check_shadow loc env name ty
+              in
+              (env, warnings @ new_warnings)
+          | None -> (env, warnings))
+      | GIn (Lower name, list_expr) ->
+          let expr_warnings = collect_expr_warnings { env; loc } list_expr in
+          let env, binding_warnings =
+            match infer_type { env; loc } list_expr with
+            | Ok (TyList elem_ty) ->
+                add_warning_var ~check_shadow loc env name elem_ty
+            | Ok
+                ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString
+                | TyNothing | TyDomain _ | TyProduct _ | TySum _ | TyFunc _ )
+            | Error _ ->
+                (env, [])
+          in
+          (env, warnings @ expr_warnings @ binding_warnings)
+      | GExpr e -> (env, warnings @ collect_expr_warnings { env; loc } e))
+    (env, []) guards
+
+let collect_head_warnings env decl =
+  let decl_name =
+    match decl.value with
+    | DeclRule { name; _ } -> Ast.lower_name name
+    | DeclAction { label; _ } -> label
+    | DeclDomain _ | DeclAlias _ | DeclClosure _ -> ""
+  in
+  let collect_params params guards =
+    let param_warnings =
+      List.filter_map
+        (fun p ->
+          match resolve_warning_param env decl.loc p with
+          | Some (name, ty) when equal_ty ty TyBool ->
+              Some (BoolParam (name, decl_name, decl.loc))
+          | Some _ | None -> None)
+        params
+    in
+    let env_with_params, binding_warnings =
+      List.fold_left
+        (fun (env, warnings) p ->
+          match resolve_warning_param env decl.loc p with
+          | Some (name, ty) ->
+              let env, new_warnings =
+                add_warning_var ~check_shadow:false decl.loc env name ty
+              in
+              (env, warnings @ new_warnings)
+          | None -> (env, warnings))
+        (env, []) params
+    in
+    let _, guard_warnings =
+      collect_guard_warnings ~check_shadow:false decl.loc env_with_params guards
+    in
+    param_warnings @ binding_warnings @ guard_warnings
+  in
+  match decl.value with
+  | DeclRule { params; guards; _ } | DeclAction { params; guards; _ } ->
+      collect_params params guards
+  | DeclDomain _ | DeclAlias _ | DeclClosure _ -> []
+
+let collect_chapter_guard_warnings ~chapter_idx env chapter =
+  let env_visible = Env.visible_in_head chapter_idx env in
+  List.concat_map (collect_head_warnings env_visible) chapter.head
+
+let collect_chapter_body_warnings ~chapter_idx env chapter =
+  let env_visible = Env.visible_in_body chapter_idx env in
+  let env_with_action =
+    match find_action chapter.head with
+    | Some (name, _, contexts) ->
+        Env.with_action name env_visible |> Env.with_action_contexts contexts
+    | None -> env_visible
+  in
+  let env_with_params, param_warnings =
+    List.fold_left
+      (fun (env, warnings) p ->
+        match resolve_warning_param env dummy_loc p with
+        | Some (name, ty) ->
+            let env, new_warnings =
+              add_warning_var ~check_shadow:false dummy_loc env name ty
+            in
+            (env, warnings @ new_warnings)
+        | None -> (env, warnings))
+      (env_with_action, [])
+      (collect_all_params chapter.head)
+  in
+  let ctx = { env = env_with_params; loc = dummy_loc } in
+  param_warnings
+  @ List.concat_map
+      (fun (prop : expr located) ->
+        collect_expr_warnings (with_loc ctx prop.loc) prop.value)
+      (chapter.body @ chapter.checks)
+
+let collect_document_warnings env doc =
+  let rec collect chapter_idx chapters =
+    match chapters with
+    | [] -> []
+    | chapter :: rest ->
+        collect_chapter_guard_warnings ~chapter_idx env chapter
+        @ collect_chapter_body_warnings ~chapter_idx env chapter
+        @ collect (chapter_idx + 1) rest
+  in
+  collect 0 doc.chapters
+
 (** Check entire document (Pass 2). Returns Ok with accumulated warnings, or
     Error with the first type error. *)
 let check_document env (doc : document) : (type_error list, type_error) result =
-  type_warnings := [];
   let rec check_chapters chapter_idx = function
     | [] -> Ok ()
     | chapter :: rest ->
@@ -687,5 +836,5 @@ let check_document env (doc : document) : (type_error list, type_error) result =
         check_chapters (chapter_idx + 1) rest
   in
   match check_chapters 0 doc.chapters with
-  | Ok () -> Ok (get_warnings ())
+  | Ok () -> Ok (collect_document_warnings env doc)
   | Error e -> Error e

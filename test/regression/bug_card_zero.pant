@@ -4,7 +4,7 @@ module BUG_CARD_ZERO.
 > (lib/smt.ml:317-324). Cardinality of a non-domain element list (here
 > [Real]) used to translate to literal `0`, producing a false UNSAT for
 > `#v = dim` combined with the `dim: Nat` constraint. After the fallback
-> instrumentation (lib/smt_types.ml `fresh_fallback`) the translator now
+> instrumentation (lib/smt_state.ml `fresh_fallback`) the translator now
 > emits a fresh `_card_fallback_N` constant; Layer 1 reports a
 > Fallback_emission failure so the approximation is visible.
 

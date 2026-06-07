@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-boundary *)
+
 (** Extract module name from first line if it matches "module NAME." *)
 let extract_module_name file =
   let ic = open_in file in
@@ -60,11 +63,7 @@ let () =
       (Filename.quote title) (Filename.quote out)
   in
   let oc = Unix.open_process_out md_cmd in
-  let fmt = Format.formatter_of_out_channel oc in
-  Format.pp_set_margin fmt 10000;
-  let procs = Pantagruel.Markdown_output.rule_names_of_env env in
-  Pantagruel.Markdown_output.pp_document procs fmt doc;
-  Format.pp_print_flush fmt ();
+  output_string oc (Pantagruel.Markdown_output.document_to_markdown env doc);
   match Unix.close_process_out oc with
   | Unix.WEXITED code -> exit code
   | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> exit 1

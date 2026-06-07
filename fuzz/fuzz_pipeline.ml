@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason test-support *)
+
 (** Fuzz the full pipeline: lexer -> parser -> collect -> check. Catches crashes
     deep in the pipeline from malformed but parseable inputs. *)
 

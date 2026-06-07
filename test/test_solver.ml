@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** Tests for solver module — pure functions only, no z3 required *)
 
 open Alcotest

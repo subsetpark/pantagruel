@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.markdown-output *)
+
 (** Markdown output tests *)
 
 open Alcotest
@@ -17,26 +20,25 @@ let render str =
   | Ok env -> (
       match Check.check_document env doc with
       | Error e -> fail (Check.show_type_error e)
-      | Ok _warnings ->
-          let procs = Markdown_output.rule_names_of_env env in
-          (procs, doc))
+      | Ok _warnings -> (env, doc))
 
 let render_expr str =
-  let procs, doc = render str in
+  let env, doc = render str in
   match doc.Ast.chapters with
-  | [ { body = [ prop ]; _ } ] -> Markdown_output.md_expr procs prop.value
+  | [ { body = [ prop ]; _ } ] ->
+      Markdown_output.expression_to_markdown env prop.value
   | _ -> fail "expected single proposition"
 
 let render_decl str =
-  let procs, doc = render str in
+  let env, doc = render str in
   match doc.Ast.chapters with
   | [ { head = [ decl ]; _ } ] ->
-      Markdown_output.md_declaration procs decl.value
+      Markdown_output.declaration_to_markdown env decl.value
   | _ -> fail "expected single declaration"
 
 let render_doc str =
-  let procs, doc = render str in
-  Markdown_output.md_document procs doc
+  let env, doc = render str in
+  Markdown_output.document_to_markdown env doc
 
 (* --- Expression rendering --- *)
 
@@ -267,11 +269,10 @@ let test_type_list () =
   check string "list type" "`Names` = [`String`]." md
 
 let test_type_sum () =
-  let _, doc = render "module T.\nFoo.\nBar.\nEither = Foo + Bar.\n---\n" in
+  let env, doc = render "module T.\nFoo.\nBar.\nEither = Foo + Bar.\n---\n" in
   match doc.Ast.chapters with
   | [ { head = [ _; _; decl ]; _ } ] ->
-      let procs = Markdown_output.StringSet.empty in
-      let md = Markdown_output.md_declaration procs decl.value in
+      let md = Markdown_output.declaration_to_markdown env decl.value in
       check string "sum type" "`Either` = `Foo` + `Bar`." md
   | _ -> fail "expected three declarations"
 
@@ -282,28 +283,26 @@ let test_decl_domain () =
   check string "domain decl" "`User`." md
 
 let test_decl_rule_with_return () =
-  let _, doc = render "module T.\nUser.\nname u: User => String.\n---\n" in
-  let procs = Markdown_output.StringSet.singleton "name" in
+  let env, doc = render "module T.\nUser.\nname u: User => String.\n---\n" in
   match doc.Ast.chapters with
   | [ { head = [ _; decl ]; _ } ] ->
-      let md = Markdown_output.md_declaration procs decl.value in
+      let md = Markdown_output.declaration_to_markdown env decl.value in
       check string "rule decl" "**name** *u*: `User` ⇒ `String`." md
   | _ -> fail "expected two declarations"
 
 let test_decl_action () =
-  let _, doc =
+  let env, doc =
     render
       "module T.\nUser.\nDocument.\n~> Check out @ u: User, d: Document.\n---\n"
   in
-  let procs = Markdown_output.StringSet.empty in
   match doc.Ast.chapters with
   | [ { head = [ _; _; decl ]; _ } ] ->
-      let md = Markdown_output.md_declaration procs decl.value in
+      let md = Markdown_output.declaration_to_markdown env decl.value in
       check string "action decl" "↝ Check out *u*: `User`, *d*: `Document`." md
   | _ -> fail "expected three declarations"
 
 let test_decl_closure () =
-  let _, doc =
+  let env, doc =
     render
       "module T.\n\
        Block.\n\
@@ -311,16 +310,15 @@ let test_decl_closure () =
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n"
   in
-  let procs = Markdown_output.StringSet.of_list [ "parent"; "ancestor" ] in
   match doc.Ast.chapters with
   | [ { head = _ :: _ :: decl :: _; _ } ] ->
-      let md = Markdown_output.md_declaration procs decl.value in
+      let md = Markdown_output.declaration_to_markdown env decl.value in
       check string "closure decl"
         "**ancestor** *b*: `Block` ⇒ [`Block`] = closure **parent**." md
   | _ -> fail "expected closure declaration"
 
 let test_decl_action_with_context () =
-  let _, doc =
+  let env, doc =
     render
       {|module T.
 context Banking.
@@ -329,10 +327,9 @@ Banking ~> Withdraw @ u: User.
 ---
 |}
   in
-  let procs = Markdown_output.StringSet.empty in
   match doc.Ast.chapters with
   | [ { head = _ :: decl :: _; _ } ] ->
-      let md = Markdown_output.md_declaration procs decl.value in
+      let md = Markdown_output.declaration_to_markdown env decl.value in
       check string "action with context" "**`Banking`** ↝ Withdraw *u*: `User`."
         md
   | _ -> fail "expected action declaration"
@@ -449,9 +446,45 @@ let test_builtin_types_backtick () =
   check bool "String backtick" true (has_substring md "`String`");
   check bool "Bool backtick" true (has_substring md "`Bool`")
 
+let generated_sources =
+  [
+    "module T.\nUser.\nactive u: User => Bool.\n---\nall u: User | active u.\n";
+    "module T.\nPoint = Nat * Nat.\n---\n";
+    "module T.\ncontext C.\nUser.\nC ~> Rename @ u: User.\n---\n";
+  ]
+
+let markdown_property_tests =
+  let nonempty s = String.length s > 0 in
+  [
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"document_to_markdown produces output" ~count:100
+         ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources) (fun src ->
+           let env, doc = render src in
+           nonempty (Markdown_output.document_to_markdown env doc)));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"expression_to_markdown produces output"
+         ~count:100 ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources)
+         (fun src ->
+           let env, doc = render src in
+           match doc.Ast.chapters with
+           | { body = prop :: _; _ } :: _ ->
+               nonempty (Markdown_output.expression_to_markdown env prop.value)
+           | _ -> true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"declaration_to_markdown produces output"
+         ~count:100 ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources)
+         (fun src ->
+           let env, doc = render src in
+           match doc.Ast.chapters with
+           | { head = decl :: _; _ } :: _ ->
+               nonempty (Markdown_output.declaration_to_markdown env decl.value)
+           | _ -> true));
+  ]
+
 let () =
   run "Markdown"
     [
+      ("properties", markdown_property_tests);
       ( "expressions",
         [
           test_case "var italic, rule bold" `Quick test_var_italic;

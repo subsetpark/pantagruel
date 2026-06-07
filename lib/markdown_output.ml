@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.markdown-output *)
+
 (** Rich Markdown output for Pantagruel documents *)
 
 open Ast
@@ -330,8 +333,10 @@ let to_string pp x =
   pp_print_flush fmt ();
   Buffer.contents buf
 
-let md_expr procs e = to_string (pp_expr procs) e
-let md_declaration procs d = to_string (pp_declaration procs) d
+let expression_to_markdown env e = to_string (pp_expr (rule_names_of_env env)) e
+
+let declaration_to_markdown env d =
+  to_string (pp_declaration (rule_names_of_env env)) d
 
 (* --- Markdown document rendering --- *)
 
@@ -508,11 +513,5 @@ let pp_document procs fmt doc =
       pp_chapter procs ~skip_first_doc_groups ~total_chapters (i + 1) fmt ch)
     doc.chapters
 
-let md_document procs doc = to_string (pp_document procs) doc
-
-(** Output Markdown to stdout *)
-let output env doc =
-  let procs = rule_names_of_env env in
-  pp_set_margin std_formatter 10000;
-  pp_document procs std_formatter doc;
-  pp_print_flush std_formatter ()
+let document_to_markdown env doc =
+  to_string (pp_document (rule_names_of_env env)) doc

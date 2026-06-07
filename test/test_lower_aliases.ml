@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.lower-aliases *)
+
 (** Identity-lowering of list-typed aliases. *)
 
 open Alcotest
@@ -13,6 +16,56 @@ let is_domain k =
 
 let is_alias k =
   match[@warning "-4"] k with Some (Env.KAlias _) -> true | _ -> false
+
+type generated_decl = Domain | ListAlias | ProductAlias
+
+let decl_names = [ "P"; "Q"; "R"; "S"; "T" ]
+
+let mk_located value =
+  { Ast.loc = Ast.dummy_loc; value; doc = []; doc_adjacent = false }
+
+let declaration_of_generated name = function
+  | Domain -> Ast.DeclDomain (Ast.Upper name)
+  | ListAlias ->
+      Ast.DeclAlias (Ast.Upper name, Ast.TList (Ast.TName (Ast.Upper "D")))
+  | ProductAlias ->
+      Ast.DeclAlias
+        ( Ast.Upper name,
+          Ast.TProduct [ Ast.TName (Ast.Upper "D"); Ast.TName (Ast.Upper "D") ]
+        )
+
+let doc_of_generated decls =
+  let head =
+    mk_located (Ast.DeclDomain (Ast.Upper "D"))
+    :: List.map2
+         (fun name decl -> mk_located (declaration_of_generated name decl))
+         decl_names decls
+  in
+  {
+    Ast.module_name = Some (Ast.Upper "M");
+    imports = [];
+    contexts = [];
+    chapters = [ { head; body = []; checks = []; trailing_docs = [] } ];
+  }
+
+let gen_decl = QCheck2.Gen.oneof_list [ Domain; ListAlias; ProductAlias ]
+
+let gen_generated_decls =
+  QCheck2.Gen.list_size (QCheck2.Gen.return (List.length decl_names)) gen_decl
+
+let print_generated_decls decls =
+  let show = function
+    | Domain -> "domain"
+    | ListAlias -> "list-alias"
+    | ProductAlias -> "product-alias"
+  in
+  "[" ^ String.concat "; " (List.map show decls) ^ "]"
+
+let list_alias_names decls =
+  List.filter_map
+    (fun (name, decl) ->
+      match[@warning "-4"] decl with ListAlias -> Some name | _ -> None)
+    (List.combine decl_names decls)
 
 (* Only list aliases ([T = [D]]) are candidates; a product alias is not. *)
 let test_candidates () =
@@ -88,6 +141,38 @@ let test_no_lower_destructured () =
   check bool "destructured alias is not lowered" true
     (is_alias (kind_of "P" env'))
 
+let test_list_alias_candidates_property =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"list_alias_candidates returns list aliases"
+       ~count:200 ~print:print_generated_decls gen_generated_decls (fun decls ->
+         let doc = doc_of_generated decls in
+         Lower_aliases.list_alias_candidates doc = list_alias_names decls))
+
+let test_rewrite_to_domains_property =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"rewrite_to_domains rewrites selected aliases"
+       ~count:200 ~print:print_generated_decls gen_generated_decls (fun decls ->
+         let doc = doc_of_generated decls in
+         let selected = [ "P"; "R"; "T" ] in
+         let rewritten = Lower_aliases.rewrite_to_domains doc selected in
+         let expected_value name decl =
+           match[@warning "-4"] decl with
+           | (ListAlias | ProductAlias) when List.mem name selected ->
+               Ast.DeclDomain (Ast.Upper name)
+           | _ -> declaration_of_generated name decl
+         in
+         match rewritten.chapters with
+         | [ chapter ] ->
+             let rewritten_values =
+               List.map (fun d -> d.Ast.value) chapter.head
+             in
+             let expected_values =
+               Ast.DeclDomain (Ast.Upper "D")
+               :: List.map2 expected_value decl_names decls
+             in
+             List.equal Ast.equal_declaration expected_values rewritten_values
+         | _ -> false))
+
 let () =
   run "LowerAliases"
     [
@@ -98,5 +183,9 @@ let () =
           test_case "opaque alias is lowered" `Quick test_lower_opaque;
           test_case "destructured alias is not lowered" `Quick
             test_no_lower_destructured;
+        ] );
+      ( "property",
+        [
+          test_list_alias_candidates_property; test_rewrite_to_domains_property;
         ] );
     ]

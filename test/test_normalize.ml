@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** Unit tests and property-based tests for Normalize module *)
 
 open Alcotest

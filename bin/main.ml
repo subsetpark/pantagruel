@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-boundary *)
+
 (** Pantagruel CLI *)
 
 (* Stamped at build time from [git describe] — see the [version.ml] rule in
@@ -145,7 +148,7 @@ let check_doc doc =
     0
   end
   else if !do_format then begin
-    Pantagruel.Pretty.output_formatted doc;
+    Pantagruel.Pretty.document_to_string doc |> print_string;
     0
   end
   else if !print_markdown then begin
@@ -153,7 +156,7 @@ let check_doc doc =
     let registry = Pantagruel.Module.scan_module_path !module_path in
     match Pantagruel.Module.collect_with_imports registry doc with
     | Ok env ->
-        Pantagruel.Markdown_output.output env doc;
+        Pantagruel.Markdown_output.document_to_markdown env doc |> print_string;
         0
     | Error e ->
         prerr_endline (format_module_error e);
@@ -193,12 +196,14 @@ let check_doc doc =
           end
           else begin
             let normalized = Pantagruel.Normalize.normalize doc root in
-            Pantagruel.Pretty.output_formatted normalized;
+            Pantagruel.Pretty.document_to_string normalized |> print_string;
             0
           end
         end
         else begin
-          if !print_json then Pantagruel.Json_output.output_json env doc;
+          if !print_json then
+            Pantagruel.Json_output.document_to_json env doc
+            |> Yojson.Basic.pretty_to_string |> print_endline;
           0
         end
     | Error e ->

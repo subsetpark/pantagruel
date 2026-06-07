@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason pure-glue *)
+
 module Var = struct
   type 'a t = 'a Bindlib.var
 
