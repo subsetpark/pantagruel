@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.smt-preamble *)
+
 (** SMT-LIB2 preamble generation: sorts, functions, constraints *)
 
 open Types

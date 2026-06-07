@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-facade *)
+
 (** AST type definitions for Pantagruel *)
 
 type loc = { file : string; line : int; col : int } [@@deriving show, eq]

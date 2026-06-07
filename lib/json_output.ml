@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.json-output *)
+
 (** JSON serialization for Pantagruel documents *)
 
 open Ast
@@ -440,8 +443,3 @@ let document_to_json env doc =
       ("rules", rules_to_json env);
       ("chapters", `List (List.map (chapter_to_json env) doc.chapters));
     ]
-
-(** Output JSON to stdout *)
-let output_json env doc =
-  let json = document_to_json env doc in
-  print_endline (Yojson.Basic.pretty_to_string json)

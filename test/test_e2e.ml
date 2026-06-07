@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** End-to-end tests: run the full pipeline on sample .pant files *)
 
 open Alcotest
@@ -94,13 +97,7 @@ let test_sample_markdown name () =
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env ->
-          let procs = Markdown_output.rule_names_of_env env in
-          let buf = Buffer.create 1024 in
-          let fmt = Format.formatter_of_buffer buf in
-          Format.pp_set_margin fmt 10000;
-          Markdown_output.pp_document procs fmt doc;
-          Format.pp_print_flush fmt ();
-          let s = Buffer.contents buf in
+          let s = Markdown_output.document_to_markdown env doc in
           check bool (name ^ " markdown is non-empty") true (String.length s > 0))
 
 (** Test that each sample produces non-empty pretty-printed output *)
@@ -108,12 +105,7 @@ let test_sample_pretty name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let buf = Buffer.create 1024 in
-      let fmt = Format.formatter_of_buffer buf in
-      Format.pp_set_margin fmt 10000;
-      Pretty.output_document ~width:10000 fmt doc;
-      Format.pp_print_flush fmt ();
-      let s = Buffer.contents buf in
+      let s = Pretty.document_to_string ~width:10000 doc in
       check bool
         (name ^ " pretty output is non-empty")
         true
@@ -170,12 +162,7 @@ let test_snapshot_pretty name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let buf = Buffer.create 1024 in
-      let fmt = Format.formatter_of_buffer buf in
-      Format.pp_set_margin fmt 10000;
-      Pretty.output_document ~width:10000 fmt doc;
-      Format.pp_print_flush fmt ();
-      let actual = Buffer.contents buf in
+      let actual = Pretty.document_to_string ~width:10000 doc in
       let base = Filename.chop_extension name in
       let snap_path =
         match snapshot_dir with
@@ -201,13 +188,7 @@ let test_snapshot_markdown name () =
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env -> (
-          let procs = Markdown_output.rule_names_of_env env in
-          let buf = Buffer.create 1024 in
-          let fmt = Format.formatter_of_buffer buf in
-          Format.pp_set_margin fmt 10000;
-          Markdown_output.pp_document procs fmt doc;
-          Format.pp_print_flush fmt ();
-          let actual = Buffer.contents buf in
+          let actual = Markdown_output.document_to_markdown env doc in
           let base = Filename.chop_extension name in
           let snap_path =
             match snapshot_dir with

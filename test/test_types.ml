@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.types *)
+
 (** Unit tests and property-based tests for Types module *)
 
 open Alcotest
@@ -168,6 +171,49 @@ let print_pair (a, b) = Printf.sprintf "(%s, %s)" (print_ty a) (print_ty b)
 let print_triple (a, b, c) =
   Printf.sprintf "(%s, %s, %s)" (print_ty a) (print_ty b) (print_ty c)
 
+let gen_builtin_name =
+  QCheck2.Gen.oneof_list
+    [ "Bool"; "Nat"; "Nat0"; "Int"; "Real"; "String"; "Nothing"; "User" ]
+
+let test_builtin_of_name_registry =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"builtin_of_name follows builtin_type_names"
+       ~count:100 ~print:Fun.id gen_builtin_name (fun name ->
+         match Types.builtin_of_name name with
+         | Some ty ->
+             List.mem name Types.builtin_type_names
+             && Types.equal_ty ty
+                  (match name with
+                  | "Bool" -> TyBool
+                  | "Nat" -> TyNat
+                  | "Nat0" -> TyNat0
+                  | "Int" -> TyInt
+                  | "Real" -> TyReal
+                  | "String" -> TyString
+                  | _ -> assert false)
+         | None -> not (List.mem name Types.builtin_type_names)))
+
+let test_format_ty_non_empty =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"format_ty is non-empty" ~count:200 ~print:print_ty
+       gen_ty (fun t -> Types.format_ty t <> ""))
+
+let test_numeric_super_implies_numeric =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"numeric_super implies numeric" ~count:200
+       ~print:print_ty gen_ty (fun t ->
+         match Types.numeric_super t with
+         | Some super -> Types.is_numeric t && Types.is_numeric super
+         | None -> true))
+
+let test_lub_numeric_upper_bound =
+  QCheck_alcotest.to_alcotest
+    (QCheck2.Test.make ~name:"lub_numeric is an upper bound" ~count:500
+       ~print:print_pair (QCheck2.Gen.pair gen_ty gen_ty) (fun (a, b) ->
+         match Types.lub_numeric a b with
+         | Some lub -> Types.is_subtype a lub && Types.is_subtype b lub
+         | None -> true))
+
 let test_subtype_reflexivity =
   QCheck_alcotest.to_alcotest
     (QCheck2.Test.make ~name:"subtype reflexivity" ~count:200 ~print:print_ty
@@ -256,6 +302,10 @@ let () =
       ("compatible", [ test_case "pairs" `Quick test_compatible ]);
       ( "property",
         [
+          test_builtin_of_name_registry;
+          test_format_ty_non_empty;
+          test_numeric_super_implies_numeric;
+          test_lub_numeric_upper_bound;
           test_subtype_reflexivity;
           test_subtype_transitivity;
           test_join_commutativity;

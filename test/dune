@@ -13,6 +13,7 @@
 (tests
  (names
   test_lexer
+  test_lexer_tokens_core
   test_parser
   test_check
   test_markdown
@@ -21,14 +22,26 @@
   test_pretty
   test_json_output
   test_normalize
+  test_normalize_core
   test_solver
+  test_solver_terms
+  test_solver_output_core
+  test_solver_interpretation_core
+  test_doc_comments_state
   test_error
   test_e2e
   test_module
   test_smt_invariants
   test_smt_property
   test_smt_substitution
-  test_lower_aliases)
+  test_smt_doc
+  test_smt_preamble
+  test_smt_types
+  test_lower_aliases
+  test_env_core
+  test_util_core
+  test_collect_core
+  test_check_core)
  (modules :standard \ test_util smt_check)
  (libraries pantagruel test_util smt_check alcotest qcheck-alcotest)
  (deps

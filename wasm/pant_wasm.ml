@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-facade *)
+
 open Js_of_ocaml
 open Pantagruel_parser
 

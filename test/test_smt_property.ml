@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** Layer 2 SMT translation tests: property-based checks on randomly generated
     Pantagruel documents.
 

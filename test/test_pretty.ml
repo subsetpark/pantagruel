@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.pretty *)
+
 (** Unit tests and property-based tests for Pretty module *)
 
 open Alcotest
@@ -394,6 +397,38 @@ let test_type_expr_roundtrip =
                false
          with _ -> false))
 
+let generated_sources =
+  [
+    "module T.\nFoo.\n---\ntrue.\n";
+    "module T.\nUser.\nactive u: User => Bool.\n---\nall u: User | active u.\n";
+    "module T.\nPoint = Nat * Nat.\n---\n";
+  ]
+
+let public_api_properties =
+  let nonempty s = String.length s > 0 in
+  [
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"str_expr produces output" ~count:100
+         ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources) (fun src ->
+           let doc = parse src in
+           match doc.Ast.chapters with
+           | { body = prop :: _; _ } :: _ ->
+               nonempty (Pretty.str_expr prop.value)
+           | _ -> true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"str_declaration produces output" ~count:100
+         ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources) (fun src ->
+           let doc = parse src in
+           match doc.Ast.chapters with
+           | { head = decl :: _; _ } :: _ ->
+               nonempty (Pretty.str_declaration decl.value)
+           | _ -> true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"document_to_string produces output" ~count:100
+         ~print:Fun.id (QCheck2.Gen.oneof_list generated_sources) (fun src ->
+           nonempty (Pretty.document_to_string (parse src))));
+  ]
+
 (* --- Bug-finding tests --- *)
 
 let test_roundtrip_implication_chain () =
@@ -508,7 +543,7 @@ let () =
           test_case "declarations" `Quick test_roundtrip_declarations;
           test_case "type exprs" `Quick test_roundtrip_type_exprs;
         ] );
-      ("property", [ test_type_expr_roundtrip ]);
+      ("property", test_type_expr_roundtrip :: public_api_properties);
       ( "bug_finding",
         [
           test_case "roundtrip implication chain" `Quick

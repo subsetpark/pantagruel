@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.pretty *)
+
 (** Pretty printer for Pantagruel documents *)
 
 open Ast
@@ -318,9 +321,9 @@ let to_string pp x =
   pp_print_flush fmt ();
   Buffer.contents buf
 
-let str_expr = to_string pp_expr
-let str_declaration = to_string pp_declaration
-let str_type_expr = to_string pp_type_expr
+let str_expr expr = to_string pp_expr expr
+let str_declaration decl = to_string pp_declaration decl
+let str_type_expr type_expr = to_string pp_type_expr type_expr
 
 (* --- Layout-based document output --- *)
 
@@ -424,11 +427,10 @@ let output_document ?(width = 80) fmt doc =
   if has_preamble && items <> [] then fprintf fmt "@\n";
   render_layout ~width fmt items
 
-(** Output formatted document to stdout *)
-let output_formatted ?(width = 80) doc =
-  pp_set_margin std_formatter 10000;
-  output_document ~width std_formatter doc;
-  pp_print_flush std_formatter ()
-
-(** Output document to stdout (default width) *)
-let output doc = output_formatted ~width:10000 doc
+let document_to_string ?(width = 80) doc =
+  let buf = Buffer.create 1024 in
+  let fmt = formatter_of_buffer buf in
+  pp_set_margin fmt 10000;
+  output_document ~width fmt doc;
+  pp_print_flush fmt ();
+  Buffer.contents buf

@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.util *)
+
 (** Utility functions *)
 
 (** Sequence results: turn a list of results into a result of list *)

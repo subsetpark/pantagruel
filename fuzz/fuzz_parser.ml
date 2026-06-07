@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason test-support *)
+
 (** Fuzz the parser: feed arbitrary bytes through lexer+parser. Any exception is
     acceptable (parse errors are expected); only unhandled crashes indicate
     bugs. *)

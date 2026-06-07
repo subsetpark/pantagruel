@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason test-support *)
+
 (** Fuzz the lexer: feed arbitrary bytes and ensure no crashes. Only Lexer_error
     and Sedlexing.MalFormed are acceptable exceptions. *)
 

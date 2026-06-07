@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.contracts *)
+
 (** Type representation for Pantagruel *)
 
 (** Internal type representation *)

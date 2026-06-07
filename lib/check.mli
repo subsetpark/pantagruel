@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.contracts *)
+
 (** Pass 2: Type checking *)
 
 type type_error =

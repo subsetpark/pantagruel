@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-facade *)
+
 (** SMT-LIB2 translation for bounded model checking *)
 
 open Ast
@@ -6,6 +9,7 @@ open Types
 (* Re-export all submodules for backward compatibility — external code uses
    Smt.config, Smt.query, Smt.make_config, Smt.declare_domain_sorts, etc. *)
 include Smt_types
+include Smt_state
 include Smt_preamble
 include Smt_doc
 include Smt_expr

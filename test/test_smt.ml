@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** SMT translation tests *)
 
 open Alcotest
@@ -541,7 +544,7 @@ let test_card_non_domain_list () =
     Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "nums")))
   in
   (* Non-domain list card emits a fresh fallback constant name so the gap is
-     visible to downstream tooling (see lib/smt_types.ml `fresh_fallback`).
+     visible to downstream tooling (see lib/smt_state.ml `fresh_fallback`).
      Must NOT emit ';' line comments — they would swallow the wrapping
      context's closing parens / annotations and corrupt the SMT assertion. *)
   check bool "is fallback constant" true

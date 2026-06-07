@@ -1,3 +1,6 @@
+(* @archlint.module exempt
+   @archlint.exempt-reason effect-boundary *)
+
 (** Module system: loading and import resolution *)
 
 module StringMap = Map.Make (String)

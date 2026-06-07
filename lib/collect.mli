@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.contracts *)
+
 (** Pass 1: Collect declarations from all chapters *)
 
 (** Which coordinate of a rule family two arity-overloads disagree on. Used by
