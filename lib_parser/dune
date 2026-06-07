@@ -57,3 +57,11 @@
 (copy_files ../lib/module_header.ml)
 
 (copy_files ../lib/module_header.mli)
+
+(copy_files ../lib/wasm_expr.ml)
+
+(copy_files ../lib/wasm_expr.mli)
+
+(copy_files ../lib/wasm_document.ml)
+
+(copy_files ../lib/wasm_document.mli)

@@ -42,6 +42,8 @@
   test_lower_aliases
   test_env_core
   test_util_core
+  test_wasm_document_core
+  test_wasm_expr_core
   test_collect_core
   test_check_core)
  (modules :standard \ test_util smt_check)
