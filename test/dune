@@ -30,6 +30,7 @@
   test_doc_comments_state
   test_error
   test_e2e
+  test_html_title_core
   test_module
   test_module_header_core
   test_smt_invariants

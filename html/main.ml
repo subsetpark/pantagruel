@@ -1,25 +1,17 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-boundary *)
-
-(** Extract module name from first line if it matches "module NAME." *)
-let extract_module_name file =
-  let ic = open_in file in
-  let line = try input_line ic with End_of_file -> "" in
-  close_in ic;
-  let line = String.trim line in
-  if
-    String.length line > 8
-    && String.sub line 0 7 = "module "
-    && line.[String.length line - 1] = '.'
-  then Some (String.sub line 7 (String.length line - 8))
-  else None
+(* @archlint.module shell
+   @archlint.domain pantagruel.html-title *)
 
 let () =
   let file = Sys.argv.(1) in
   let base = Filename.remove_extension (Filename.basename file) in
   let out = base ^ ".html" in
   let title =
-    match extract_module_name file with Some name -> name | None -> base
+    let ic = open_in file in
+    let line = try input_line ic with End_of_file -> "" in
+    close_in ic;
+    match Pantagruel.Html_title.module_name_from_first_line line with
+    | Some name -> name
+    | None -> base
   in
   (* Parse and check the document *)
   let doc =
