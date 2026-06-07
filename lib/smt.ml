@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-facade *)
+(* @archlint.module state
+   @archlint.domain pantagruel.smt-types *)
 
 (** SMT-LIB2 translation for bounded model checking *)
 

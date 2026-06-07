@@ -126,7 +126,8 @@ let state_interleaving_properties =
            let drained_cond = Smt_state.drain_cond_aux_decls () in
            let drained_fallbacks = Smt_state.drain_fallback_decls () in
            drained_cond = "" && drained_fallbacks = ""
-           && String.length with_fallbacks >= String.length smt2));
+           && String.length with_fallbacks >= String.length smt2
+           && Smt_types.sort_of_ty Types.TyNat = "Int"));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"with_cond_aux inserts and resets query-local state" ~count:100
