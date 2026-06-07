@@ -1,4 +1,4 @@
-(* @archlint.module test
+(* @archlint.module core
    @archlint.domain pantagruel.tests *)
 
 (** Structural sanity checks on emitted SMT-LIB2. See [smt_check.mli]. *)
