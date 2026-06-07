@@ -8,7 +8,7 @@ import {
 } from "../src/name-registry.js";
 
 /**
- * Read the canonical reserved-keyword list from `lib/lexer.ml` so the test
+ * Read the canonical reserved-keyword list from `lib/lexer_tokens.ml` so the test
  * fails if the lexer adds or removes a keyword without a matching update
  * to `PANT_RESERVED_KEYWORDS` in `name-registry.ts`. The lexer dispatches
  * keywords through lines like `| "module" -> Parser.MODULE`. The same
@@ -17,7 +17,10 @@ import {
  * cares about, since symbolic strings can't be registered as TS names.
  */
 function lexerReservedKeywords(): string[] {
-  const lexerPath = resolve(import.meta.dirname, "../../../lib/lexer.ml");
+  const lexerPath = resolve(
+    import.meta.dirname,
+    "../../../lib/lexer_tokens.ml",
+  );
   const src = readFileSync(lexerPath, "utf8");
   const keywords = Array.from(
     src.matchAll(/\|\s*"([^"]+)"\s*->\s*Parser\.[A-Z_]+/g),
@@ -67,7 +70,7 @@ describe("name-registry", () => {
     assert.equal(d.name, "foo");
   });
 
-  it("sanitises every reserved keyword (derived from lib/lexer.ml)", () => {
+  it("sanitises every reserved keyword (derived from lib/lexer_tokens.ml)", () => {
     const reserved = lexerReservedKeywords();
     assert.ok(
       reserved.length > 0,
