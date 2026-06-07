@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-boundary *)
+(* @archlint.module state
+   @archlint.domain pantagruel.cli *)
 
 (** Pantagruel CLI *)
 
@@ -76,15 +76,6 @@ let specs =
 
 let add_file f = files := f :: !files
 
-(** Format module errors for human-readable output *)
-let format_module_error = function
-  | Pantagruel.Module.ModuleNotFound name ->
-      Printf.sprintf "error: Module '%s' not found" name
-  | Pantagruel.Module.CyclicImport modules ->
-      Printf.sprintf "error: Cyclic import: %s" (String.concat " -> " modules)
-  | Pantagruel.Module.ParseError (_, msg) ->
-      msg (* Already formatted by Error module *)
-
 (** Run SMT verification on a type-checked document. Returns exit code: 0 =
     pass, 1 = violations found, 2 = solver not found *)
 let run_smt_check env doc =
@@ -159,7 +150,7 @@ let check_doc doc =
         Pantagruel.Markdown_output.document_to_markdown env doc |> print_string;
         0
     | Error e ->
-        prerr_endline (format_module_error e);
+        prerr_endline (Pantagruel.Cli_errors.format_module_error e);
         1
   end
   else begin
@@ -207,21 +198,21 @@ let check_doc doc =
           0
         end
     | Error e ->
-        prerr_endline (format_module_error e);
+        prerr_endline (Pantagruel.Cli_errors.format_module_error e);
         1
   end
 
 let check_file path =
   match Pantagruel.Module.parse_file path with
   | Error e ->
-      prerr_endline (format_module_error e);
+      prerr_endline (Pantagruel.Cli_errors.format_module_error e);
       1
   | Ok doc -> check_doc doc
 
 let check_stdin () =
   match Pantagruel.Module.parse_channel "<stdin>" stdin with
   | Error e ->
-      prerr_endline (format_module_error e);
+      prerr_endline (Pantagruel.Cli_errors.format_module_error e);
       1
   | Ok doc -> check_doc doc
 

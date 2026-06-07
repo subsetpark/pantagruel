@@ -18,6 +18,7 @@
   test_lexer_state
   test_parser
   test_check
+  test_cli_state
   test_markdown
   test_smt
   test_types
