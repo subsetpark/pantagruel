@@ -13,6 +13,7 @@
 (tests
  (names
   test_lexer
+  test_ast_core
   test_lexer_tokens_core
   test_parser
   test_check

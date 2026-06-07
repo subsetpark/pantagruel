@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-facade *)
+(* @archlint.module core
+   @archlint.domain pantagruel.ast *)
 
 (** AST type definitions for Pantagruel *)
 
