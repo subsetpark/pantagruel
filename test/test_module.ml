@@ -1,5 +1,5 @@
-(* @archlint.module test
-   @archlint.domain pantagruel.tests *)
+(* @archlint.module stateTest
+   @archlint.domain pantagruel.module-header *)
 
 (** Tests for the module system *)
 
@@ -16,6 +16,15 @@ let write_temp_file name content =
   path
 
 let cleanup_temp_file path = try Sys.remove path with Sys_error _ -> ()
+
+let supplier tokens =
+  let remaining = ref tokens in
+  fun () ->
+    match !remaining with
+    | tok :: rest ->
+        remaining := rest;
+        tok
+    | [] -> Parser.EOF
 
 (* --- parse_module_header tests --- *)
 
@@ -99,6 +108,24 @@ let test_check_with_imports_no_imports () =
                (Module.show_module_error e)));
       ()
 
+let state_interleavings =
+  [
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make
+         ~name:"module registry state composes with pure header recognition"
+         ~count:100 (QCheck2.Gen.list QCheck2.Gen.unit) (fun _ ->
+           let direct_header =
+             Module_header.parse_module_header_tokens
+               (supplier
+                  [ Parser.MODULE; Parser.UPPER_IDENT "DIRECT"; Parser.DOT ])
+           in
+           let registry = Module.create_registry () in
+           let missing = Module.load_module registry "MISSING" in
+           direct_header = Ok "DIRECT"
+           && registry.loading = [] && Result.is_error missing
+           && registry.loading = []));
+  ]
+
 let () =
   run "Module"
     [
@@ -113,4 +140,5 @@ let () =
         [ test_case "samples dir" `Quick test_scan_module_path ] );
       ( "check_with_imports",
         [ test_case "no imports" `Quick test_check_with_imports_no_imports ] );
+      ("state_interleavings", state_interleavings);
     ]

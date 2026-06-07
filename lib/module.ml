@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-boundary *)
+(* @archlint.module state
+   @archlint.domain pantagruel.module-header *)
 
 (** Module system: loading and import resolution *)
 
