@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-boundary *)
+(* @archlint.module shell
+   @archlint.domain pantagruel.solver-output *)
 
 (** Solver interface: invoke an SMT solver and parse results *)
 
