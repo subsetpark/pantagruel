@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason test-support *)
+(* @archlint.module test
+   @archlint.domain pantagruel.fuzz *)
 
 (** Fuzz the Pantagruel→SMT translator end-to-end. Catches:
 

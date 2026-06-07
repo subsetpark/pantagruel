@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason test-support *)
+(* @archlint.module test
+   @archlint.domain pantagruel.fuzz *)
 
 (** Fuzz the lexer: feed arbitrary bytes and ensure no crashes. Only Lexer_error
     and Sedlexing.MalFormed are acceptable exceptions. *)
