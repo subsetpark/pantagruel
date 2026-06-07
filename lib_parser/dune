@@ -12,6 +12,12 @@
 
 (copy_files ../lib/binder.mli)
 
+(copy_files ../lib/binder_var.ml)
+
+(copy_files ../lib/binder_box.ml)
+
+(copy_files ../lib/binder_mbinder.ml)
+
 (copy_files ../lib/ast.ml)
 
 (copy_files ../lib/util.ml)

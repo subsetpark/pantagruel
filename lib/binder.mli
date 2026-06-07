@@ -1,5 +1,5 @@
 (* @archlint.module interface
-   @archlint.domain pantagruel.contracts *)
+   @archlint.domain pantagruel.binder *)
 
 (** Binder adapter for Pantagruel.
 

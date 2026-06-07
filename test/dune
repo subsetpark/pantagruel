@@ -13,6 +13,7 @@
 (tests
  (names
   test_lexer
+  test_binder_core
   test_ast_core
   test_lexer_tokens_core
   test_lexer_state
