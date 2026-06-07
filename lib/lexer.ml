@@ -1,5 +1,5 @@
-(* @archlint.module exempt
-   @archlint.exempt-reason effect-facade *)
+(* @archlint.module state
+   @archlint.domain pantagruel.lexer-tokens *)
 
 (** Sedlex-based lexer for Pantagruel *)
 

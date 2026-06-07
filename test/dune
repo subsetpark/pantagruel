@@ -15,6 +15,7 @@
   test_lexer
   test_ast_core
   test_lexer_tokens_core
+  test_lexer_state
   test_parser
   test_check
   test_markdown
