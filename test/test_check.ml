@@ -445,6 +445,33 @@ active i: Item => Bool.
 ---
 |}
 
+let gen_smt_atom =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'a' 'z')
+    (QCheck2.Gen.int_range 1 10)
+
+let smt_check_properties =
+  [
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make
+         ~name:"smt structural checker reports generated binder failures"
+         ~count:100 gen_smt_atom (fun name ->
+           let duplicate_binder_query =
+             Printf.sprintf "(assert (forall ((%s Int) (%s Int)) true))" name
+               name
+           in
+           let parsed = Smt_check.parse_smt2 duplicate_binder_query in
+           let failures = Smt_check.check_query duplicate_binder_query in
+           let duplicate =
+             List.exists
+               (fun (failure : Smt_check.failure) ->
+                 Smt_check.failure_kind_tag failure.kind = "duplicate_binder"
+                 && String.length (Smt_check.format_failure failure) > 0)
+               failures
+           in
+           Result.is_ok parsed && duplicate));
+  ]
+
 (* --- Env unit tests for add_import --- *)
 
 let test_env_single_import () =
@@ -2314,4 +2341,5 @@ check
 balance' a = balance a + amount.
 |});
         ] );
+      ("smt_check_properties", smt_check_properties);
     ]

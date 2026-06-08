@@ -13,15 +13,6 @@ let sample_env =
        (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
        Ast.dummy_loc ~chapter:0
 
-let overloaded_env =
-  Env.empty "SmtTypes"
-  |> Env.add_rule "pick"
-       (Types.TyFunc ([ Types.TyNat ], Some Types.TyNat))
-       Ast.dummy_loc ~chapter:0
-  |> Env.add_rule "pick"
-       (Types.TyFunc ([ Types.TyNat; Types.TyNat ], Some Types.TyNat))
-       Ast.dummy_loc ~chapter:0
-
 let sample_query smt2 =
   {
     Smt_types.name = "q";
@@ -32,6 +23,25 @@ let sample_query smt2 =
     invariant_text = "";
     assertion_names = [];
   }
+
+let gen_domain =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'A' 'Z')
+    (QCheck2.Gen.int_range 1 10)
+
+let gen_rule =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'a' 'z')
+    (QCheck2.Gen.int_range 1 10)
+
+let gen_ty =
+  QCheck2.Gen.oneof
+    [
+      QCheck2.Gen.return Types.TyBool;
+      QCheck2.Gen.return Types.TyNat;
+      QCheck2.Gen.return Types.TyString;
+      QCheck2.Gen.map (fun d -> Types.TyDomain d) gen_domain;
+    ]
 
 let public_api_properties =
   [
@@ -73,16 +83,16 @@ let public_api_properties =
            decls = "" || String.contains spliced '('));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"sort names cover scalar and composite types"
-         ~count:100 QCheck2.Gen.unit (fun () ->
-           Smt_types.sort_of_ty Types.TyBool = "Bool"
-           && Smt_types.sort_of_ty Types.TyNat = "Int"
-           && Smt_types.sort_of_ty (Types.TyList Types.TyString)
-              = "(Array String Bool)"
-           && Smt_types.product_sort_name [ Types.TyNat; Types.TyBool ]
-              = "Pair_Int_Bool"
-           && Smt_types.sum_sort_name [ Types.TyNat; Types.TyString ]
-              = "Sum_Int_String"
-           && Smt_types.sort_base_name (Types.TyList Types.TyNat) = "List_Int"));
+         ~count:100 (QCheck2.Gen.pair gen_ty gen_ty) (fun (left, right) ->
+           let left_base = Smt_types.sort_base_name left in
+           let right_base = Smt_types.sort_base_name right in
+           Smt_types.sort_of_ty (Types.TyList left)
+           = Printf.sprintf "(Array %s Bool)" (Smt_types.sort_of_ty left)
+           && Smt_types.product_sort_name [ left; right ]
+              = "Pair_" ^ left_base ^ "_" ^ right_base
+           && Smt_types.sum_sort_name [ left; right ]
+              = "Sum_" ^ left_base ^ "_" ^ right_base
+           && Smt_types.sort_base_name (Types.TyList left) = "List_" ^ left_base));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"domain elements use stable numbered names"
          ~count:100 QCheck2.Gen.nat_small (fun count ->
@@ -90,14 +100,21 @@ let public_api_properties =
            = List.init count (Printf.sprintf "User_%d")));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"SMT identifiers are sanitized and mangled"
-         ~count:100 QCheck2.Gen.unit (fun () ->
-           Smt_types.sanitize_ident "can-use?!" = "can_usepb"
-           && Smt_types.smt_rule_name sample_env "score" 1 = "score"
-           && Smt_types.smt_rule_name overloaded_env "pick" 2 = "pick$2"
-           && Smt_types.smt_qualified_rule_name sample_env "M" "score" 1
-              = "score"
-           && Smt_types.smt_qualified_rule_name sample_env "M" "missing" 2
-              = "M$missing$2"));
+         ~count:100 (QCheck2.Gen.pair gen_domain gen_rule)
+         (fun (mod_name, rule_name) ->
+           let env =
+             Env.empty "SmtTypes"
+             |> Env.add_rule rule_name
+                  (Types.TyFunc ([ Types.TyNat ], Some Types.TyNat))
+                  Ast.dummy_loc ~chapter:0
+             |> Env.add_rule rule_name
+                  (Types.TyFunc ([ Types.TyNat; Types.TyNat ], Some Types.TyNat))
+                  Ast.dummy_loc ~chapter:0
+           in
+           Smt_types.sanitize_ident (rule_name ^ "-?!") = rule_name ^ "_pb"
+           && Smt_types.smt_rule_name env rule_name 2 = rule_name ^ "$2"
+           && Smt_types.smt_qualified_rule_name sample_env mod_name rule_name 2
+              = mod_name ^ "$" ^ rule_name ^ "$2"));
   ]
 
 let state_interleaving_properties =

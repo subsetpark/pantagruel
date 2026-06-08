@@ -27,19 +27,25 @@ let display_properties =
   ]
 
 let classification_properties =
+  let gen_atom =
+    QCheck2.Gen.string_size
+      ~gen:
+        QCheck2.Gen.(
+          oneof_weighted [ (8, char_range 'a' 'z'); (2, char_range 'A' 'Z') ])
+      (QCheck2.Gen.int_range 1 12)
+  in
   [
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"term classification and unprime agree"
-         ~count:100 QCheck2.Gen.unit (fun () ->
-           let base = "balance" in
+         ~count:100 (QCheck2.Gen.pair gen_atom gen_atom) (fun (base, arg) ->
            let primed = Solver_terms.add_prime_suffix base in
+           let before_app = "(" ^ base ^ " " ^ arg ^ ")" in
+           let after_app = "(" ^ primed ^ " " ^ arg ^ ")" in
            Solver_terms.classify_term base = Solver_terms.ActionParam
            && Solver_terms.classify_term primed = Solver_terms.After
-           && Solver_terms.classify_term ("(" ^ base ^ " a)")
-              = Solver_terms.Before
+           && Solver_terms.classify_term before_app = Solver_terms.Before
            && Solver_terms.unprime_term primed = Some base
-           && Solver_terms.unprime_term ("(" ^ primed ^ " a)")
-              = Some ("(" ^ base ^ " a)")));
+           && Solver_terms.unprime_term after_app = Some before_app));
   ]
 
 let () =

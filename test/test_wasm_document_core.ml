@@ -4,17 +4,39 @@
 open Alcotest
 open Pantagruel
 
-let valid_doc = "module MAIN.\n\nUser.\nok => Bool.\n---\nok.\n"
-let dep_doc = "module LIB.\n\nUser.\nok => Bool.\n---\nok.\n"
-let consumer_doc = "module MAIN.\n\nimport LIB.\n\nUser.\n---\nLIB::ok.\n"
+let gen_upper =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'A' 'Z')
+    (QCheck2.Gen.int_range 1 10)
+
+let gen_lower =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'a' 'z')
+    (QCheck2.Gen.int_range 1 10)
 
 let wasm_document_properties =
   [
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"wasm document services parse and typecheck strings" ~count:100
-         QCheck2.Gen.unit (fun () ->
-           (match Wasm_document.parse_expr_string "true." with
+         (QCheck2.Gen.triple gen_upper gen_upper gen_lower)
+         (fun (main_mod, dep_mod, rule_name) ->
+           let dep_mod =
+             if String.equal main_mod dep_mod then dep_mod ^ "DEP" else dep_mod
+           in
+           let valid_doc =
+             Printf.sprintf "module %s.\n\nUser.\n%s => Bool.\n---\n%s.\n"
+               main_mod rule_name rule_name
+           in
+           let dep_doc =
+             Printf.sprintf "module %s.\n\nUser.\n%s => Bool.\n---\n%s.\n"
+               dep_mod rule_name rule_name
+           in
+           let consumer_doc =
+             Printf.sprintf "module %s.\n\nimport %s.\n\nUser.\n---\n%s::%s.\n"
+               main_mod dep_mod dep_mod rule_name
+           in
+           (match Wasm_document.parse_expr_string (rule_name ^ ".") with
            | Ok _ -> ()
            | Error msg -> QCheck2.Test.fail_report msg);
            (match Wasm_document.parse_document_string "<test>" valid_doc with
@@ -29,7 +51,7 @@ let wasm_document_properties =
            then QCheck2.Test.fail_report "unexpected module error formatting";
            match
              Wasm_document.check_document_with_deps consumer_doc
-               [ ("LIB", dep_doc) ]
+               [ (dep_mod, dep_doc) ]
            with
            | None -> true
            | Some msg -> QCheck2.Test.fail_report msg));

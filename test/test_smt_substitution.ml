@@ -314,12 +314,6 @@ let sample_config =
 let sample_domain_param : Ast.param =
   { param_name = Ast.Lower "u"; param_type = Ast.TName (Ast.Upper "User") }
 
-let sample_numeric_param : Ast.param =
-  { param_name = Ast.Lower "n"; param_type = Ast.TName (Ast.Upper "Nat0") }
-
-let sample_numeric_guards =
-  [ Ast.GExpr (Ast.EBinop (Ast.OpLt, Ast.EVar (Ast.Lower "n"), Ast.ELitNat 3)) ]
-
 let sample_exprs =
   [
     Ast.EVar (Ast.Lower "x");
@@ -327,6 +321,16 @@ let sample_exprs =
     Ast.make_forall [ sample_domain_param ] []
       (Ast.EApp (Ast.EVar (Ast.Lower "active"), [ Ast.EVar (Ast.Lower "u") ]));
   ]
+
+let gen_lower =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'a' 'z')
+    (QCheck2.Gen.int_range 1 10)
+
+let gen_upper =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'A' 'Z')
+    (QCheck2.Gen.int_range 1 10)
 
 let public_api_properties =
   let gen_expr = QCheck2.Gen.oneof_list sample_exprs in
@@ -353,45 +357,89 @@ let public_api_properties =
            true));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"extract_upper_bound recognizes numeric guards"
-         ~count:100 QCheck2.Gen.unit (fun () ->
-           match[@warning "-4"]
-             Smt_expr.extract_upper_bound sample_numeric_param
-               sample_numeric_guards
-           with
-           | Some (Ast.ELitNat 3) -> true
+         ~count:100
+         (QCheck2.Gen.pair gen_lower (QCheck2.Gen.int_range 1 20))
+         (fun (name, bound) ->
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper "Nat0");
+             }
+           in
+           let guards =
+             [
+               Ast.GExpr
+                 (Ast.EBinop
+                    (Ast.OpLt, Ast.EVar (Ast.Lower name), Ast.ELitNat bound));
+             ]
+           in
+           match[@warning "-4"] Smt_expr.extract_upper_bound param guards with
+           | Some (Ast.ELitNat n) -> n = bound
            | Some _ | None -> false));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"resolve_comprehension_binding resolves domain binders"
-         ~count:100 QCheck2.Gen.unit (fun () ->
+         ~count:100 (QCheck2.Gen.pair gen_lower gen_upper)
+         (fun (name, domain) ->
+           let env =
+             Env.empty "T" |> Env.add_domain domain Ast.dummy_loc ~chapter:0
+           in
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper domain);
+             }
+           in
            match[@warning "-4"]
-             Smt_expr.resolve_comprehension_binding sample_env
-               [ sample_domain_param ] []
+             Smt_expr.resolve_comprehension_binding env [ param ] []
            with
-           | Ok (Smt_expr.Domain { name = "u"; domain = "User"; _ }) -> true
+           | Ok
+               (Smt_expr.Domain
+                  { name = resolved_name; domain = resolved_domain; _ }) ->
+               resolved_name = name && resolved_domain = domain
            | Ok _ | Error _ -> false));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"resolve_numeric_comprehension_binding resolves numeric binders"
-         ~count:100 QCheck2.Gen.unit (fun () ->
+         ~count:100 gen_lower (fun name ->
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper "Nat0");
+             }
+           in
            match[@warning "-4"]
-             Smt_expr.resolve_numeric_comprehension_binding sample_env
-               [ sample_numeric_param ]
+             Smt_expr.resolve_numeric_comprehension_binding sample_env [ param ]
            with
-           | Ok ("n", Types.TyNat0, [ ("n", Types.TyNat0) ]) -> true
+           | Ok (resolved_name, Types.TyNat0, [ (binding_name, Types.TyNat0) ])
+             ->
+               resolved_name = name && binding_name = name
            | Ok _ | Error _ -> false));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"expand_comprehension enumerates domain binders"
-         ~count:100 QCheck2.Gen.unit (fun () ->
+         ~count:100 (QCheck2.Gen.pair gen_lower gen_upper)
+         (fun (name, domain) ->
+           let env =
+             Env.empty "T" |> Env.add_domain domain Ast.dummy_loc ~chapter:0
+           in
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper domain);
+             }
+           in
            let translate _config _env = function[@warning "-4"]
              | Ast.EVar (Ast.Lower name) -> name
              | e -> Ast.show_expr e
            in
            match
-             Smt_expr.expand_comprehension translate sample_config sample_env
-               [ sample_domain_param ] [] (Ast.EVar (Ast.Lower "u"))
+             Smt_expr.expand_comprehension translate sample_config env [ param ]
+               [] (Ast.EVar (Ast.Lower name))
            with
-           | [ (None, "User_0"); (None, "User_1"); (None, "User_2") ] -> true
+           | [ (None, first); (None, second); (None, third) ] ->
+               first = domain ^ "_0"
+               && second = domain ^ "_1"
+               && third = domain ^ "_2"
            | _ -> false));
   ]
 
