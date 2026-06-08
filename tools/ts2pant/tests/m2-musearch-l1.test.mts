@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.m2-musearch-l1
+
 /**
  * Regression tests for the M2 L1 μ-search pipeline (workstream M2).
  *

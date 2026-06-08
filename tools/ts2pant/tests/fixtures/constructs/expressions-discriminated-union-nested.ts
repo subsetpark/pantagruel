@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 type Leaf =
   | { tag: "num"; value: number; score: number }
   | { tag: "text"; text: string; score: number };

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.opaque
+
 import { type IR1Expr, ir1Opaque, type SourceRef } from "./ir1.js";
 
 export const OPAQUE_DOMAIN = "Opaque";

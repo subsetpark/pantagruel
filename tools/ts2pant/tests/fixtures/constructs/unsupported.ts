@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Unsupported patterns: constructs that produce UNSUPPORTED markers
 
 interface Account {

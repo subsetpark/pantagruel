@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Shape C: pure `.reduce` / `.reduceRight` → aggregate comprehension
 //   `arr.reduce((a, x) => a OP f(x), init)`
 //   → `init OP (combOP over each x: T | f(x))`

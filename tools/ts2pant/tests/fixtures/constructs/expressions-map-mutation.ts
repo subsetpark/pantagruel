@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Stage C: Map<K, V> mutation via Pantagruel's N-ary override.
 // .set(k, v) and .delete(k) on a Map parameter emit one override pair
 // per modified rule (value rule + membership predicate), quantified

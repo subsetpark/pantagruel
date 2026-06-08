@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.predicate-narrowing
+
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";

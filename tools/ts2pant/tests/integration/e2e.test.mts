@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.e2e
+
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";

@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.extract
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import { Project } from "ts-morph";
@@ -7,8 +11,12 @@ import {
   createSourceFile,
   createSourceFileFromSource,
   emitAmbientModule,
+  extractAllTypes,
   extractAmbientFunctions,
+  extractModuleConsts,
+  extractReferencedFunctions,
   extractReferencedTypes,
+  getChecker,
 } from "../src/extract.js";
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { IntStrategy } from "../src/translate-types.js";
@@ -108,6 +116,75 @@ describe("extract", () => {
     const sf2 = createSourceFileFromSource(source, "shared.ts");
     assert.equal(ambientModuleName(sf1), "SHARED_AMBIENT");
     assert.equal(ambientModuleName(sf1), ambientModuleName(sf2));
+  });
+
+  it("generated source exposes declarations and references consistently", () => {
+    const cases = ["readValue", "scoreValue", "countValue", "rankValue"]
+      .flatMap((fnName) =>
+        ["Alpha", "Beta", "Gamma"].map(
+          (typeName) => [fnName, typeName] as const,
+        ),
+      )
+      .map(([fnName, typeName]) => {
+        const source = `
+        export interface ${typeName} { value: number; }
+        export const LIMIT = 10;
+        declare function helper(x: number): number;
+        export function ${fnName}(input: ${typeName}): number {
+          return helper(input.value + LIMIT);
+        }
+      `;
+        return {
+          fnName,
+          sf: createSourceFileFromSource(source, `generated-${fnName}.ts`),
+          typeName,
+        };
+      });
+
+    fc.assert(
+      fc.property(fc.constantFrom(...cases), ({ fnName, sf, typeName }) => {
+        const fixtureFile = createSourceFile(
+          resolve(
+            import.meta.dirname,
+            "fixtures/constructs/expressions-calls.ts",
+          ),
+        );
+        const generatedFile = createSourceFileFromSource(
+          `export interface ${typeName} { value: number; }`,
+          `regenerated-${fnName}.ts`,
+        );
+
+        assert.ok(getChecker(sf));
+        assert.equal(
+          ambientModuleName(fixtureFile),
+          "EXPRESSIONS_CALLS_AMBIENT",
+        );
+        assert.ok(getChecker(generatedFile));
+        assert.match(ambientModuleName(sf), /^GENERATED_.*_AMBIENT$/u);
+        assert.equal(
+          extractAmbientFunctions(sf, IntStrategy)[0]?.tsName,
+          "helper",
+        );
+        assert.equal(extractAllTypes(sf).interfaces[0]?.name, typeName);
+        assert.equal(
+          extractReferencedTypes(sf, fnName).interfaces[0]?.name,
+          typeName,
+        );
+        assert.equal(
+          Array.isArray(extractReferencedFunctions(sf, fnName, IntStrategy)),
+          true,
+        );
+        assert.equal(
+          Array.isArray(extractModuleConsts(sf, fnName, IntStrategy)),
+          true,
+        );
+        assert.match(
+          emitAmbientModule(sf, extractAmbientFunctions(sf, IntStrategy)),
+          /helper x: Int => Int/u,
+        );
+      }),
+      { numRuns: cases.length },
+    );
   });
 
   describe("extractReferencedTypes — cross-file", () => {

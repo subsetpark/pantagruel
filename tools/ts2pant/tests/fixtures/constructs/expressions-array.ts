@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Array operations: .length, .includes, .filter/.map chains
 
 interface User {

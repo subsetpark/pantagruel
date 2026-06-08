@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Composite type mappings: arrays, tuples, unions, nested interfaces, enums
 
 interface User {

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Dynamic TS top types reject through the UNSUPPORTED_UNKNOWN path.
 
 export function anyParam(value: any): number {

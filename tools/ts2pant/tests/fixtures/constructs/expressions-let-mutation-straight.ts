@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function letOneReassignment(a: number, b: number): number {
   let x = a;
   x = b;

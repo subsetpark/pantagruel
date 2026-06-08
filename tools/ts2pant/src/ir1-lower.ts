@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-lower
+
 /**
  * Layer 1 → Layer 2 expression lowering.
  *

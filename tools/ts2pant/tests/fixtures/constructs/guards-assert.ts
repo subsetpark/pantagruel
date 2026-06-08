@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Guard detection: assertion calls with `asserts` return type
 
 interface Account {

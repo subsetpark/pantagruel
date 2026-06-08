@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // String-literal element access (`obj["field"]`) collapses to the same
 // canonical L1 Member as dotted access. Computed indices (`obj[k]`)
 // reject with a specific unsupported reason — the deliberate-reject

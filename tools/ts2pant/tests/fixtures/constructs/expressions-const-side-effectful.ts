@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function constReplaceLiteral(s: string): string {
   const x = s.replace("a", "b");
   return x;

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.purity
+
 /**
  * Conservative purity oracle for TypeScript call expressions.
  *

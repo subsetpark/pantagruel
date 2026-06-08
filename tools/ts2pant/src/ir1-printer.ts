@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-printer
+
 import type {
   IR1Binop,
   IR1Expr,

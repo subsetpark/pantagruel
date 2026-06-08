@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Guard detection: if/throw patterns
 
 interface Account {

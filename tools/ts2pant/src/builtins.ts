@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason effect-boundary
+
 /**
  * TS-stdlib dispatch index.
  *

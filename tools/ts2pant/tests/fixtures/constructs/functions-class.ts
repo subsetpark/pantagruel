@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Class method patterns: pure and mutating methods with implicit this
 
 export class Account {

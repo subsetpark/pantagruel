@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-nullish
+
 /**
  * Unit tests for the M4 nullish recognizer (`recognizeNullishForm`).
  *

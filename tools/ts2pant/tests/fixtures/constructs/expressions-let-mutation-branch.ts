@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function letThenOnlyBranch(a: number, b: number, cond: boolean): number {
   let x = a;
   if (cond) {

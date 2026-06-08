@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.brand-precondition
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
@@ -146,6 +150,33 @@ describe("recognizeBrandedPrecondition", () => {
           null,
         );
       },
+    );
+  });
+
+  it("recognizes generated allowlisted Effect brand names", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom("Positive", "NonNegative", "NonEmptyString", "Int"),
+        (brand) => {
+          withSource(
+            `
+              import type * as Brand from "effect/Brand";
+              type Branded = number & Brand.Brand<"${brand}">;
+              export function subject(x: Branded) { return x; }
+            `,
+            (ctx) => {
+              const result = recognizeBrandedPrecondition(
+                paramType(ctx, "subject"),
+                "x",
+              );
+
+              assert.notEqual(result, null);
+              assert.equal(typeof getAst().strExpr(result!), "string");
+            },
+          );
+        },
+      ),
+      { numRuns: 8 },
     );
   });
 });

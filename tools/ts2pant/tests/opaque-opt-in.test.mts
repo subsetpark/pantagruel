@@ -1,8 +1,17 @@
+// @archlint.module test
+// @archlint.domain ts2pant.opaque
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { ir1Binop, ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
-import { OPAQUE_DOMAIN, contagiousOpaque, isOpaqueExpr } from "../src/opaque.js";
+import {
+  OPAQUE_DOMAIN,
+  contagiousOpaque,
+  isOpaqueExpr,
+  opaqueValueRuleName,
+} from "../src/opaque.js";
 import { createSourceFile } from "../src/extract.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
@@ -28,6 +37,43 @@ describe("opaque opt-in policy", () => {
       sort: OPAQUE_DOMAIN,
       origin: resultOrigin,
     });
+  });
+
+  it("opaque rule names are deterministic and Pant-safe", () => {
+    fc.assert(
+      fc.property(fc.string(), (id) => {
+        const name = opaqueValueRuleName(id);
+
+        assert.equal(opaqueValueRuleName(id), name);
+        assert.match(name, /^opaque_value_\d+(?:_[0-9a-f]{4})*$/u);
+      }),
+    );
+  });
+
+  it("contagiousOpaque follows generated operand opacity", () => {
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { maxLength: 12 }), (opaqueFlags) => {
+        const resultOrigin = { file: "tests/opaque-opt-in.ts", line: 3 };
+        const operands = opaqueFlags.map((flag, index) =>
+          flag
+            ? ir1Opaque(OPAQUE_DOMAIN, { file: "tests/opaque-opt-in.ts", line: index })
+            : ir1LitNat(index),
+        );
+
+        const result = contagiousOpaque(operands, resultOrigin);
+
+        if (opaqueFlags.includes(true)) {
+          assert.deepEqual(result, {
+            kind: "opaque",
+            sort: OPAQUE_DOMAIN,
+            origin: resultOrigin,
+          });
+          assert.equal(isOpaqueExpr(result), true);
+        } else {
+          assert.equal(result, null);
+        }
+      }),
+    );
   });
 
   it("signature composite opacity is precision-preserving under policy opaque (@pant checks)", async (t) => {

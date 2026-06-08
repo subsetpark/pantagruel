@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason effect-boundary
+
 import { execFileSync, execSync } from "node:child_process";
 import {
   existsSync,

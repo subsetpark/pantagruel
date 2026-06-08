@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir
+
 /**
  * Layer 2 Expression IR for ts2pant.
  *

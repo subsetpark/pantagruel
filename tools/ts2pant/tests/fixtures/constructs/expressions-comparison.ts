@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Comparison operators: ===, !==, >=, <=, >, <
 
 /** strict equality → = */

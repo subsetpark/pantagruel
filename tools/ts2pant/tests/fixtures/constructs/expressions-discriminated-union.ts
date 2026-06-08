@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 type Shape =
   | { kind: "circle"; r: number; shared: string }
   | { kind: "square"; s: number; shared: string };

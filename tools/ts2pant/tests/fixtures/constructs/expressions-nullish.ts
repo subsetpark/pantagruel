@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Nullish-coalescing (`??`) and optional chaining (`?.`) under the
 // list-lift encoding. An optional TS type `T | null` translates to `[T]`,
 // so `#x = 0` is the null test and `(x 1)` extracts the singleton.

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Compound assignment operators desugar to read-modify-write on the
 // same location. `a.p OP= v` is translated as `a.p = a.p OP v`, which
 // lets the rhs read the prior-write value (or pre-state identity)

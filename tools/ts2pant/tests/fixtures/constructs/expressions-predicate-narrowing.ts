@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 function isNumber(x: number | null): x is number {
   return true;
 }

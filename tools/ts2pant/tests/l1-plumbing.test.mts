@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.l1-plumbing
+
 /**
  * Regression tests for the L1 conditional pipeline (workstream M1).
  *

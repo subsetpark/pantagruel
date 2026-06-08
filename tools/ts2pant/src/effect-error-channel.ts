@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.effect-error-channel
+
 import ts from "typescript";
 import { isEffectFree } from "./purity.js";
 import { isTsNullish } from "./translate-types.js";

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir-build
+
 /**
  * TS-AST → IR construction (pure path, value-position).
  *

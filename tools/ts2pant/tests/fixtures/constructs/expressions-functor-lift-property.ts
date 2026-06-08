@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Functor-lift recognizer (M5 Patch 4) — Member operand.
 //
 // M5 P4 lifts the operand restriction from M4 P5: the recognizer now

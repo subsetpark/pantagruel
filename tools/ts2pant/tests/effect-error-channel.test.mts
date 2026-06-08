@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.effect-error-channel
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
@@ -253,6 +257,45 @@ describe("recoverErrorModeGuard", () => {
           null,
         );
       },
+    );
+  });
+
+  it("recognizes generated Effect error mode declarations and guards", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("FooError", "BarError"), (modeName) => {
+        withSource(
+          `
+            import { Effect } from "effect";
+            class ${modeName} {}
+            export function subject(x: number): Effect.Effect<number, ${modeName}, never> {
+              return Effect.gen(function* () {
+                if (x > 0) { yield* new ${modeName}(); }
+                return x;
+              });
+            }
+          `,
+          (ctx) => {
+            const modes = extractEffectErrorModes(
+              functionReturnType(ctx, "subject"),
+              ctx.checker,
+            );
+            const yieldExpr = findFirstYield(ctx.sourceFile);
+            const guard = recoverErrorModeGuard(
+              findIf(ctx.sourceFile),
+              modes ?? [],
+              ctx.checker,
+            );
+
+            assert.deepEqual(
+              modes?.map((mode) => mode.name),
+              [modeName],
+            );
+            assert.equal(recognizeErrorYield(yieldExpr)?.errorName, modeName);
+            assert.equal(guard?.mode.name, modeName);
+          },
+        );
+      }),
+      { numRuns: 8 },
     );
   });
 });

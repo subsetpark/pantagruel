@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.du-totality
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {

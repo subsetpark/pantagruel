@@ -1,7 +1,17 @@
+// @archlint.module test
+// @archlint.domain ts2pant.annotations
+
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import ts from "typescript";
-import { extractAnnotations } from "../src/annotations.js";
+import {
+  extractAnnotations,
+  extractFunctionAnnotations,
+  extractFunctionAnnotationsAndOverrides,
+  extractFunctionTypeOverrides,
+} from "../src/annotations.js";
+import { createSourceFileFromSource } from "../src/extract.js";
 
 // ---------------------------------------------------------------------------
 // Helper: create a SourceFile from raw TS source and find the first function
@@ -147,5 +157,36 @@ describe("extractAnnotations", () => {
     );
     const result = extractAnnotations(node);
     assert.equal(result.propositions.length, 0);
+  });
+
+  it("function annotation wrappers agree on generated JSDoc", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom("x", "value", "amount", "count"),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.constantFrom("Nat", "Nat0", "Int", "Real"),
+        (param, rule, pantType) => {
+          const proposition = `${rule} ${param} = ${param}`;
+          const sourceFile = createSourceFileFromSource(
+            `/**\n * @pant ${proposition}\n * @pant-type ${param}: ${pantType}\n */\nexport function subject(${param}: number): number { return ${param}; }\n`,
+          );
+
+          const combined = extractFunctionAnnotationsAndOverrides(
+            sourceFile,
+            "subject",
+          );
+
+          assert.deepEqual(extractFunctionAnnotations(sourceFile, "subject"), [
+            proposition,
+          ]);
+          assert.equal(
+            extractFunctionTypeOverrides(sourceFile, "subject").get(param),
+            pantType,
+          );
+          assert.deepEqual(combined.propositionTexts, [proposition]);
+          assert.equal(combined.typeOverrides.get(param), pantType);
+        },
+      ),
+    );
   });
 });

@@ -1,9 +1,14 @@
+// @archlint.module test
+// @archlint.domain ts2pant.name-registry
+
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   emptyNameRegistry,
+  isUsed,
   registerName,
 } from "../src/name-registry.js";
 
@@ -77,5 +82,25 @@ describe("name-registry", () => {
       const { name } = registerName(emptyNameRegistry(), kw);
       assert.equal(name, `${kw}1`, `expected '${kw}' to sanitise to '${kw}1'`);
     }
+  });
+
+  it("registerName always returns a registered fresh name", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/), { maxLength: 20 }),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/),
+        (existing, candidate) => {
+          let registry = emptyNameRegistry();
+          for (const name of existing) {
+            registry = registerName(registry, name).registry;
+          }
+
+          const result = registerName(registry, candidate);
+
+          assert.equal(isUsed(result.registry, result.name), true);
+          assert.equal(isUsed(registry, result.name), false);
+        },
+      ),
+    );
   });
 });

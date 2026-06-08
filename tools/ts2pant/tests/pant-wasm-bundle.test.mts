@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.pant-wasm-bundle
+
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { checkPantBundle } from "../src/pant-wasm.js";

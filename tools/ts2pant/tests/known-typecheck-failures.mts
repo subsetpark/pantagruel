@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 /**
  * Fixtures whose emitted Pantagruel does not currently parse / typecheck
  * through the wasm checker. Each entry is the `${file} > ${funcName}` key

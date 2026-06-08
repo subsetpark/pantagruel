@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Record returns: a pure function whose body is `return { f1: e1, f2: e2 }`
 // decomposes into one equation per field of the return type. Return types
 // may be named interfaces (accessor rules are already declared) or

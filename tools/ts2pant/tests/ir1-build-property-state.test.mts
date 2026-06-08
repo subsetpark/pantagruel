@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-property-state
+
 /**
  * Regression tests for symbolic-state lookup preservation across the
  * M5 P1 property-access cutover.

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Stage A: .add / .delete / .clear on an interface-field Set. Owner is
 // the user's interface, rule name is the field name (the Set field emits
 // one arity-1 list-valued accessor rule, unlike Map's rule pair).

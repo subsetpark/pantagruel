@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Primitive type mappings: number, string, boolean, null, undefined
 
 interface Account {

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1
+
 /**
  * Layer 1 Imperative Intermediate Representation for ts2pant.
  *

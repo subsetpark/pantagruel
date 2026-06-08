@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // ReadonlySet<T> translates identically to Set<T> — both become [T] since
 // Pantagruel lists encode membership. Kept as a focused fixture so that any
 // regression in ReadonlySet handling surfaces here rather than only via

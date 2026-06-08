@@ -1,15 +1,23 @@
+// @archlint.module test
+// @archlint.domain ts2pant.assumption-env
+
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import type { OpaqueExpr } from "../src/pant-ast.js";
 import {
   createAssumptionEnv,
+  discriminantFactsInScope,
   enterFrame,
   envDepth,
   exitFrame,
+  nonNullFactInScope,
   pushFact,
   queryFact,
   type Fact,
+  typePredicateFactsInScope,
 } from "../src/assumption-env.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 
 const circleFact: Fact = {
   kind: "discriminant",
@@ -47,6 +55,10 @@ const separatorCollisionFact: Fact = {
   literal: "d",
   negated: false,
 };
+
+before(async () => {
+  await loadAst();
+});
 
 describe("AssumptionEnv", () => {
   it("push makes fact queryable", () => {
@@ -132,6 +144,53 @@ describe("AssumptionEnv", () => {
     assert.throws(
       () => pushFact(env, circleFact),
       /AssumptionEnv invariant violation: pushFact with no frame/u,
+    );
+  });
+
+  it("generated facts respect frame push/query/pop semantics", () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.boolean(),
+        (receiver, literal, negated) => {
+          const env = createAssumptionEnv();
+          const ast = getAst();
+          const discriminant: Fact = {
+            kind: "discriminant",
+            receiver,
+            property: "kind",
+            literal,
+            negated,
+          };
+          const nonNull: Fact = { kind: "non-null", receiver, negated };
+          const predicate: Fact = {
+            kind: "predicate",
+            testExpr: ast.var(receiver),
+            typePredicate: { receiver, negated, tractable: true },
+          };
+
+          enterFrame(env);
+          pushFact(env, discriminant);
+          pushFact(env, nonNull);
+          pushFact(env, predicate);
+
+          assert.equal(envDepth(env), 1);
+          assert.equal(queryFact(env, discriminant), true);
+          assert.deepEqual(discriminantFactsInScope(env, receiver, "kind"), [
+            { literal, negated },
+          ]);
+          assert.deepEqual(nonNullFactInScope(env, receiver), [
+            { receiver, negated },
+          ]);
+          assert.equal(typePredicateFactsInScope(env, receiver).length, 1);
+
+          exitFrame(env);
+
+          assert.equal(envDepth(env), 0);
+          assert.equal(queryFact(env, discriminant), false);
+        },
+      ),
     );
   });
 });

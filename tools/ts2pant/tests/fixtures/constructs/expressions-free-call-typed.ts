@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Fixture: typed bare-identifier free-call declarations.
 
 interface Profile {

@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-contract
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 

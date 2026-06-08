@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // If-early-return generalized to any prelude position.
 // `if (P) return E;` (no else, single-statement return body) becomes one
 // arm of a synthetic cond whose catch-all is the rest of the body.

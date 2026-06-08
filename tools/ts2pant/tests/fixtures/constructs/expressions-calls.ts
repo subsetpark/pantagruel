@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // General function calls: free calls, method calls, zero-arity, nested, spread
 
 declare function max(a: number, b: number): number;

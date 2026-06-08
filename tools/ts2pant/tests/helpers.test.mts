@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.helpers
+
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { loadAst } from "../src/pant-wasm.js";

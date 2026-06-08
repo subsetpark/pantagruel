@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-printer
+
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 

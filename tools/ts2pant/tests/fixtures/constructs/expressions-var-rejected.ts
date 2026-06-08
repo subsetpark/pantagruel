@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function varBinding(a: number): number {
   var x = a + 1;
   return x;

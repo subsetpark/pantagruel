@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-ssa-lower
+
 import type { IR1SsaProgram, IR1SsaRuleName } from "./ir1.js";
 import type {
   CollectionSsaFinalPropertyEntry,

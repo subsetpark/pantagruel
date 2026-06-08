@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Kleene μ-minimization: `let i = INIT; while (P(i)) i++;` recognized in
 // pure function bodies and translated to `min over each $j: Nat,
 // $j >= INIT, ~P($j) | $j`. Reference: Kleene, *General Recursive Functions

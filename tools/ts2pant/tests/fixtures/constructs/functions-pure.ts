@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Pure function signatures: various param/return type combinations
 
 interface Account {

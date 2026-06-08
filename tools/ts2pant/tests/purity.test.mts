@@ -1,6 +1,10 @@
+// @archlint.module test
+// @archlint.domain ts2pant.purity
+
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import ts from "typescript";
 import {
   createSourceFile,
@@ -9,16 +13,79 @@ import {
 } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
+  expressionHasSideEffects,
   isEffectFree,
   isKnownPureCall,
   isPureUserCall,
   isPureUserFunction,
+  isStaticallyBoolTyped,
+  resolveEffectLibraryExport,
 } from "../src/purity.js";
 import { translateSignature } from "../src/translate-signature.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
+});
+
+const generatedPurityCases = [
+  "x > 0",
+  "x >= 0 && x < 10",
+  "Math.abs(x) >= 0",
+  "Math.max(x, 0) >= x",
+  "x === x",
+  "x !== 1",
+  "helper(x)",
+  "x > 0 ? helper(x) : x === 0",
+  "String(label).trim().length >= 0",
+].map((exprText) => {
+  const sf = createSourceFileFromSource(`
+      function helper(x: number): boolean { return x > 0; }
+      function f(x: number, label: string): boolean { return ${exprText}; }
+    `);
+  const checker = getChecker(sf);
+  const expr = findReturnExpression(sf.compilerNode);
+  assert.ok(expr);
+  const helper = findFunctionDeclaration(sf.compilerNode, "helper");
+  return { checker, expr, exprText, helper };
+});
+
+const generatedPureCallCase = (() => {
+  const sf = createSourceFileFromSource(`
+    function helper(x: number): boolean { return x > 0; }
+    function g(x: number): boolean { return helper(x); }
+  `);
+  return {
+    call: findCallInNamedFunction(sf.compilerNode, "g"),
+    checker: getChecker(sf),
+  };
+})();
+
+it("generated pure expressions preserve purity classifications", () => {
+  fc.assert(
+    fc.property(fc.constantFrom(...generatedPurityCases), (testCase) => {
+      const { checker, expr, helper } = testCase;
+      assert.equal(isEffectFree(expr, checker), true);
+      assert.equal(expressionHasSideEffects(expr, checker), false);
+      assert.equal(isStaticallyBoolTyped(expr, checker), true);
+
+      assert.equal(isPureUserFunction(helper, checker), true);
+      assert.equal(
+        isPureUserCall(
+          generatedPureCallCase.call,
+          generatedPureCallCase.checker,
+        ),
+        true,
+      );
+      assert.equal(
+        resolveEffectLibraryExport(
+          generatedPureCallCase.call.expression,
+          generatedPureCallCase.checker,
+        ),
+        null,
+      );
+    }),
+  );
 });
 
 /**
@@ -543,7 +610,6 @@ describe("isPureUserFunction", () => {
       false,
     );
   });
-
 });
 
 // ---------------------------------------------------------------------------

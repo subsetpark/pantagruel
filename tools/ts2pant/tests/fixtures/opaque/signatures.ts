@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export declare function scalarUnknown(value: unknown): unknown;
 
 export declare function scalarAny(value: any): any;

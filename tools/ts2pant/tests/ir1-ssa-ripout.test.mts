@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-ripout
+
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
