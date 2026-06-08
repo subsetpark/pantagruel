@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.smt-doc *)
+
 (** SMT-LIB2 document analysis: chapter classification, invariant/action
     collection, frame conditions, action parameter handling *)
 

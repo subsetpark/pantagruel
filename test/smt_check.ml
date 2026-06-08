@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.tests *)
+
 (** Structural sanity checks on emitted SMT-LIB2. See [smt_check.mli]. *)
 
 module Sexp = Sexplib0.Sexp
@@ -217,7 +220,7 @@ let rec body_is_trivial = function
       body_is_trivial consequent
   | Sexp.List _ -> false
 
-(** Atoms emitted by [Smt_types.fresh_fallback] have the shape
+(** Atoms emitted by [Smt_state.fresh_fallback] have the shape
     [_<kind>_fallback_<N>]. *)
 let fallback_kind_of_atom s =
   let suffix = "_fallback_" in

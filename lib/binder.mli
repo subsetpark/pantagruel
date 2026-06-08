@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.binder *)
+
 (** Binder adapter for Pantagruel.
 
     This module is the single seam between Pantagruel and its underlying binder

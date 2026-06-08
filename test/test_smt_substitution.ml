@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.smt-expr *)
+
 (** Capture-avoiding substitution tests for the Bindlib migration.
 
     Patch 4 activates the four properties pinned by Patch 2's stubs: identity on
@@ -289,6 +292,157 @@ let test_free_vars_matches_legacy () =
           (Printf.sprintf "free_vars matches baseline (%s)" baseline_filename)
           expected actual
 
+let sample_env =
+  Env.empty "T"
+  |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+  |> Env.add_rule "active"
+       (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+       Ast.dummy_loc ~chapter:0
+  |> Env.add_rule_guards "active"
+       [
+         {
+           Ast.param_name = Ast.Lower "u";
+           param_type = Ast.TName (Ast.Upper "User");
+         };
+       ]
+       [ Ast.GExpr (Ast.EVar (Ast.Lower "guarded")) ]
+
+let sample_config =
+  Smt_types.make_config ~bound:3 ~steps:1 ~domain_bounds:Env.StringMap.empty
+    ~inject_guards:true ()
+
+let sample_domain_param : Ast.param =
+  { param_name = Ast.Lower "u"; param_type = Ast.TName (Ast.Upper "User") }
+
+let sample_exprs =
+  [
+    Ast.EVar (Ast.Lower "x");
+    Ast.EApp (Ast.EVar (Ast.Lower "active"), [ Ast.EVar (Ast.Lower "u") ]);
+    Ast.make_forall [ sample_domain_param ] []
+      (Ast.EApp (Ast.EVar (Ast.Lower "active"), [ Ast.EVar (Ast.Lower "u") ]));
+  ]
+
+let gen_lower =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'a' 'z')
+    (QCheck2.Gen.int_range 1 10)
+
+let gen_upper =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'A' 'Z')
+    (QCheck2.Gen.int_range 1 10)
+
+let public_api_properties =
+  let gen_expr = QCheck2.Gen.oneof_list sample_exprs in
+  [
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"substitute_vars returns an expression"
+         ~count:100 gen_expr (fun expr ->
+           ignore (Smt_expr.substitute_vars [ ("x", Ast.ELitNat 1) ] expr);
+           true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"prime_expr returns an expression" ~count:100
+         gen_expr (fun expr ->
+           ignore (Smt_expr.prime_expr expr);
+           true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"unprime_expr returns an expression" ~count:100
+         gen_expr (fun expr ->
+           ignore (Smt_expr.unprime_expr expr);
+           true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"collect_body_guards returns guard expressions"
+         ~count:100 gen_expr (fun expr ->
+           ignore (Smt_expr.collect_body_guards sample_env expr);
+           true));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"extract_upper_bound recognizes numeric guards"
+         ~count:100
+         (QCheck2.Gen.pair gen_lower (QCheck2.Gen.int_range 1 20))
+         (fun (name, bound) ->
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper "Nat0");
+             }
+           in
+           let guards =
+             [
+               Ast.GExpr
+                 (Ast.EBinop
+                    (Ast.OpLt, Ast.EVar (Ast.Lower name), Ast.ELitNat bound));
+             ]
+           in
+           match[@warning "-4"] Smt_expr.extract_upper_bound param guards with
+           | Some (Ast.ELitNat n) -> n = bound
+           | Some _ | None -> false));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make
+         ~name:"resolve_comprehension_binding resolves domain binders"
+         ~count:100 (QCheck2.Gen.pair gen_lower gen_upper)
+         (fun (name, domain) ->
+           let env =
+             Env.empty "T" |> Env.add_domain domain Ast.dummy_loc ~chapter:0
+           in
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper domain);
+             }
+           in
+           match[@warning "-4"]
+             Smt_expr.resolve_comprehension_binding env [ param ] []
+           with
+           | Ok
+               (Smt_expr.Domain
+                  { name = resolved_name; domain = resolved_domain; _ }) ->
+               resolved_name = name && resolved_domain = domain
+           | Ok _ | Error _ -> false));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make
+         ~name:"resolve_numeric_comprehension_binding resolves numeric binders"
+         ~count:100 gen_lower (fun name ->
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper "Nat0");
+             }
+           in
+           match[@warning "-4"]
+             Smt_expr.resolve_numeric_comprehension_binding sample_env [ param ]
+           with
+           | Ok (resolved_name, Types.TyNat0, [ (binding_name, Types.TyNat0) ])
+             ->
+               resolved_name = name && binding_name = name
+           | Ok _ | Error _ -> false));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"expand_comprehension enumerates domain binders"
+         ~count:100 (QCheck2.Gen.pair gen_lower gen_upper)
+         (fun (name, domain) ->
+           let env =
+             Env.empty "T" |> Env.add_domain domain Ast.dummy_loc ~chapter:0
+           in
+           let param : Ast.param =
+             {
+               param_name = Ast.Lower name;
+               param_type = Ast.TName (Ast.Upper domain);
+             }
+           in
+           let translate _config _env = function[@warning "-4"]
+             | Ast.EVar (Ast.Lower name) -> name
+             | e -> Ast.show_expr e
+           in
+           match
+             Smt_expr.expand_comprehension translate sample_config env [ param ]
+               [] (Ast.EVar (Ast.Lower name))
+           with
+           | [ (None, first); (None, second); (None, third) ] ->
+               first = domain ^ "_0"
+               && second = domain ^ "_1"
+               && third = domain ^ "_2"
+           | _ -> false));
+  ]
+
 (* ------------------------------------------------------------------ *)
 (* Test registration                                                    *)
 (* ------------------------------------------------------------------ *)
@@ -312,4 +466,5 @@ let () =
           test_case "free_vars matches legacy implementation" `Quick
             test_free_vars_matches_legacy;
         ] );
+      ("public_api", public_api_properties);
     ]

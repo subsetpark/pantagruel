@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.contracts *)
+
 (** Type environment for Pantagruel *)
 
 (** What kind of binding is this? *)
@@ -120,15 +123,9 @@ val iter_types : (string -> entry -> unit) -> t -> unit
 val bindings_terms : t -> (string * entry) list
 val bindings_types : t -> (string * entry) list
 
-val shadow_reporter :
-  (string -> Types.ty -> Types.ty -> Ast.loc -> Ast.loc -> unit) ref
-(** Callback invoked by [add_var] when a variable is added with the same name as
-    an existing nullary declaration (rule or closure). Both kinds auto-apply in
-    bare-atom position, so a same-named variable eclipses them identically.
-    Args: name, declaration's return type, var's type, declaration's loc, var's
-    add loc. The check layer installs a reporter that pushes a warning into its
-    type-warning accumulator; default is a no-op for tests that use env in
-    isolation. *)
+val nullary_shadow : string -> t -> (Types.ty * Ast.loc) option
+(** Return the nullary rule or closure return type and declaration location
+    shadowed by adding [name] as a variable, if any. *)
 
 val action_contexts : t -> string list
 val current_module : t -> string

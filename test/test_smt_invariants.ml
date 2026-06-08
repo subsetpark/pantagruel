@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.tests *)
+
 (** Layer 1 SMT translation tests: structural invariants on emitted SMT-LIB2.
 
     For each [.pant] fixture in [samples/], [samples/smt-examples/], and

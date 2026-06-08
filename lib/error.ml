@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.error *)
+
 (** Error formatting for human-readable, vim-compatible output *)
 
 open Ast

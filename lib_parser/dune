@@ -12,13 +12,27 @@
 
 (copy_files ../lib/binder.mli)
 
+(copy_files ../lib/binder_var.ml)
+
+(copy_files ../lib/binder_box.ml)
+
+(copy_files ../lib/binder_mbinder.ml)
+
 (copy_files ../lib/ast.ml)
 
 (copy_files ../lib/util.ml)
 
 (copy_files ../lib/doc_comments.ml)
 
+(copy_files ../lib/doc_comment_positions.ml)
+
+(copy_files ../lib/doc_comment_positions.mli)
+
 (copy_files ../lib/lexer.ml)
+
+(copy_files ../lib/lexer_tokens.ml)
+
+(copy_files ../lib/lexer_tokens.mli)
 
 (copy_files ../lib/pretty.ml)
 
@@ -45,3 +59,15 @@
 (copy_files ../lib/lower_aliases.ml)
 
 (copy_files ../lib/module.ml)
+
+(copy_files ../lib/module_header.ml)
+
+(copy_files ../lib/module_header.mli)
+
+(copy_files ../lib/wasm_expr.ml)
+
+(copy_files ../lib/wasm_expr.mli)
+
+(copy_files ../lib/wasm_document.ml)
+
+(copy_files ../lib/wasm_document.mli)

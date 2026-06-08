@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.fuzz *)
+
 (** Fuzz the Pantagruel→SMT translator end-to-end. Catches:
 
     - Crashes in the translator on type-checking input (via the bare

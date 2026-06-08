@@ -1,3 +1,6 @@
+(* @archlint.module interface
+   @archlint.domain pantagruel.tests *)
+
 (** Structural sanity checks on emitted SMT-LIB2.
 
     Layer 1 of the SMT-translator test strategy: walks the sexp form of a

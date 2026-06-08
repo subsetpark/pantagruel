@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.lower-aliases *)
+
 (** Identity-lowering of list-typed aliases.
 
     A type alias [T = [D]] is normally expanded to the SMT sort [Array D Bool].

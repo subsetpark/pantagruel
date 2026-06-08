@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.ast *)
+
 (** AST type definitions for Pantagruel *)
 
 type loc = { file : string; line : int; col : int } [@@deriving show, eq]

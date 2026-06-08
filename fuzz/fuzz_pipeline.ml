@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.fuzz *)
+
 (** Fuzz the full pipeline: lexer -> parser -> collect -> check. Catches crashes
     deep in the pipeline from malformed but parseable inputs. *)
 

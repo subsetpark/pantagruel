@@ -1,3 +1,6 @@
+(* @archlint.module test
+   @archlint.domain pantagruel.fuzz *)
+
 (** Fuzz the parser: feed arbitrary bytes through lexer+parser. Any exception is
     acceptable (parse errors are expected); only unhandled crashes indicate
     bugs. *)

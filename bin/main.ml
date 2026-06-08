@@ -1,3 +1,6 @@
+(* @archlint.module state
+   @archlint.domain pantagruel.cli *)
+
 (** Pantagruel CLI *)
 
 (* Stamped at build time from [git describe] — see the [version.ml] rule in
@@ -73,15 +76,6 @@ let specs =
 
 let add_file f = files := f :: !files
 
-(** Format module errors for human-readable output *)
-let format_module_error = function
-  | Pantagruel.Module.ModuleNotFound name ->
-      Printf.sprintf "error: Module '%s' not found" name
-  | Pantagruel.Module.CyclicImport modules ->
-      Printf.sprintf "error: Cyclic import: %s" (String.concat " -> " modules)
-  | Pantagruel.Module.ParseError (_, msg) ->
-      msg (* Already formatted by Error module *)
-
 (** Run SMT verification on a type-checked document. Returns exit code: 0 =
     pass, 1 = violations found, 2 = solver not found *)
 let run_smt_check env doc =
@@ -145,7 +139,7 @@ let check_doc doc =
     0
   end
   else if !do_format then begin
-    Pantagruel.Pretty.output_formatted doc;
+    Pantagruel.Pretty.document_to_string doc |> print_string;
     0
   end
   else if !print_markdown then begin
@@ -153,10 +147,10 @@ let check_doc doc =
     let registry = Pantagruel.Module.scan_module_path !module_path in
     match Pantagruel.Module.collect_with_imports registry doc with
     | Ok env ->
-        Pantagruel.Markdown_output.output env doc;
+        Pantagruel.Markdown_output.document_to_markdown env doc |> print_string;
         0
     | Error e ->
-        prerr_endline (format_module_error e);
+        prerr_endline (Pantagruel.Cli_errors.format_module_error e);
         1
   end
   else begin
@@ -193,30 +187,32 @@ let check_doc doc =
           end
           else begin
             let normalized = Pantagruel.Normalize.normalize doc root in
-            Pantagruel.Pretty.output_formatted normalized;
+            Pantagruel.Pretty.document_to_string normalized |> print_string;
             0
           end
         end
         else begin
-          if !print_json then Pantagruel.Json_output.output_json env doc;
+          if !print_json then
+            Pantagruel.Json_output.document_to_json env doc
+            |> Yojson.Basic.pretty_to_string |> print_endline;
           0
         end
     | Error e ->
-        prerr_endline (format_module_error e);
+        prerr_endline (Pantagruel.Cli_errors.format_module_error e);
         1
   end
 
 let check_file path =
   match Pantagruel.Module.parse_file path with
   | Error e ->
-      prerr_endline (format_module_error e);
+      prerr_endline (Pantagruel.Cli_errors.format_module_error e);
       1
   | Ok doc -> check_doc doc
 
 let check_stdin () =
   match Pantagruel.Module.parse_channel "<stdin>" stdin with
   | Error e ->
-      prerr_endline (format_module_error e);
+      prerr_endline (Pantagruel.Cli_errors.format_module_error e);
       1
   | Ok doc -> check_doc doc
 

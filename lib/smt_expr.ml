@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.smt-expr *)
+
 (** SMT expression transformation utilities: substitution, priming, guard
     collection, and comprehension expansion.
 
@@ -66,6 +69,7 @@ let fold_expr (f : 'a -> expr -> 'a) (acc : 'a) (e : expr) : 'a =
       acc guards
   in
   go acc e
+[@@warning "-32"]
 
 let expr_applies_name name e =
   let rec go bound = function[@warning "-4"]
@@ -103,6 +107,7 @@ let expr_applies_name name e =
     guard_hit || go bound body
   in
   go [] e
+[@@warning "-32"]
 
 let upper_bound_candidate binder = function
   | GExpr (EBinop (((OpLt | OpLe) as op), EVar (Lower n), bound))
@@ -552,6 +557,7 @@ and substitute_guards subst gs =
           (subst', acc @ [ GIn (Lower name, substitute_vars subst e) ])
       | GExpr e -> (subst, acc @ [ GExpr (substitute_vars subst e) ]))
     (subst, []) gs
+[@@warning "-32"]
 
 (** Substitute primed names in an expression (for invariant checking in next
     state). Capture avoidance for quantifier binders is delegated to

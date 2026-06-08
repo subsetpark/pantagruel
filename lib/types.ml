@@ -1,3 +1,6 @@
+(* @archlint.module core
+   @archlint.domain pantagruel.types *)
+
 (** Type representation for Pantagruel *)
 
 (** Internal type representation *)
