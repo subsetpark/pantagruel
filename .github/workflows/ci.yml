@@ -29,6 +29,8 @@ jobs:
       OPAMYES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Trust workspace
         # Without this, `git` invocations inside dune/opam subprocesses fail
@@ -78,6 +80,8 @@ jobs:
       OPAMYES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
@@ -87,8 +91,10 @@ jobs:
         # on `extractions/setup-just`'s release-lookup logic. Pinned for
         # reproducibility; bump as needed.
         run: |
-          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
-            | tar -xz -C /usr/local/bin just
+          just_archive=just-1.50.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSLo "/tmp/${just_archive}" "https://github.com/casey/just/releases/download/1.50.0/${just_archive}"
+          printf '%s  %s\n' '27e011cd6328fadd632e59233d2cf5f18460b8a8c4269acd324c1a8669f34db0' "/tmp/${just_archive}" | sha256sum -c -
+          tar -xzf "/tmp/${just_archive}" -C /usr/local/bin just
           just --version
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -148,14 +154,18 @@ jobs:
       OPAMYES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
 
       - name: Install just
         run: |
-          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
-            | tar -xz -C /usr/local/bin just
+          just_archive=just-1.50.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSLo "/tmp/${just_archive}" "https://github.com/casey/just/releases/download/1.50.0/${just_archive}"
+          printf '%s  %s\n' '27e011cd6328fadd632e59233d2cf5f18460b8a8c4269acd324c1a8669f34db0' "/tmp/${just_archive}" | sha256sum -c -
+          tar -xzf "/tmp/${just_archive}" -C /usr/local/bin just
           just --version
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e

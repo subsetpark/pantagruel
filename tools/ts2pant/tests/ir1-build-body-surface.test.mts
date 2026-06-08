@@ -56,6 +56,7 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
       if (!forOfStmt || !mapStmt || !helperStmt) {
         throw new Error("expected unsupported body fixtures");
       }
+      const unsupportedChecker = getChecker(unsupportedSource);
       const ctx = {
         checker,
         strategy: IntStrategy,
@@ -64,13 +65,21 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
         supply: { n: 0, synthCell: newSynthCell() },
         env: createL1AssumptionEnv(),
       };
+      const unsupportedCtx = {
+        ...ctx,
+        checker: unsupportedChecker,
+        paramNames: new Map([
+          ["items", "items"],
+          ["helper", "helper"],
+        ]),
+      };
       assert.equal(BB.isUnsupported({ unsupported: name }), true);
       assert.equal(BB.buildL1SubExpr(expr, ctx).kind !== undefined, true);
       assert.equal(BB.buildL1AssignStmt(stmt, ctx).kind !== undefined, true);
       assert.equal(BB.buildL1IfMutation(stmt, ctx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1ForOfMutation(forOfStmt, ctx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1ForEachCall(mapStmt.expression, ctx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1EffectCall(helperStmt.expression, ctx).unsupported !== undefined, true);
+      assert.equal(BB.buildL1ForOfMutation(forOfStmt, unsupportedCtx).unsupported !== undefined, true);
+      assert.equal(BB.buildL1ForEachCall(mapStmt.expression, unsupportedCtx).unsupported !== undefined, true);
+      assert.equal(BB.buildL1EffectCall(helperStmt.expression, unsupportedCtx).unsupported !== undefined, true);
     }),
   );
 });
