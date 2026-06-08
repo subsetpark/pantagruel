@@ -26,6 +26,9 @@ let supplier tokens =
         tok
     | [] -> Parser.EOF
 
+let missing_module_gen =
+  QCheck2.Gen.oneof_list [ "MISSING"; "ALSO_MISSING"; "DIRECT" ]
+
 (* --- parse_module_header tests --- *)
 
 let test_parse_module_header_valid () =
@@ -108,21 +111,30 @@ let test_check_with_imports_no_imports () =
                (Module.show_module_error e)));
       ()
 
-let state_interleavings =
+let state_operation_sequences =
   [
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"module registry state composes with pure header recognition"
-         ~count:100 (QCheck2.Gen.list QCheck2.Gen.unit) (fun _ ->
+         ~count:100 (QCheck2.Gen.list missing_module_gen) (fun names ->
            let direct_header =
              Module_header.parse_module_header_tokens
                (supplier
                   [ Parser.MODULE; Parser.UPPER_IDENT "DIRECT"; Parser.DOT ])
            in
            let registry = Module.create_registry () in
-           let missing = Module.load_module registry "MISSING" in
+           let results =
+             List.map
+               (fun name ->
+                 let result = Module.load_module registry name in
+                 (result, registry.loading))
+               names
+           in
            direct_header = Ok "DIRECT"
-           && registry.loading = [] && Result.is_error missing
+           && List.for_all
+                (fun (result, loading) ->
+                  Result.is_error result && loading = [])
+                results
            && registry.loading = []));
   ]
 
@@ -140,5 +152,5 @@ let () =
         [ test_case "samples dir" `Quick test_scan_module_path ] );
       ( "check_with_imports",
         [ test_case "no imports" `Quick test_check_with_imports_no_imports ] );
-      ("state_interleavings", state_interleavings);
+      ("state_operation_sequences", state_operation_sequences);
     ]
