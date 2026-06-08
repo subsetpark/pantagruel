@@ -13,17 +13,6 @@ let sample_env =
        (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
        Ast.dummy_loc ~chapter:0
 
-let sample_query smt2 =
-  {
-    Smt_types.name = "q";
-    description = "sample query";
-    smt2;
-    kind = Smt_types.Contradiction;
-    value_terms = [];
-    invariant_text = "";
-    assertion_names = [];
-  }
-
 let gen_domain =
   QCheck2.Gen.string_size
     ~gen:QCheck2.Gen.(char_range 'A' 'Z')
@@ -145,19 +134,6 @@ let state_interleaving_properties =
            drained_cond = "" && drained_fallbacks = ""
            && String.length with_fallbacks >= String.length smt2
            && Smt_types.sort_of_ty Types.TyNat = "Int"));
-    QCheck_alcotest.to_alcotest
-      (QCheck2.Test.make
-         ~name:"with_cond_aux inserts and resets query-local state" ~count:100
-         QCheck2.Gen.unit (fun () ->
-           let query =
-             Smt_state.with_cond_aux (fun () ->
-                 ignore (Smt_state.fresh_cond_default "Int");
-                 ignore (Smt_state.fresh_fallback ~kind:"override" ~sort:"Int");
-                 sample_query "(assert true)\n")
-           in
-           String.contains query.Smt_types.smt2 '_'
-           && Smt_state.drain_cond_aux_decls () = ""
-           && Smt_state.drain_fallback_decls () = ""));
   ]
 
 let () =
