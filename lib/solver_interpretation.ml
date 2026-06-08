@@ -320,7 +320,7 @@ let interpret_result query result =
       {
         query;
         result;
-        passed = true;
+        passed = false;
         message =
           Printf.sprintf "UNKNOWN: %s (reason: %s)" query.description reason;
       }
@@ -366,8 +366,9 @@ let parse_bmc_index name =
 
 (** Correlate BMC results with invariant preservation results. When a
     preservation check fails but BMC passes, it's a false alarm (WARN). When
-    both fail, BMC provides the concrete reachable trace. Standalone BMC results
-    are removed from the output. *)
+    both fail, BMC provides the concrete reachable trace. BMC results are only
+    removed from the output when they were merged into a failing preservation
+    result. *)
 let correlate_results results =
   let bmc_map = Hashtbl.create 8 in
   List.iter
@@ -378,10 +379,26 @@ let correlate_results results =
     results;
   if Hashtbl.length bmc_map = 0 then results
   else
+    let bmc_merged idx =
+      List.exists
+        (fun (r : verification_result) ->
+          match parse_preservation_info r.query.Smt.name with
+          | Some (_, preservation_idx)
+            when preservation_idx = idx && not r.passed -> (
+              match Hashtbl.find_opt bmc_map idx with
+              | Some bmc_r -> (
+                  match bmc_r.result with
+                  | Solver_output.Sat _ | Solver_output.Unsat _ -> true
+                  | Solver_output.Unknown _ | Solver_output.SolverError _ ->
+                      false)
+              | None -> false)
+          | Some _ | None -> false)
+        results
+    in
     List.filter_map
       (fun (r : verification_result) ->
         match parse_bmc_index r.query.Smt.name with
-        | Some _ -> None
+        | Some idx -> if bmc_merged idx then None else Some r
         | None -> (
             match parse_preservation_info r.query.Smt.name with
             | Some (action_label, idx) when not r.passed -> (

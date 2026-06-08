@@ -9,7 +9,8 @@ let bound_names_from_guards (guards : Ast.guard list) : string list =
   List.filter_map
     (function
       | Ast.GIn (name, _) -> Some (Ast.lower_name name)
-      | Ast.GParam _ | Ast.GExpr _ -> None)
+      | Ast.GParam p -> Some (Ast.lower_name p.param_name)
+      | Ast.GExpr _ -> None)
     guards
 
 let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
@@ -127,9 +128,10 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
   let rebuild_quant make params guards body =
     make params (List.map (subst_guard name replacement) guards) (s body)
   in
-  let may_substitute params =
+  let may_substitute params guards =
     let bound =
       List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+      @ bound_names_from_guards guards
     in
     (not (List.mem name bound))
     && not (List.exists (fun n -> List.mem n bound) (free_vars replacement))
@@ -144,17 +146,17 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
   | EUnop (op, e1) -> EUnop (op, s e1)
   | EForall (mb, metas) ->
       let params, guards, body = Ast.unbind_quant mb metas in
-      if may_substitute params then
+      if may_substitute params guards then
         rebuild_quant Ast.make_forall params guards body
       else e
   | EExists (mb, metas) ->
       let params, guards, body = Ast.unbind_quant mb metas in
-      if may_substitute params then
+      if may_substitute params guards then
         rebuild_quant Ast.make_exists params guards body
       else e
   | EEach (mb, metas, comb) ->
       let params, guards, body = Ast.unbind_quant mb metas in
-      if may_substitute params then
+      if may_substitute params guards then
         Ast.make_each params
           (List.map (subst_guard name replacement) guards)
           comb (s body)

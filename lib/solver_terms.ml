@@ -9,6 +9,8 @@ let prime_suffix = "_prime"
 let has_prime_suffix s = String.ends_with ~suffix:prime_suffix s
 
 let strip_prime_suffix s =
+  if not (has_prime_suffix s) then
+    invalid_arg "strip_prime_suffix: missing prime suffix";
   String.sub s 0 (String.length s - String.length prime_suffix)
 
 let add_prime_suffix s = s ^ prime_suffix
@@ -64,7 +66,11 @@ let translate_display_name term =
 type value_group = Before | After | ActionParam
 
 let classify_term term =
-  if String.length term >= 2 && term.[0] = '(' then
+  if
+    String.length term >= 2
+    && term.[0] = '('
+    && term.[String.length term - 1] = ')'
+  then
     (* Applied term like "(balance a)" or "(balance_prime a)" *)
     let inner = String.sub term 1 (String.length term - 2) in
     let fname =
@@ -76,9 +82,16 @@ let classify_term term =
   else if has_prime_suffix term then After
   else ActionParam
 
-(** Find the "unprime" counterpart of a _prime term *)
+(** Find the "unprime" counterpart of a _prime term. Parenthesized inputs are
+    expected to be well-formed solver-generated applied terms, matching
+    [classify_term]'s list-shape handling. Malformed inputs are treated as
+    non-list terms and may return [None]. *)
 let unprime_term term =
-  if String.length term >= 2 && term.[0] = '(' then
+  if
+    String.length term >= 2
+    && term.[0] = '('
+    && term.[String.length term - 1] = ')'
+  then
     let inner = String.sub term 1 (String.length term - 2) in
     match String.index_opt inner ' ' with
     | Some i ->

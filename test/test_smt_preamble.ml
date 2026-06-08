@@ -12,6 +12,17 @@ let gen_prefix =
 let upper prefix suffix = String.capitalize_ascii prefix ^ suffix
 let lower prefix suffix = prefix ^ suffix
 
+let has_substring haystack needle =
+  let h_len = String.length haystack in
+  let n_len = String.length needle in
+  let rec loop i =
+    if n_len = 0 then true
+    else if i + n_len > h_len then false
+    else if String.sub haystack i n_len = needle then true
+    else loop (i + 1)
+  in
+  loop 0
+
 let env prefix =
   let domain = upper prefix "User" in
   Env.empty (upper prefix "T")
@@ -46,9 +57,10 @@ let public_api_properties =
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"declare_domain_sorts emits sort declarations"
          ~count:100 gen_prefix (fun prefix ->
-           String.contains
+           let name = upper prefix "User" in
+           has_substring
              (Smt_preamble.declare_domain_sorts config (env prefix))
-             (upper prefix "User").[0]));
+             name));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"declare_composite_types emits datatypes"
          ~count:100 gen_prefix (fun prefix ->
@@ -67,9 +79,8 @@ let public_api_properties =
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"declare_functions emits declarations" ~count:100
          gen_prefix (fun prefix ->
-           String.contains
-             (Smt_preamble.declare_functions (env prefix))
-             (lower prefix "active").[0]));
+           let name = lower prefix "active" in
+           has_substring (Smt_preamble.declare_functions (env prefix)) name));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"generate_closure_axioms returns text" ~count:100
          gen_prefix (fun prefix ->

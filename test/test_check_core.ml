@@ -25,11 +25,16 @@ let gen_lower =
        (QCheck2.Gen.int_range 1 10))
 
 let public_api_properties =
+  let distinct_lower_pair =
+    QCheck2.Gen.pair gen_lower gen_lower
+    |> QCheck2.Gen.map (fun (rule_name, var_name) ->
+        if String.equal rule_name var_name then (rule_name, var_name ^ "v")
+        else (rule_name, var_name))
+  in
   [
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"infer_type classifies rule applications"
-         ~count:100 (QCheck2.Gen.pair gen_lower gen_lower)
-         (fun (rule_name, var_name) ->
+         ~count:100 distinct_lower_pair (fun (rule_name, var_name) ->
            let env =
              Env.empty "CheckCore"
              |> Env.add_domain "User" loc ~chapter:0

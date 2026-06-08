@@ -80,7 +80,7 @@ let state_operation_sequences =
            && List.for_all (( = ) [ [ "hello" ] ]) doc_payloads
            && plain_payloads = []
            &&
-           if List.mem Left ops then true
+           if List.mem Left ops then List.length doc_payloads = 1
            else (
              Lexer.set_current with_doc;
              Lexer.get_pending_docs () = [ [ "hello" ] ])));
