@@ -140,25 +140,29 @@ describe("narrowing-recognizer", () => {
             assert.equal(fact.literal, literal);
             assert.deepEqual(negateFact(negateFact(fact)), fact);
           }
-
-          assert.equal(
-            recognizeNullishNarrowing(
-              generatedNullishCase.expression,
-              generatedNullishCase.checker,
-            )?.kind,
-            "non-null",
-          );
-
-          assert.equal(
-            recognizeTypePredicateNarrowing(
-              generatedPredicateCase.expression,
-              generatedPredicateCase.checker,
-            ),
-            null,
-          );
         },
       ),
       { numRuns: generatedDiscriminantCases.length },
+    );
+  });
+
+  it("non-null narrowing recognizes s.foo !== null", () => {
+    assert.equal(
+      recognizeNullishNarrowing(
+        generatedNullishCase.expression,
+        generatedNullishCase.checker,
+      )?.kind,
+      "non-null",
+    );
+  });
+
+  it("type predicate narrowing returns null for non-predicate calls", () => {
+    assert.equal(
+      recognizeTypePredicateNarrowing(
+        generatedPredicateCase.expression,
+        generatedPredicateCase.checker,
+      ),
+      null,
     );
   });
 

@@ -75,32 +75,30 @@ before(async () => {
 
 describe("ir1-ssa-scalars", () => {
   it("generated scalar reads and early exits preserve final properties", () => {
-    fc.assert(
-      fc.property(fc.constantFrom("Account_balance", "Account_limit"), (prop) => {
-        const state = makeScalarSsaState();
-        const member = ir1Member(ir1Var("a"), prop);
-        const stmt = ir1Assign(member, ir1LitNat(1));
-        assert.equal(isScalarSsaL1Body(stmt), true);
-        assert.equal(buildScalarSsaProgram(stmt).writes.length, 1);
-        assert.equal(lowerScalarSsaToProps(stmt).diagnostics.length, 0);
-        scalarSsaReadExpr(member, state);
-        lowerScalarSsaL1Body(stmt, state);
-        const result = lowerScalarSsaEarlyExitMerge(
-          [
-            {
-              key: `${prop}::a`,
-              prop,
-              objExpr: getAst().var("a"),
-              priorValue: undefined,
-              continuationValue: getAst().litNat(1),
-            },
-          ],
-          { guardExpr: getAst().litBool(true), earlyExitWhenTrue: true },
-        );
-        assert.equal(result.finalProperties.length, 1);
-        assert.equal(result.modifiedRules.includes(prop), true);
-      }),
-    );
+    for (const prop of ["Account_balance", "Account_limit"]) {
+      const state = makeScalarSsaState();
+      const member = ir1Member(ir1Var("a"), prop);
+      const stmt = ir1Assign(member, ir1LitNat(1));
+      assert.equal(isScalarSsaL1Body(stmt), true);
+      assert.equal(buildScalarSsaProgram(stmt).writes.length, 1);
+      assert.equal(lowerScalarSsaToProps(stmt).diagnostics.length, 0);
+      scalarSsaReadExpr(member, state);
+      lowerScalarSsaL1Body(stmt, state);
+      const result = lowerScalarSsaEarlyExitMerge(
+        [
+          {
+            key: `${prop}::a`,
+            prop,
+            objExpr: getAst().var("a"),
+            priorValue: undefined,
+            continuationValue: getAst().litNat(1),
+          },
+        ],
+        { guardExpr: getAst().litBool(true), earlyExitWhenTrue: true },
+      );
+      assert.equal(result.finalProperties.length, 1);
+      assert.equal(result.modifiedRules.includes(prop), true);
+    }
   });
 
   // PENDING Patch 2: add the scalar SSA builder state and write/version recording.

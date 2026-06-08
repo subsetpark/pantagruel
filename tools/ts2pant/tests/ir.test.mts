@@ -23,6 +23,19 @@ before(async () => {
 });
 
 describe("ir properties", () => {
+  it("binop lowering produces expected Pant text", () => {
+    assert.equal(
+      getAst().strExpr(
+        getAst().binop(
+          lowerBinop("add"),
+          lowerExpr(irLitNat(1)),
+          lowerExpr(irLitNat(2)),
+        ),
+      ),
+      "1 + 2",
+    );
+  });
+
   it("generated binder forms preserve binders and lower to Pant text", () => {
     fc.assert(
       fc.property(
@@ -41,16 +54,6 @@ describe("ir properties", () => {
           assert.match(getAst().strExpr(lowerExpr(cond)), /cond/u);
           assert.match(getAst().strExpr(lowerExpr(forall)), new RegExp(name, "u"));
           assert.match(getAst().strExpr(lowerExpr(exists)), new RegExp(name, "u"));
-          assert.equal(
-            getAst().strExpr(
-              getAst().binop(
-                lowerBinop("add"),
-                lowerExpr(irLitNat(1)),
-                lowerExpr(irLitNat(2)),
-              ),
-            ),
-            "1 + 2",
-          );
         },
       ),
     );

@@ -15,7 +15,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
       # Override the image's default `opam` (uid 1000) user — GHA mounts the
       # workspace with ownership the in-image opam user can't write to, so
       # `actions/checkout@v6` fails before any of our steps run.
@@ -28,7 +28,7 @@ jobs:
       OPAMROOTISOK: "1"
       OPAMYES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Trust workspace
         # Without this, `git` invocations inside dune/opam subprocesses fail
@@ -70,14 +70,14 @@ jobs:
   ts2pant-build:
     runs-on: ubuntu-latest
     container:
-      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
       options: --user root
     env:
       OPAMROOT: /home/opam/.opam
       OPAMROOTISOK: "1"
       OPAMYES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
@@ -91,7 +91,7 @@ jobs:
             | tar -xz -C /usr/local/bin just
           just --version
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: "22"
           cache: npm
@@ -124,7 +124,7 @@ jobs:
         run: just ts2pant-lint-ci
 
       - name: Upload ts2pant build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ts2pant-build-artifacts
           if-no-files-found: error
@@ -140,26 +140,32 @@ jobs:
       matrix:
         test-group: [unit-constructs, unit-rest, integration]
     container:
-      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
       options: --user root
     env:
       OPAMROOT: /home/opam/.opam
       OPAMROOTISOK: "1"
       OPAMYES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
 
-      - uses: actions/setup-node@v6
+      - name: Install just
+        run: |
+          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz -C /usr/local/bin just
+          just --version
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: tools/ts2pant/package-lock.json
 
       - name: Download ts2pant build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ts2pant-build-artifacts
           path: .
@@ -174,13 +180,13 @@ jobs:
         run: |
           case "${{ matrix.test-group }}" in
             unit-constructs)
-              cd tools/ts2pant && npm run test:unit:constructs
+              just ts2pant-test-unit-constructs-from-artifacts
               ;;
             unit-rest)
-              cd tools/ts2pant && npm run test:unit:rest
+              just ts2pant-test-unit-rest-from-artifacts
               ;;
             integration)
-              cd tools/ts2pant && npm run test:integration
+              just ts2pant-test-integration-from-artifacts
               ;;
             *)
               echo "unknown ts2pant test group: ${{ matrix.test-group }}" >&2

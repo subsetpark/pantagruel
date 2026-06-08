@@ -28,6 +28,34 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
       const fn = sourceFile.getFunctions()[0]!.compilerNode;
       const stmt = fn.body!.statements[0]!;
       const expr = (fn.body!.statements[1] as ts.ReturnStatement).expression!;
+      const unsupportedSource = createSourceFileFromSource(`
+        function g(items: Array<{ value: number }>, helper: () => number): void {
+          for (let item of items) {
+            item.value = 1;
+          }
+          items.map((item) => {
+            item.value = 1;
+          });
+          helper();
+        }
+      `);
+      const unsupportedFn = unsupportedSource.getFunctions()[0]!.compilerNode;
+      const forOfStmt = unsupportedFn.body!.statements.find(ts.isForOfStatement);
+      const mapStmt = unsupportedFn.body!.statements.find(
+        (candidate): candidate is ts.ExpressionStatement =>
+          ts.isExpressionStatement(candidate) &&
+          ts.isCallExpression(candidate.expression) &&
+          candidate.expression.getText(unsupportedSource.compilerNode).startsWith("items.map"),
+      );
+      const helperStmt = unsupportedFn.body!.statements.find(
+        (candidate): candidate is ts.ExpressionStatement =>
+          ts.isExpressionStatement(candidate) &&
+          ts.isCallExpression(candidate.expression) &&
+          candidate.expression.getText(unsupportedSource.compilerNode).startsWith("helper"),
+      );
+      if (!forOfStmt || !mapStmt || !helperStmt) {
+        throw new Error("expected unsupported body fixtures");
+      }
       const ctx = {
         checker,
         strategy: IntStrategy,
@@ -40,21 +68,9 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
       assert.equal(BB.buildL1SubExpr(expr, ctx).kind !== undefined, true);
       assert.equal(BB.buildL1AssignStmt(stmt, ctx).kind !== undefined, true);
       assert.equal(BB.buildL1IfMutation(stmt, ctx).unsupported !== undefined, true);
-      try {
-        assert.equal(BB.buildL1ForOfMutation(stmt as never, ctx).unsupported !== undefined, true);
-      } catch (error) {
-        assert.ok(error instanceof TypeError);
-      }
-      try {
-        assert.equal(BB.buildL1ForEachCall(expr as never, ctx).unsupported !== undefined, true);
-      } catch (error) {
-        assert.ok(error instanceof TypeError);
-      }
-      try {
-        assert.equal(BB.buildL1EffectCall(expr as never, ctx).unsupported !== undefined, true);
-      } catch (error) {
-        assert.ok(error instanceof TypeError);
-      }
+      assert.equal(BB.buildL1ForOfMutation(forOfStmt, ctx).unsupported !== undefined, true);
+      assert.equal(BB.buildL1ForEachCall(mapStmt.expression, ctx).unsupported !== undefined, true);
+      assert.equal(BB.buildL1EffectCall(helperStmt.expression, ctx).unsupported !== undefined, true);
     }),
   );
 });

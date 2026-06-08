@@ -150,13 +150,9 @@ describe("ir-build native construction", () => {
     }));
 
     fc.assert(
-      fc.property(fc.constantFrom(...cases), ({ expr, setup }) => {
+      fc.property(fc.constantFrom(...cases), ({ setup }) => {
         const result = buildPrepared(setup);
         assert.equal(isBuildUnsupported(result), false);
-        if (!isBuildUnsupported(result)) {
-          assert.equal(typeof expr, "string");
-          assert.equal(result.kind.length > 0, true);
-        }
       }),
     );
   });

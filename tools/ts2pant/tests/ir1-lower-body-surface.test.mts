@@ -10,6 +10,7 @@ import { lowerForeachShapeAAsGeneralLoop } from "../src/ir1-ssa-foreach.js";
 import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import type { OpaqueExpr } from "../src/pant-ast.js";
 
 before(async () => {
   await loadAst();
@@ -19,7 +20,9 @@ it("generated inputs exercise the ir1-lower-body exported surface", () => {
   fc.assert(
     fc.property(fc.constantFrom("Account_balance", "Account_limit"), (prop) => {
       const stmt = ir1Assign(ir1Member(ir1Var("a"), prop), ir1LitNat(1));
-      const options = { applyConst: (e: ReturnType<typeof getAst> extends never ? never : unknown) => e } as never;
+      const options: LB.SsaBodyLowerOptions = {
+        applyConst: (e: OpaqueExpr) => e,
+      };
       assert.equal(LB.adaptScalarSsaLowerResult(lowerScalarSsaToProps(stmt)).programs.length, 1);
       assert.equal(LB.adaptCollectionSsaLowerResult(lowerCollectionSsaToProps(stmt)).programs.length, 1);
       assert.equal(

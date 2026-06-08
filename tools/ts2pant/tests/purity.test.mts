@@ -85,6 +85,7 @@ it("generated pure expressions preserve purity classifications", () => {
         null,
       );
     }),
+    { numRuns: generatedPurityCases.length },
   );
 });
 

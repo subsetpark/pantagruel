@@ -78,8 +78,8 @@ describe("ir1-ssa-lower", () => {
             returnType: "Nat",
           },
         ]);
-        assert.equal(combined.programs.length >= 3, true);
-        assert.equal(framed.propositions.length >= scalar.propositions.length, true);
+        assert.equal(combined.programs.length, 3);
+        assert.equal(framed.propositions.length, scalar.propositions.length + 1);
         assert.equal(combined.diagnostics.length, 1);
       }),
     );

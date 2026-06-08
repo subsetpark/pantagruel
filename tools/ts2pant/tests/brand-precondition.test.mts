@@ -156,12 +156,17 @@ describe("recognizeBrandedPrecondition", () => {
   it("recognizes generated allowlisted Effect brand names", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom("Positive", "NonNegative", "NonEmptyString", "Int"),
-        (brand) => {
+        fc.constantFrom(
+          { brand: "Positive", carrier: "number" },
+          { brand: "NonNegative", carrier: "number" },
+          { brand: "NonEmptyString", carrier: "string" },
+          { brand: "Int", carrier: "number" },
+        ),
+        ({ brand, carrier }) => {
           withSource(
             `
               import type * as Brand from "effect/Brand";
-              type Branded = number & Brand.Brand<"${brand}">;
+              type Branded = ${carrier} & Brand.Brand<"${brand}">;
               export function subject(x: Branded) { return x; }
             `,
             (ctx) => {

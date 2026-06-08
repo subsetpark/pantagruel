@@ -179,9 +179,13 @@ it("generated body helpers preserve structural translations", () => {
       assert.equal(TB.getRootIdentifier(expr), null);
       assert.equal(TB.extractReturnFromBranch(stmt, checker), null);
       assert.equal(TB.isGuardStatement(stmt, checker), true);
+      const memberArg = call.arguments[0];
+      if (!memberArg || !ts.isPropertyAccessExpression(memberArg)) {
+        throw new Error("expected helper field access argument");
+      }
       assert.equal(
         TB.qualifyFieldAccess(
-          checker.getTypeAtLocation(expr),
+          checker.getTypeAtLocation(memberArg.expression),
           fieldName,
           checker,
           IntStrategy,
