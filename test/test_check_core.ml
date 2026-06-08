@@ -18,9 +18,11 @@ let gen_upper =
     (QCheck2.Gen.int_range 1 10)
 
 let gen_lower =
-  QCheck2.Gen.string_size
-    ~gen:QCheck2.Gen.(char_range 'a' 'z')
-    (QCheck2.Gen.int_range 1 10)
+  QCheck2.Gen.map
+    (fun s -> "x" ^ s)
+    (QCheck2.Gen.string_size
+       ~gen:QCheck2.Gen.(char_range 'a' 'z')
+       (QCheck2.Gen.int_range 1 10))
 
 let public_api_properties =
   [
