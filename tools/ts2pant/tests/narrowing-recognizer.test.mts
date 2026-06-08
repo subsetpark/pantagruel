@@ -1,12 +1,18 @@
+// @archlint.module test
+// @archlint.domain ts2pant.narrowing-recognizer
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import type { Fact } from "../src/assumption-env.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   negateFact,
+  recognizeNullishNarrowing,
   recognizeNarrowingFromSwitchCase,
   recognizeNarrowingPredicate,
+  recognizeTypePredicateNarrowing,
 } from "../src/narrowing-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -21,7 +27,7 @@ function sourceWithReturn(expr: string): {
   const sf = createSourceFileFromSource(`
     interface Shape {
       kind: string | number | boolean;
-      foo: string;
+      foo: string | null;
       nested: { kind: string };
     }
     declare function someCall(): boolean;
@@ -106,7 +112,60 @@ function switchParts(): {
   };
 }
 
+const generatedDiscriminantCases = ["kind", "nested.kind"].flatMap((access) =>
+  ["circle", "square", "triangle", "active", "inactive"].flatMap((literal) =>
+    ["===", "!==", "!="].flatMap((op) =>
+      [`s.${access} ${op} "${literal}"`, `"${literal}" ${op} s.${access}`].map(
+        (exprText) => ({
+          ...sourceWithReturn(exprText),
+          literal,
+        }),
+      ),
+    ),
+  ),
+);
+const generatedNullishCase = sourceWithReturn("s.foo !== null");
+const generatedPredicateCase = sourceWithReturn("someCall()");
+
 describe("narrowing-recognizer", () => {
+  it("generated predicates produce stable narrowing facts", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...generatedDiscriminantCases),
+        ({ checker, expression, literal }) => {
+          const fact = recognizeNarrowingPredicate(expression, checker);
+
+          assert.equal(fact?.kind, "discriminant");
+          if (fact?.kind === "discriminant") {
+            assert.equal(fact.literal, literal);
+            assert.deepEqual(negateFact(negateFact(fact)), fact);
+          }
+        },
+      ),
+      { numRuns: generatedDiscriminantCases.length },
+    );
+  });
+
+  it("non-null narrowing recognizes s.foo !== null", () => {
+    assert.equal(
+      recognizeNullishNarrowing(
+        generatedNullishCase.expression,
+        generatedNullishCase.checker,
+      )?.kind,
+      "non-null",
+    );
+  });
+
+  it("type predicate narrowing returns null for non-predicate calls", () => {
+    assert.equal(
+      recognizeTypePredicateNarrowing(
+        generatedPredicateCase.expression,
+        generatedPredicateCase.checker,
+      ),
+      null,
+    );
+  });
+
   it(".kind === literal returns DiscriminantFact", () => {
     assertDiscriminant(recognizeExpr('s.kind === "circle"'), {
       receiver: "s",
@@ -201,10 +260,13 @@ describe("narrowing-recognizer", () => {
   it("switch case label produces DiscriminantFact", () => {
     const { switchTest, caseLabel } = switchParts();
 
-    assertDiscriminant(recognizeNarrowingFromSwitchCase(switchTest, caseLabel), {
-      receiver: "s",
-      property: "kind",
-      literal: "circle",
-    });
+    assertDiscriminant(
+      recognizeNarrowingFromSwitchCase(switchTest, caseLabel),
+      {
+        receiver: "s",
+        property: "kind",
+        literal: "circle",
+      },
+    );
   });
 });

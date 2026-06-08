@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Boolean operators: &&, ||, !
 
 /** logical and → and */

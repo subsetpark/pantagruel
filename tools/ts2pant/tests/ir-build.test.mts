@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir-build
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { buildIR, isBuildUnsupported } from "../src/ir-build.js";
@@ -52,6 +56,15 @@ function setupReturnExpr(source: string, functionName = "f"): ExprSetup {
 function buildFromSource(source: string): IRExpr | { unsupported: string } {
   const { expr, checker, paramNames, supply } = setupReturnExpr(source);
   return buildIR(expr, checker, IntStrategy, paramNames, supply);
+}
+
+function buildPrepared(
+  setup: Omit<ExprSetup, "supply">,
+): IRExpr | { unsupported: string } {
+  return buildIR(setup.expr, setup.checker, IntStrategy, setup.paramNames, {
+    n: 0,
+    synthCell: newSynthCell(),
+  });
 }
 
 function expectIR(source: string): IRExpr {
@@ -113,6 +126,37 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
 }
 
 describe("ir-build native construction", () => {
+  it("generated arithmetic programs build native IR or unsupported evidence", () => {
+    const cases = [
+      ["a + b", "number"],
+      ["a - b", "number"],
+      ["a * b", "number"],
+      ["a <= b", "boolean"],
+      ["a >= b", "boolean"],
+      ["a === b", "boolean"],
+      ["a !== b", "boolean"],
+      ["(a + b) * c", "number"],
+      ["Math.max(a, b)", "number"],
+      ["a > 0 ? a : b", "number"],
+      ["xs.includes(a)", "boolean"],
+      ["xs.filter((x) => x >= a).length", "number"],
+    ].map(([expr, returnType]) => ({
+      expr,
+      setup: setupReturnExpr(`
+        function f(a: number, b: number, c: number, xs: number[]): ${returnType} {
+          return ${expr};
+        }
+      `),
+    }));
+
+    fc.assert(
+      fc.property(fc.constantFrom(...cases), ({ setup }) => {
+        const result = buildPrepared(setup);
+        assert.equal(isBuildUnsupported(result), false);
+      }),
+    );
+  });
+
   // Ordinary arithmetic/comparison binary expressions build as native
   // App(binop, ...) nodes.
   it("builds arithmetic and comparison natively", () => {

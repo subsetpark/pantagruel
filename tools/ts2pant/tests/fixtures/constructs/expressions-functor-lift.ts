@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Functor-lift recognizer (M4 Patch 5).
 //
 // `if (x == null) return []; return [f(x)];` and the equivalent

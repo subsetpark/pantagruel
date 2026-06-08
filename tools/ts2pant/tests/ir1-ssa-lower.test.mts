@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-lower
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 
 import {
@@ -26,9 +30,12 @@ import {
 } from "../src/ir1-ssa-foreach.js";
 import {
   appendFramesForUnmodifiedRules,
+  collectionSsaBodyLowerResult,
   combineIR1SsaBodyLowerResults,
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
+  loopSsaBodyLowerResult,
+  scalarSsaBodyLowerResult,
 } from "../src/ir1-ssa-lower.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -38,6 +45,46 @@ before(async () => {
 });
 
 describe("ir1-ssa-lower", () => {
+  it("generated body-lower results adapt into the common shape", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("Account_balance", "Account_limit"), (prop) => {
+        const target = ir1Member(ir1Var("a"), prop);
+        const scalar = scalarSsaBodyLowerResult(
+          lowerScalarSsaToProps(ir1Assign(target, ir1LitNat(1))),
+        );
+        const collection = collectionSsaBodyLowerResult(
+          lowerCollectionSsaToProps(
+            ir1MapSet("Cache_value", "Cache_hasKey", "Owner", "Key", ir1Var("cache"), ir1Var("key"), ir1LitNat(1)),
+          ),
+        );
+        const loop = loopSsaBodyLowerResult(
+          lowerForeachShapeAAsGeneralLoop({
+            binder: "item",
+            source: ir1Var("items"),
+            body: ir1Assign(ir1Member(ir1Var("item"), prop), ir1LitNat(1)),
+          }),
+        );
+        const combined = combineIR1SsaBodyLowerResults(
+          scalar,
+          collection,
+          loop,
+          ir1SsaBodyLowerUnsupported("generated unsupported"),
+        );
+        const framed = appendFramesForUnmodifiedRules(scalar, [
+          {
+            kind: "rule",
+            name: `${prop}_frame`,
+            params: [{ name: "a", type: "Account" }],
+            returnType: "Nat",
+          },
+        ]);
+        assert.equal(combined.programs.length, 3);
+        assert.equal(framed.propositions.length, scalar.propositions.length + 1);
+        assert.equal(combined.diagnostics.length, 1);
+      }),
+    );
+  });
+
   it("combines body-lowering results with proposition order and deduped modified rules", () => {
     const programA = {
       reads: [],

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Early-exit if-conversion (Allen et al., POPL 1983, extended to early exits).
 // `if (g) { return; }` lifts remaining statements into a `!g`-guarded branch.
 // See AGENTS.md § If-Conversion.

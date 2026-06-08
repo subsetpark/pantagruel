@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-build-body
+
 /**
  * TS AST → L1 statements (mutating-body recognizers).
  *

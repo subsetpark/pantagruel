@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.assumption-env
+
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Optional parameter with a `??`-default under the general list-lift
 // lowering: an optional TS param `p?: P` list-lifts to `p: [P]` and each
 // `p ?? c` use expands to `cond #p = 0 => c, true => (p 1)`.

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason effect-boundary
+
 /**
  * TypeScript wrapper for the Pantagruel wasm module (wasm_of_ocaml).
  *
@@ -25,6 +28,14 @@ let wasmLoadPromise: Promise<void> | null = null;
 let pantParser: PantParserModule | null = null;
 let pantAst: PantAstModule | null = null;
 
+function wasmInitTimeoutMs(): number {
+  const parsed = Number.parseInt(
+    process.env["TS2PANT_WASM_INIT_TIMEOUT_MS"] ?? "60000",
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
+}
+
 /**
  * Load the wasm binary and extract both pantParser and pantAst exports.
  * Safe to call multiple times -- only loads once.
@@ -51,7 +62,7 @@ async function ensureWasmLoaded(): Promise<void> {
 
     // Poll for async wasm initialization (the loader attaches globals asynchronously)
     const g = globalThis as Record<string, unknown>;
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + wasmInitTimeoutMs();
     let delay = 1;
     while (!g["pantParser"] || !g["pantAst"]) {
       if (Date.now() > deadline) {

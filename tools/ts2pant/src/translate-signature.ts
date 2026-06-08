@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.translate-signature
+
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { recognizeBrandedPrecondition } from "./brand-precondition.js";

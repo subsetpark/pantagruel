@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.name-registry
+
 /**
  * Document-wide name registry ensuring unique variable names across
  * all rule declarations in a generated Pantagruel document.

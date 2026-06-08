@@ -90,8 +90,23 @@ ts2pant-typecheck:
 ts2pant-test-unit: ts2pant-build-wasm
     cd tools/ts2pant && npm run test:unit
 
+ts2pant-test-unit-constructs: ts2pant-build-wasm
+    cd tools/ts2pant && npm run test:unit:constructs
+
+ts2pant-test-unit-rest: ts2pant-build-wasm
+    cd tools/ts2pant && npm run test:unit:rest
+
+ts2pant-test-unit-constructs-from-artifacts:
+    cd tools/ts2pant && npm run test:unit:constructs
+
+ts2pant-test-unit-rest-from-artifacts:
+    cd tools/ts2pant && npm run test:unit:rest
+
 # Run ts2pant integration tests (e2e + dogfood); builds pant + wasm first
 ts2pant-test-integration: build-pant ts2pant-build-wasm
+    cd tools/ts2pant && npm run test:integration
+
+ts2pant-test-integration-from-artifacts:
     cd tools/ts2pant && npm run test:integration
 
 # Run all ts2pant tests (unit then integration)

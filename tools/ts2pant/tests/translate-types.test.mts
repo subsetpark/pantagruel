@@ -1,5 +1,9 @@
+// @archlint.module test
+// @archlint.domain ts2pant.translate-types
+
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import * as fc from "fast-check";
+import { before, describe, it } from "node:test";
 import { emitDocument } from "../src/emit.js";
 import {
   createSourceFileFromSource,
@@ -11,6 +15,7 @@ import {
 import { emptyNameRegistry, registerName } from "../src/name-registry.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
+import * as TT from "../src/translate-types.js";
 import {
   cellEmitSynth,
   cellLookupOpaqueValue,
@@ -31,6 +36,10 @@ import {
   UNSUPPORTED_UNKNOWN,
 } from "../src/translate-types.js";
 import type { PantDeclaration } from "../src/types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 // Tests for internal type translation APIs: mapTsType, extractReferencedTypes
 // recursive following, numeric strategy. See tests/fixtures/constructs/ for
@@ -56,6 +65,250 @@ function extractFirstAlias(source: string) {
 function emitSynthDeclsOnly(cell: ReturnType<typeof newSynthCell>) {
   return cellEmitSynth(cell).decls;
 }
+
+const generatedTypeCases = ["Foo", "Account"].map((typeName) => {
+  const sourceFile = createSourceFileFromSource(
+    `
+    interface ${typeName} { value: number; flag?: boolean; }
+    type Alias = { amount: number };
+    type Maybe = number | null;
+    function f(input: ${typeName}): ${typeName} { return input; }
+  `,
+    `${typeName}.ts`,
+  );
+  const checker = getChecker(sourceFile);
+  return {
+    checker,
+    extracted: extractAllTypes(sourceFile),
+    sourceFile,
+    typeName,
+  };
+});
+
+it("generated type helpers preserve synth registrations", () => {
+  fc.assert(
+    fc.property(fc.constantFrom(...generatedTypeCases), (testCase) => {
+      const { checker, extracted, sourceFile, typeName } = testCase;
+      const cell = TT.newSynthCell();
+      cell.sourceFile = { fileName: `${typeName}.ts` } as never;
+      const registry = emptyNameRegistry();
+      const mapReg = TT.registerMapKV(cell.synth, registry, "String", "Int");
+      const recordFields = [{ name: "amount", type: "Int" }];
+      const recordReg = TT.registerRecordShape(
+        cell.recordSynth,
+        registry,
+        recordFields,
+      );
+      const opaqueReg = TT.registerOpaqueValue(cell.opaqueSynth, "opaque-id");
+
+      assert.equal(TT.isUnsupportedUnknown(TT.UNSUPPORTED_UNKNOWN), true);
+      assert.equal(
+        TT.isUnsupportedDiscriminatedUnionRegistration("Int"),
+        false,
+      );
+      assert.equal(TT.isTsNullish(checker.getNullType()), true);
+      assert.equal(TT.manglePantTypeToFragment("[Int]"), "ListInt");
+      assert.equal(
+        TT.lookupMapKV(mapReg.synth, "String", "Int")?.names.domain,
+        mapReg.domain,
+      );
+      assert.equal(
+        TT.emitSynthDecls(mapReg.synth, mapReg.registry).decls.length > 0,
+        true,
+      );
+      assert.equal(TT.toPantTermName("fooBar"), "foo-bar");
+      assert.equal(
+        TT.lookupRecordShape(recordReg.synth, recordFields)?.domain,
+        recordReg.domain,
+      );
+      assert.equal(
+        TT.emitRecordSynthDecls(recordReg.synth).decls.length > 0,
+        true,
+      );
+      assert.equal(
+        TT.lookupOpaqueValue(opaqueReg.synth, "opaque-id")?.rule,
+        opaqueValueRuleName("opaque-id"),
+      );
+      assert.equal(
+        TT.emitOpaqueSynthDecls(opaqueReg.synth).decls.length > 0,
+        true,
+      );
+      assert.match(
+        TT.depModuleNameForFile(`${typeName}.ts`),
+        /^[A-Z][A-Z0-9_]*$/u,
+      );
+      assert.equal(
+        TT.fieldRuleName(typeName, "value"),
+        `${typeName.toLowerCase()}--value`,
+      );
+
+      assert.equal(
+        TT.cellRegisterMap(cell, "String", "Int")?.includes("Map"),
+        true,
+      );
+      assert.equal(
+        TT.cellRegisterRecord(cell, recordFields)?.endsWith("Rec"),
+        true,
+      );
+      assert.notEqual(TT.cellLookupRecord(cell, recordFields), undefined);
+      TT.cellRegisterOpaqueDomain(cell);
+      assert.equal(
+        TT.cellRegisterOpaqueValue(cell, "opaque-id").rule,
+        opaqueValueRuleName("opaque-id"),
+      );
+      assert.notEqual(TT.cellLookupOpaqueValue(cell, "opaque-id"), undefined);
+      assert.equal(TT.cellRegisterName(cell, "freshName"), "fresh-name");
+      assert.equal(TT.cellIsUsed(cell, "freshName"), true);
+      const tupleShape = { elementPantTypes: ["Int", "Bool"] };
+      const tupleRef = TT.cellRegisterTupleConstructor(cell, tupleShape);
+      assert.equal(tupleRef?.ctorRuleName.length > 0, true);
+      assert.equal(
+        TT.emitTupleCtorModule(sourceFile.compilerNode, [
+          { shape: tupleShape, ctorRuleName: tupleRef!.ctorRuleName },
+        ]).includes("module"),
+        true,
+      );
+      assert.equal(
+        TT.emitSynthDecls(cell.synth, cell.registry).decls.length >= 0,
+        true,
+      );
+      assert.equal(
+        TT.emitRecordSynthDecls(cell.recordSynth).decls.length >= 0,
+        true,
+      );
+      assert.equal(
+        TT.emitDiscriminatedUnionSynthDecls(
+          cell.discriminatedUnionSynth,
+          cell.registry,
+        ).decls.length >= 0,
+        true,
+      );
+      assert.equal(
+        TT.emitOpaqueSynthDecls(cell.opaqueSynth).decls.length >= 0,
+        true,
+      );
+      assert.equal(TT.cellEmitSynth(cell).decls.length >= 0, true);
+
+      const type = checker.getTypeAtLocation(
+        sourceFile.getInterfaces()[0]!.getProperties()[0]!.compilerNode,
+      );
+      assert.equal(TT.isAnonymousRecord(type), false);
+      assert.equal(TT.isMapType(type), false);
+      assert.equal(TT.isSetType(type), false);
+      assert.equal(TT.mapTsType(type, checker, IntStrategy, cell), "Int");
+      const aliasNode = sourceFile
+        .getTypeAliasOrThrow("Maybe")
+        .getTypeNodeOrThrow().compilerNode;
+      const aliasType = checker.getTypeAtLocation(aliasNode);
+      assert.equal(
+        TT.mapTsTypeFromTypeNode(
+          aliasNode,
+          aliasType,
+          checker,
+          IntStrategy,
+          cell,
+        ),
+        "[Int]",
+      );
+      assert.equal(
+        TT.resolveFieldOwner(
+          checker.getTypeAtLocation(
+            sourceFile.getInterfaces()[0]!.compilerNode,
+          ),
+          "value",
+          checker,
+          IntStrategy,
+          cell,
+        ).kind,
+        "resolved",
+      );
+      assert.equal(TT.resolveRecordOwner(typeName), null);
+      assert.equal(
+        TT.lookupRecordShape(cell.recordSynth, recordFields)?.domain !==
+          undefined,
+        true,
+      );
+      assert.equal(
+        TT.lookupOpaqueValue(cell.opaqueSynth, "opaque-id") !== undefined,
+        true,
+      );
+      assert.equal(
+        TT.lookupMapKV(cell.synth, "String", "Int") !== undefined,
+        true,
+      );
+      assert.equal(
+        TT.lookupOpaqueValue(cell.opaqueSynth, "missing"),
+        undefined,
+      );
+      assert.equal(
+        TT.lookupRecordShape(cell.recordSynth, [
+          { name: "missing", type: "Int" },
+        ]),
+        undefined,
+      );
+      assert.equal(TT.registerOpaqueDomain(cell.opaqueSynth).needsDomain, true);
+      assert.equal(
+        TT.registerOpaqueValue(cell.opaqueSynth, "generated").entry.rule,
+        opaqueValueRuleName("generated"),
+      );
+      assert.equal(
+        TT.registerMapKV(cell.synth, cell.registry, "String", "Int").domain !==
+          null,
+        true,
+      );
+      assert.equal(
+        TT.registerRecordShape(cell.recordSynth, cell.registry, recordFields)
+          .domain !== null,
+        true,
+      );
+      assert.equal(
+        TT.detectDiscriminatedUnion(
+          checker.getTypeAtLocation(
+            sourceFile.getInterfaces()[0]!.compilerNode,
+          ),
+          checker,
+        ),
+        null,
+      );
+      assert.equal(
+        TT.buildDiscriminatedUnionTotalityAssertion({
+          domain: "Generated",
+          binder: "g",
+          discriminant: "kind",
+          discriminantType: "String",
+          variants: [
+            { key: "string:A", literal: { kind: "string", value: "A" } },
+            { key: "string:B", literal: { kind: "string", value: "B" } },
+          ],
+          fields: [],
+        }).kind,
+        "assertion",
+      );
+      assert.equal(
+        TT.translateTypes(extracted, checker, IntStrategy, cell).length > 0,
+        true,
+      );
+    }),
+  );
+});
+
+it("generated names and type fragments remain Pant-safe", () => {
+  fc.assert(
+    fc.property(
+      fc.stringMatching(/^[A-Za-z_][A-Za-z0-9_]{0,16}$/),
+      fc.constantFrom("Int", "Real", "Bool", "[Int]", "String * Int"),
+      fc.constantFrom("foo.ts", "foo-bar.ts", "_private.ts", "123.ts"),
+      (name, pantType, fileName) => {
+        const term = TT.toPantTermName(name);
+        assert.match(term, /^[a-z][a-z0-9_?!-]*$/u);
+        assert.notEqual(TT.manglePantTypeToFragment(pantType), "");
+        assert.match(TT.depModuleNameForFile(fileName), /^[A-Z][A-Z0-9_]*$/u);
+        assert.equal(TT.fieldRuleName(name, "value"), `${term}--value`);
+        assert.equal(TT.isUnsupportedUnknown(TT.UNSUPPORTED_UNKNOWN), true);
+      },
+    ),
+  );
+});
 
 describe("numeric strategy", () => {
   it("IntStrategy maps number to Int", () => {

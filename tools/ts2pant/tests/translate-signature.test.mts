@@ -1,13 +1,31 @@
+// @archlint.module test
+// @archlint.domain ts2pant.translate-signature
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   classifyFunction,
+  containsUnsupportedOperator,
+  detectGuard,
+  extractAssertionGuard,
   findFunction,
+  isAssertionCall,
+  isFollowableGuardCall,
+  isTranslateExprUnsupported,
+  shortParamName,
+  translateExpr,
+  translateOperator,
   translateSignature,
 } from "../src/translate-signature.js";
-import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+import {
+  IntStrategy,
+  newSynthCell,
+  RealStrategy,
+} from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -25,6 +43,173 @@ function translate(
   const sourceFile = createSourceFileFromSource(source);
   return translateSignature(sourceFile, functionName, strategy);
 }
+
+function firstReturnExpression(source: string): {
+  sourceFile: ReturnType<typeof createSourceFileFromSource>;
+  expression: ts.Expression;
+} {
+  const sourceFile = createSourceFileFromSource(source);
+  let expression: ts.Expression | undefined;
+  function visit(node: ts.Node): void {
+    if (expression) {
+      return;
+    }
+    if (ts.isReturnStatement(node) && node.expression) {
+      expression = node.expression;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile.compilerNode, visit);
+  if (!expression) {
+    throw new Error("expected return expression");
+  }
+  return { sourceFile, expression };
+}
+
+function firstCallExpression(
+  sourceFile: ReturnType<typeof createSourceFileFromSource>,
+): ts.CallExpression {
+  let call: ts.CallExpression | undefined;
+  function visit(node: ts.Node): void {
+    if (call) {
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      call = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile.compilerNode, visit);
+  if (!call) {
+    throw new Error("expected call expression");
+  }
+  return call;
+}
+
+const generatedFollowableSourceFile = createSourceFileFromSource(`
+  function validate(amount: number): void {
+    if (amount >= 0) {
+    } else {
+      throw new Error("invalid");
+    }
+  }
+  function f(amount: number): void {
+    validate(amount);
+  }
+`);
+const generatedFollowableCall = firstCallExpression(
+  generatedFollowableSourceFile,
+);
+const generatedFollowableChecker = getChecker(generatedFollowableSourceFile);
+
+const generatedGuardCases = [">=", "<=", "=="].map((op) => {
+  const source = `
+    function assert(cond: boolean): asserts cond {}
+    function validate(amount: number): void {
+      if (amount ${op === "==" ? ">=" : op} 0) {
+      } else {
+        throw new Error("invalid");
+      }
+    }
+    function withdraw(amount: number): void {
+      assert(amount ${op === "==" ? ">=" : op} 0);
+      validate(amount);
+    }
+    function read(amount: number): boolean {
+      return amount ${op} 0;
+    }
+  `;
+  const sourceFile = createSourceFileFromSource(source);
+  const returned = firstReturnExpression(source);
+  return {
+    checker: getChecker(sourceFile),
+    op,
+    returned,
+    sourceFile,
+    withdraw: findFunction(sourceFile, "withdraw").node,
+  };
+});
+
+it("generated guard signatures preserve translation decisions", () => {
+  fc.assert(
+    fc.property(fc.constantFrom(...generatedGuardCases), (testCase) => {
+      const { checker, op, returned, sourceFile, withdraw } = testCase;
+      const paramNames = new Map([["amount", "amount"]]);
+      const guard = detectGuard(withdraw, checker, IntStrategy, paramNames);
+      assert.notEqual(guard, undefined);
+      assert.equal(classifyFunction(withdraw, checker), "mutating");
+
+      const call = firstCallExpression(sourceFile);
+      assert.equal(isAssertionCall(checker, call), 0);
+      assert.notEqual(
+        extractAssertionGuard(checker, call, IntStrategy, paramNames),
+        undefined,
+      );
+
+      assert.equal(
+        isFollowableGuardCall(
+          generatedFollowableCall,
+          generatedFollowableChecker,
+        ),
+        true,
+      );
+
+      const translated = translateExpr(
+        returned.expression,
+        getChecker(returned.sourceFile),
+        IntStrategy,
+        paramNames,
+      );
+      assert.equal(isTranslateExprUnsupported(translated), op === "==");
+      assert.equal(
+        containsUnsupportedOperator(returned.expression),
+        op === "==",
+      );
+      assert.equal(
+        translateOperator(
+          op === ">="
+            ? ts.SyntaxKind.GreaterThanEqualsToken
+            : op === "<="
+              ? ts.SyntaxKind.LessThanEqualsToken
+              : ts.SyntaxKind.EqualsEqualsToken,
+        ) === null,
+        op === "==",
+      );
+      assert.equal(shortParamName("Account", new Set(), newSynthCell()), "a");
+      assert.equal(
+        translateSignature(sourceFile, "withdraw", IntStrategy).declaration
+          .kind,
+        "action",
+      );
+    }),
+  );
+});
+
+it("generated expression operators classify unsupported forms", () => {
+  fc.assert(
+    fc.property(
+      fc.constantFrom(
+        ["a >= b", ts.SyntaxKind.GreaterThanEqualsToken, false] as const,
+        ["a <= b", ts.SyntaxKind.LessThanEqualsToken, false] as const,
+        ["a == b", ts.SyntaxKind.EqualsEqualsToken, true] as const,
+        ["a != b", ts.SyntaxKind.ExclamationEqualsToken, true] as const,
+        ["a === b", ts.SyntaxKind.EqualsEqualsEqualsToken, false] as const,
+        ["a !== b", ts.SyntaxKind.ExclamationEqualsEqualsToken, false] as const,
+      ),
+      ([exprText, operator, unsupported]) => {
+        const { expression } = firstReturnExpression(`
+          function f(a: number, b: number): boolean {
+            return ${exprText};
+          }
+        `);
+        assert.equal(containsUnsupportedOperator(expression), unsupported);
+        assert.equal(translateOperator(operator) === null, unsupported);
+      },
+    ),
+  );
+});
 
 describe("classifyFunction", () => {
   it("classifies pure function (returns value, no property assignments)", () => {

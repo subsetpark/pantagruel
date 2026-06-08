@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Literal values: numeric, boolean
 
 /** numeric literal */

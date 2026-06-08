@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function switchBlockClauseSingleBinding(x: number): number {
   switch (x) {
     case 0: {

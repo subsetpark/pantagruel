@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir-equivalence
+
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";

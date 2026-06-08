@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Guard detection: call-graph following for guard extraction
 
 interface Account {

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir
+
 /**
  * IRExpr → OpaqueExpr lowering.
  *

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 import type * as Brand from "effect/Brand";
 import * as Effect from "effect/Effect";
 

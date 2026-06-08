@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-cardinality
+
 /**
  * Unit tests for the M5 Patch 1 cardinality dispatch
  * (`tryBuildL1Cardinality` in `src/ir1-build.ts`).

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 declare function consumeAny(value: any): any;
 
 interface Box {

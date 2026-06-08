@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Template literal lowering. Pant's `+` overload (PR #170) gives us
 // `(String, String) -> String` lowering to `(str.++ a b)` in SMT.
 // ts2pant lowers TS template literals into a left-folded `+` chain.

@@ -1,5 +1,9 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-printer
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import * as fc from "fast-check";
 
 import {
   ir1App,
@@ -13,10 +17,16 @@ import {
   ir1MapRead,
   ir1Member,
   ir1SetRead,
+  ir1SsaInitialVersion,
+  ir1SsaPropertyLocation,
   ir1Unop,
   ir1Var,
 } from "../src/ir1.js";
-import { formatIR1Expr } from "../src/ir1-printer.js";
+import {
+  formatIR1Expr,
+  formatIR1SsaLocation,
+  formatIR1SsaProgram,
+} from "../src/ir1-printer.js";
 
 describe("formatIR1Expr", () => {
   it("formats var expressions", () => {
@@ -168,6 +178,32 @@ describe("formatIR1Expr", () => {
         ),
       ),
       "user in group",
+    );
+  });
+
+  it("generated vars format consistently across expression, location, and program", () => {
+    fc.assert(
+      fc.property(fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/), (name) => {
+        const expr = ir1Var(name);
+        const location = ir1SsaPropertyLocation("value", expr, "value");
+        const version = ir1SsaInitialVersion(location);
+
+        assert.equal(formatIR1Expr(expr), name);
+        assert.equal(formatIR1SsaLocation(location), `value ${name}`);
+        assert.match(
+          formatIR1SsaProgram({
+            declaredRules: ["value"],
+            modifiedRules: [],
+            framedRules: [],
+            reads: [{ kind: "ssa-read", location, version, dominated: true }],
+            writes: [],
+            joins: [],
+            loopHeaderJoins: [],
+            loopBodies: [],
+          }),
+          new RegExp(`value ${name}`, "u"),
+        );
+      }),
     );
   });
 });

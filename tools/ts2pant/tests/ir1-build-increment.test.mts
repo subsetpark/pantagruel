@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-increment
+
 /**
  * Unit tests for `buildL1IncrementStep` (workstream M2).
  *

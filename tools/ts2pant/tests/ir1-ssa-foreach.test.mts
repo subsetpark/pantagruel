@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-foreach
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 
 import {
@@ -12,8 +16,15 @@ import {
   ir1Var,
 } from "../src/ir1.js";
 import {
+  foreachShapeBAccumulatorKey,
   lowerForeachShapeAAsGeneralLoop,
   lowerForeachShapeBAsGeneralLoop,
+  lowerShapeAExpr,
+  shapeAKey,
+  type ShapeASummaryState,
+  summarizeForeachShapeABody,
+  summarizeShapeAAssign,
+  summarizeShapeACond,
 } from "../src/ir1-ssa-foreach.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -66,6 +77,51 @@ function lowerShapeB() {
 }
 
 describe("ir1-ssa-foreach", () => {
+  it("generated Shape A summaries preserve property keys", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("Item_seen", "Item_score"), (prop) => {
+        const state: ShapeASummaryState = {
+          current: new Map(),
+          lowerOpaque: (e) => e,
+          initialPropertyValues: new Map(),
+        };
+        const diagnostics = [];
+        const assign = ir1Assign(ir1Member(item, prop), ir1LitNat(1));
+        assert.equal(summarizeShapeAAssign(assign, state, diagnostics), true);
+        assert.equal(summarizeForeachShapeABody(assign, state, diagnostics), true);
+        assert.equal(
+          summarizeShapeACond(
+            {
+              kind: "cond-stmt",
+              arms: [[ir1LitBool(true), assign]],
+              otherwise: null,
+            },
+            state,
+            diagnostics,
+          ),
+          true,
+        );
+        const lowered = lowerShapeAExpr(ir1Member(item, prop), state);
+        assert.deepEqual(lowerForeachShapeAAsGeneralLoop({
+          binder: "item",
+          source,
+          body: assign,
+        }).diagnostics, []);
+        assert.deepEqual(lowerForeachShapeBAsGeneralLoop({
+          binder: "item",
+          source,
+          foldLeaves: shapeBFoldLeaves(),
+        }).diagnostics, []);
+        assert.equal(shapeAKey(prop, getAst().var("item")).startsWith(prop), true);
+        assert.equal(
+          foreachShapeBAccumulatorKey(prop, getAst().var("account")).startsWith(prop),
+          true,
+        );
+        assert.equal(getAst().strExpr(lowered).length > 0, true);
+      }),
+    );
+  });
+
   it("Shape A: emits one header join per mutated location", () => {
     const result = lowerShapeA();
 

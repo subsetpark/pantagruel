@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-ssa-fixed-point
+
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,

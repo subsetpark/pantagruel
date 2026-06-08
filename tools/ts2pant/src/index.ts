@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// @archlint.module exempt
+// @archlint.exempt-reason effect-boundary
 
 import process from "node:process";
 import { Command } from "commander";

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.pipeline
+
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";

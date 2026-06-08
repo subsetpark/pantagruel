@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-property
+
 /**
  * Unit tests for the M5 Patch 1 property-access L1 builder
  * (`buildL1MemberAccess` in `src/ir1-build.ts`).

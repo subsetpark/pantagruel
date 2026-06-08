@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // State-aware Map/Set reads inside *branched* mutating bodies.
 //
 // These shapes flow through the L1 build pass (`buildL1IfMutation` →

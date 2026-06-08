@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ast-equal
+
 /**
  * Structural equality for TypeScript expression nodes.
  *

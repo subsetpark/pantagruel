@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Conditional mutations: path merging into cond expressions
 // (Dijkstra's guarded commands, 1975). See AGENTS.md § Guarded Commands.
 

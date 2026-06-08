@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-counter-loop
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 
 import {
@@ -12,7 +16,10 @@ import {
   ir1Member,
   ir1Var,
 } from "../src/ir1.js";
-import { lowerCounterLoopL1Body } from "../src/ir1-ssa-counter-loop.js";
+import {
+  lowerCounterLoopL1Body,
+  recognizeCounterLoopShape,
+} from "../src/ir1-ssa-counter-loop.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
 const account = ir1Var("account");
@@ -56,6 +63,22 @@ function diagnosticReasons(stmt: IR1Stmt): string[] {
 }
 
 describe("ir1-ssa-counter-loop", () => {
+  it("generated counter bounds preserve recognizer and lowerer shape", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 5 }), (init) => {
+        const stmt = counterFor(
+          ir1Assign(total, ir1Binop("add", total, ir1Var("i"))),
+          ir1LitNat(init),
+        );
+        const shape = recognizeCounterLoopShape(stmt);
+        assert.ok(!("unsupported" in shape));
+        const result = lowerCounterLoopL1Body(stmt);
+        assert.deepEqual(result.diagnostics, []);
+        assert.equal(result.programs.length, 1);
+      }),
+    );
+  });
+
   it("builds a loop-header join per mutated location", () => {
     const result = lower(
       counterFor(ir1Assign(total, ir1Binop("add", total, ir1Var("i")))),

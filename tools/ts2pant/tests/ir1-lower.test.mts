@@ -1,5 +1,9 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-lower
+
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import {
   irAppName,
   irBinop,
@@ -75,6 +79,19 @@ describe("lowerL1Expr — atoms", () => {
       kind: "lit",
       value: { kind: "string", value: "hi" },
     });
+  });
+
+  it("generated variables and literals lower structurally", () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.integer({ min: 0, max: 1000 }),
+        (name, value) => {
+          assert.deepEqual(lowerL1Expr(ir1Var(name)), irVar(name, false));
+          assert.deepEqual(lowerL1Expr(ir1LitNat(value)), irLitNat(value));
+        },
+      ),
+    );
   });
 });
 

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 function assert(condition: unknown, msg?: string): asserts condition {
   if (!condition) throw new Error(msg ?? "Assertion failed");
 }

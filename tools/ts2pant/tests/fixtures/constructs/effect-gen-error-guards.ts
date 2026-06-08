@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 import { Data, Effect } from "effect";
 
 class NegError extends Data.TaggedError("NegError")<{}> {}

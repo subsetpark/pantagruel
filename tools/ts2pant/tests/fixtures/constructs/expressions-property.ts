@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Property access patterns: simple, nested, in conditions
 
 interface User {

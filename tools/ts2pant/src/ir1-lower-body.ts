@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-lower-body
+
 /**
  * L1 statement -> mutating-body Pantagruel propositions.
  *

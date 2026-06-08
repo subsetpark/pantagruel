@@ -15,7 +15,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
       # Override the image's default `opam` (uid 1000) user — GHA mounts the
       # workspace with ownership the in-image opam user can't write to, so
       # `actions/checkout@v6` fails before any of our steps run.
@@ -28,7 +28,9 @@ jobs:
       OPAMROOTISOK: "1"
       OPAMYES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Trust workspace
         # Without this, `git` invocations inside dune/opam subprocesses fail
@@ -67,17 +69,19 @@ jobs:
             opam exec -- dune exec pant -- "$f"
           done
 
-  ts2pant:
+  ts2pant-build:
     runs-on: ubuntu-latest
     container:
-      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
       options: --user root
     env:
       OPAMROOT: /home/opam/.opam
       OPAMROOTISOK: "1"
       OPAMYES: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
@@ -87,11 +91,13 @@ jobs:
         # on `extractions/setup-just`'s release-lookup logic. Pinned for
         # reproducibility; bump as needed.
         run: |
-          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
-            | tar -xz -C /usr/local/bin just
+          just_archive=just-1.50.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSLo "/tmp/${just_archive}" "https://github.com/casey/just/releases/download/1.50.0/${just_archive}"
+          printf '%s  %s\n' '27e011cd6328fadd632e59233d2cf5f18460b8a8c4269acd324c1a8669f34db0' "/tmp/${just_archive}" | sha256sum -c -
+          tar -xzf "/tmp/${just_archive}" -C /usr/local/bin just
           just --version
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: "22"
           cache: npm
@@ -115,7 +121,7 @@ jobs:
         run: opam exec -- just ts2pant-build-wasm
 
       - name: Install ts2pant dependencies
-        run: just ts2pant-install
+        run: cd tools/ts2pant && npm ci
 
       - name: Typecheck
         run: just ts2pant-typecheck
@@ -123,5 +129,70 @@ jobs:
       - name: Lint
         run: just ts2pant-lint-ci
 
-      - name: Test
-        run: opam exec -- just ts2pant-test
+      - name: Upload ts2pant build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ts2pant-build-artifacts
+          if-no-files-found: error
+          path: |
+            _build/default/bin/main.exe
+            tools/ts2pant/src/wasm/**
+
+  ts2pant:
+    runs-on: ubuntu-latest
+    needs: ts2pant-build
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [unit-constructs, unit-rest, integration]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Trust workspace
+        run: git config --global --add safe.directory '*'
+
+      - name: Install just
+        run: |
+          just_archive=just-1.50.0-x86_64-unknown-linux-musl.tar.gz
+          curl -fsSLo "/tmp/${just_archive}" "https://github.com/casey/just/releases/download/1.50.0/${just_archive}"
+          printf '%s  %s\n' '27e011cd6328fadd632e59233d2cf5f18460b8a8c4269acd324c1a8669f34db0' "/tmp/${just_archive}" | sha256sum -c -
+          tar -xzf "/tmp/${just_archive}" -C /usr/local/bin just
+          just --version
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/ts2pant/package-lock.json
+
+      - name: Download ts2pant build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ts2pant-build-artifacts
+          path: .
+
+      - name: Restore artifact permissions
+        run: chmod +x _build/default/bin/main.exe
+
+      - name: Install ts2pant dependencies
+        run: cd tools/ts2pant && npm ci
+
+      - name: Test (${{ matrix.test-group }})
+        run: |
+          case "${{ matrix.test-group }}" in
+            unit-constructs)
+              just ts2pant-test-unit-constructs-from-artifacts
+              ;;
+            unit-rest)
+              just ts2pant-test-unit-rest-from-artifacts
+              ;;
+            integration)
+              just ts2pant-test-integration-from-artifacts
+              ;;
+            *)
+              echo "unknown ts2pant test group: ${{ matrix.test-group }}" >&2
+              exit 1
+              ;;
+          esac

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 type Lit =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }

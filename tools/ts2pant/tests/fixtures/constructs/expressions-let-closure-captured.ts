@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function letForEachCapturedTotal(xs: number[]): number {
   let total = 0;
   xs.forEach((v) => {

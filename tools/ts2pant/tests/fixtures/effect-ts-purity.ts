@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Fixture: Effect-TS purity detection via callee symbol resolution.
 // These functions import from the real `effect` package so the TypeChecker
 // can trace callee symbols back to their declaration files.

@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-scalars
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
@@ -18,9 +22,11 @@ import {
 import {
   buildScalarSsaProgram,
   isScalarSsaL1Body,
+  lowerScalarSsaEarlyExitMerge,
   lowerScalarSsaL1Body,
   lowerScalarSsaToProps,
   makeScalarSsaState,
+  scalarSsaReadExpr,
 } from "../src/ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -68,6 +74,33 @@ before(async () => {
 });
 
 describe("ir1-ssa-scalars", () => {
+  it("generated scalar reads and early exits preserve final properties", () => {
+    for (const prop of ["Account_balance", "Account_limit"]) {
+      const state = makeScalarSsaState();
+      const member = ir1Member(ir1Var("a"), prop);
+      const stmt = ir1Assign(member, ir1LitNat(1));
+      assert.equal(isScalarSsaL1Body(stmt), true);
+      assert.equal(buildScalarSsaProgram(stmt).writes.length, 1);
+      assert.equal(lowerScalarSsaToProps(stmt).diagnostics.length, 0);
+      scalarSsaReadExpr(member, state);
+      lowerScalarSsaL1Body(stmt, state);
+      const result = lowerScalarSsaEarlyExitMerge(
+        [
+          {
+            key: `${prop}::a`,
+            prop,
+            objExpr: getAst().var("a"),
+            priorValue: undefined,
+            continuationValue: getAst().litNat(1),
+          },
+        ],
+        { guardExpr: getAst().litBool(true), earlyExitWhenTrue: true },
+      );
+      assert.equal(result.finalProperties.length, 1);
+      assert.equal(result.modifiedRules.includes(prop), true);
+    }
+  });
+
   // PENDING Patch 2: add the scalar SSA builder state and write/version recording.
   // PENDING Patch 3: lower final scalar versions back into the current Pant equations.
   // PENDING Patch 4: route scalar assignments and scalar if-mutation through SSA.

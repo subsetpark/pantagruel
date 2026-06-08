@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // @pant annotation extraction: single-line, multi-line, type overrides
 
 /**

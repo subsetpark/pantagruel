@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-build
+
 /**
  * TS AST → Layer 1 builder.
  *

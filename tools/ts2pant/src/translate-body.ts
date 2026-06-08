@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.translate-body
+
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import {

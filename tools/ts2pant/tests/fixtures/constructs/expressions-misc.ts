@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Miscellaneous expressions: parenthesized, type assertions, non-null, unary minus
 
 /** parenthesized expression */

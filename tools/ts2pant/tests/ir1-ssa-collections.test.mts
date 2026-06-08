@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-collections
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 import {
   type IR1SsaProgram,
@@ -21,9 +25,16 @@ import {
 } from "../src/ir1.js";
 import {
   buildCollectionSsaProgram,
+  collectionSsaFinalEntries,
+  collectionSsaReadExpr,
   isCollectionSsaL1Body,
+  lowerCollectionSsaL1Body,
   lowerCollectionSsaToProps,
   lowerCollectionSsaToResult,
+  makeCollectionSsaState,
+  mapMembershipLocationForReadOrWrite,
+  mapValueLocationForReadOrWrite,
+  setMembershipLocationForReadOrWrite,
 } from "../src/ir1-ssa-collections.js";
 import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -43,6 +54,50 @@ function mustBuildCollectionSsaProgram(
 }
 
 describe("ir1-ssa-collections", () => {
+  it("generated collection locations and reads are stable", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("Cache_value", "Cache_alt"), (ruleName) => {
+        const state = makeCollectionSsaState();
+        const input = {
+          ruleName,
+          keyPredName: "Cache_hasKey",
+          ownerType: "Owner",
+          keyType: "Key",
+          receiver: ir1Var("cache"),
+          key: ir1Var("key"),
+        };
+        const stmt = ir1MapSet(ruleName, "Cache_hasKey", "Owner", "Key", ir1Var("cache"), ir1Var("key"), ir1LitNat(1));
+        assert.equal(isCollectionSsaL1Body(stmt), true);
+        assert.ok(!("unsupported" in buildCollectionSsaProgram(stmt)));
+        assert.equal(lowerCollectionSsaToProps(stmt).diagnostics.length, 0);
+        assert.equal(lowerCollectionSsaToResult(stmt).diagnostics.length, 0);
+        assert.equal(
+          mapValueLocationForReadOrWrite(input, state).location.kind,
+          "map-value",
+        );
+        assert.equal(
+          mapMembershipLocationForReadOrWrite(input, state).location.kind,
+          "map-membership",
+        );
+        assert.equal(
+          setMembershipLocationForReadOrWrite(
+            {
+              ruleName: "Cache_member",
+              ownerType: "Owner",
+              elemType: "Key",
+              receiver: ir1Var("cache"),
+            },
+            state,
+          ).location.kind,
+          "set-membership",
+        );
+        collectionSsaReadExpr(ir1MapRead("has", ruleName, "Cache_hasKey", "Owner", "Key", ir1Var("cache"), ir1Var("key")), state);
+        lowerCollectionSsaL1Body(stmt, state);
+        assert.equal(collectionSsaFinalEntries(state).length > 0, true);
+      }),
+    );
+  });
+
   // PENDING Patch 2: introduce shared collection SSA state for coordinated
   // Map value/membership and Set membership versions.
   // PENDING Patch 3: implement Map SSA writes, staged reads, and lowering.

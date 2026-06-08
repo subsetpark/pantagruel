@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // IR anchor fixture. Exercises the *minimum interesting body* — const
 // binding, `??`, property read, conditional — that the IR pipeline
 // must handle via native IR construction. See AGENTS.md §"Intermediate

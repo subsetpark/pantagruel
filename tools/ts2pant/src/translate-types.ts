@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.translate-types
+
 import ts from "typescript";
 import { effectBrandTypeArgument } from "./brand-precondition.js";
 import type { DepModuleName } from "./builtins.js";
@@ -371,11 +374,11 @@ function capitalize(s: string): string {
  *      relies on step 3's collapse to ensure single-hyphen runs inside
  *      each half.)
  *
- *  Inputs that normalize to the empty string (e.g., `"_"`, `"$"`,
- *  all-punctuation identifiers) would otherwise leak through as `""`
- *  and produce unparseable downstream names like `fieldRuleName("_",
- *  "id")` → `"-id"`. Fall back to a deterministic non-empty token so
- *  every output is a valid Pantagruel identifier. */
+ *  Inputs that normalize to a digit-leading or empty string (e.g.,
+ *  `"_0"`, `"_"`, `"$"`) would otherwise produce unparseable downstream
+ *  names like `fieldRuleName("_", "id")` → `"-id"`. Fall back to a
+ *  deterministic lowercase-prefixed token so every output is a valid
+ *  Pantagruel identifier. */
 export function toPantTermName(name: string): string {
   const kebab = name
     .replace(/[^A-Za-z0-9?!_-]+/gu, "-")
@@ -385,8 +388,11 @@ export function toPantTermName(name: string): string {
     .replace(/-+/gu, "-")
     .replace(/^-|-$/gu, "")
     .toLowerCase();
-  if (kebab.length > 0) {
+  if (/^[a-z]/u.test(kebab)) {
     return kebab;
+  }
+  if (kebab.length > 0) {
+    return `t-${kebab}`;
   }
   // All-punctuation / all-underscore input. Emit a stable fallback:
   // `t_` + hex of each codepoint, joined by `_`. Underscores cannot

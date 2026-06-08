@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Control flow: ternary, if/else with returns
 
 interface Account {

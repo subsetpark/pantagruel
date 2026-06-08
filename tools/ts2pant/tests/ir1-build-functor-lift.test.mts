@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-functor-lift
+
 /**
  * Unit tests for the M4 Patch 5 functor-lift recognizer
  * (`tryRecognizeFunctorLift` in `src/ir1-build.ts`).

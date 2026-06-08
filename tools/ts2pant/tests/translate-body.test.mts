@@ -1,7 +1,13 @@
+// @archlint.module test
+// @archlint.domain ts2pant.translate-body
+
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
+import ts from "typescript";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import * as TB from "../src/translate-body.js";
 import { translateBody } from "../src/translate-body.js";
 import { translateSignature } from "../src/translate-signature.js";
 import {
@@ -80,6 +86,126 @@ function equationRhsText(props: readonly PropResult[]): string {
     .map((p) => getAst().strExpr(p.rhs))
     .join(" ; ");
 }
+
+function firstReturnExpression(
+  sourceFile: ReturnType<typeof createSourceFileFromSource>,
+  functionName = "f",
+): ts.Expression {
+  const fn = sourceFile.getFunctionOrThrow(functionName).compilerNode;
+  let expression: ts.Expression | undefined;
+  function visit(node: ts.Node): void {
+    if (expression) {
+      return;
+    }
+    if (ts.isReturnStatement(node) && node.expression) {
+      expression = node.expression;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  if (fn.body) {
+    ts.forEachChild(fn.body, visit);
+  }
+  if (!expression) {
+    throw new Error("expected return expression");
+  }
+  return expression;
+}
+
+function firstStatement(
+  sourceFile: ReturnType<typeof createSourceFileFromSource>,
+  functionName = "f",
+): ts.Statement {
+  const fn = sourceFile.getFunctionOrThrow(functionName).compilerNode;
+  const stmt = fn?.body?.statements[0];
+  if (!stmt) {
+    throw new Error("expected statement");
+  }
+  return stmt;
+}
+
+function firstCallExpression(sourceFile: ReturnType<typeof createSourceFileFromSource>): ts.CallExpression {
+  let call: ts.CallExpression | undefined;
+  function visit(node: ts.Node): void {
+    if (call) {
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      call = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile.compilerNode, visit);
+  if (!call) {
+    throw new Error("expected call expression");
+  }
+  return call;
+}
+
+it("generated body helpers preserve structural translations", () => {
+  fc.assert(
+    fc.property(fc.constantFrom("balance", "limit"), (fieldName) => {
+      const sourceFile = createSourceFileFromSource(`
+        interface Account { ${fieldName}: number | null; }
+        function helper(x: number): number { return x + 1; }
+        function f(a: Account): number {
+          if (a.${fieldName} === null) { throw new Error("missing"); }
+          return helper(a.${fieldName});
+        }
+      `);
+      const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+      const ast = getAst();
+      const synthCell = newSynthCell();
+      const supply = { n: 0, synthCell };
+      const expr = firstReturnExpression(sourceFile);
+      const call = firstCallExpression(sourceFile);
+      const stmt = firstStatement(sourceFile);
+      const paramNames = new Map([["a", "a"]]);
+
+      TB.registerOpaqueAlias(supply, "alias", ast.litNat(1));
+      assert.equal(ast.strExpr(TB.applyOpaqueAliases(ast.var("alias"), supply)), "1");
+      assert.equal(TB.freshHygienicBinder(supply).startsWith("$"), true);
+      assert.equal(TB.allocComprehensionBinder(supply, "item").length > 0, true);
+      assert.equal(TB.isBodyUnsupported({ unsupported: "x" }), true);
+      assert.equal(TB.isBodyEffect({ effect: {} } as never), true);
+      assert.equal(ast.strExpr(TB.bodyExpr({ expr: ast.litNat(1) } as never)), "1");
+      assert.equal("expr" in TB.rejectEffect({ expr: ast.litNat(1) } as never), true);
+      assert.equal(TB.symbolicKey(fieldName, ast.var("a")).startsWith(fieldName), true);
+      assert.equal(ast.strExpr(TB.clearedFallback(ast.litBool(false), ast.var("pre"))), "pre");
+      assert.equal(TB.ambiguousFieldMsg(fieldName).includes(fieldName), true);
+      assert.equal(TB.expressionReferencesNames(expr, new Set(["a"])), true);
+      assert.equal(TB.unwrapExpression(expr).kind, expr.kind);
+      assert.equal(TB.getRootIdentifier(expr), null);
+      assert.equal(TB.extractReturnFromBranch(stmt, checker), null);
+      assert.equal(TB.isGuardStatement(stmt, checker), true);
+      const memberArg = call.arguments[0];
+      if (!memberArg || !ts.isPropertyAccessExpression(memberArg)) {
+        throw new Error("expected helper field access argument");
+      }
+      assert.equal(
+        TB.qualifyFieldAccess(
+          checker.getTypeAtLocation(memberArg.expression),
+          fieldName,
+          checker,
+          IntStrategy,
+          synthCell,
+        ) !== null,
+        true,
+      );
+      assert.equal(TB.isNullableTsType(checker.getTypeAtLocation(expr)), false);
+      assert.equal(
+        TB.translateBodyExpr(expr, checker, IntStrategy, paramNames, undefined, supply).unsupported,
+        undefined,
+      );
+      assert.equal(
+        TB.translateCallExpr(call, checker, IntStrategy, paramNames, undefined, supply).unsupported,
+        undefined,
+      );
+      assert.equal(translateBody({ sourceFile, functionName: "f", strategy: IntStrategy }).length > 0, true);
+    }),
+  );
+});
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for

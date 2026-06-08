@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // M4 — equality and nullish normalization. Every TS expression in the
 // equality/nullish equivalence class flows through one of three
 // canonical Layer 1 forms:

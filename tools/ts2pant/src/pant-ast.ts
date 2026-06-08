@@ -1,3 +1,6 @@
+// @archlint.module interface
+// @archlint.domain ts2pant.vocabulary
+
 /**
  * Opaque branded types for Pantagruel AST values constructed via the
  * wasm-embedded OCaml parser. These are handles to OCaml heap values —

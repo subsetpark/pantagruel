@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ts-ast-block-return
+
 import ts from "typescript";
 
 export interface ExtractedBlockConstBinding {

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-ssa-collections
+
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,

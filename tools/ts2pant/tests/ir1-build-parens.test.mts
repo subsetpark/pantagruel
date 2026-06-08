@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-parens
+
 /**
  * Unit tests for the M5 Patch 1 universal L1-layering paren-stripping
  * invariant. The principle: `(e)` and `e` build to identical L1 trees

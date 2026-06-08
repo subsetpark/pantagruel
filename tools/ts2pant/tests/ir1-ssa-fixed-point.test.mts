@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-ssa-fixed-point
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
 
 import { emitDocument } from "../src/emit.js";
@@ -37,6 +41,27 @@ function fixedPointWhile(): Extract<IR1Stmt, { kind: "while" }> {
 }
 
 describe("ir1-ssa-fixed-point", () => {
+  it("generated fixed-point variants are recognized and lowered", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("target", "limit"), (rhsName) => {
+        const stmt = {
+          ...fixedPointWhile(),
+          cond: {
+            kind: "binop",
+            op: "lt",
+            lhs: balanceMember,
+            rhs: { kind: "var", name: rhsName },
+          } satisfies IR1Expr,
+        };
+        const shape = recognizeFixedPointLoopShape(stmt);
+        assert.ok(!("unsupported" in shape));
+        const result = lowerFixedPointLoopL1Body(stmt);
+        assert.deepEqual(result.diagnostics, []);
+        assert.equal(result.programs.length, 1);
+      }),
+    );
+  });
+
   it("recognizes a single-location while-loop fixed-point shape", () => {
     const result = recognizeFixedPointLoopShape(fixedPointWhile());
 

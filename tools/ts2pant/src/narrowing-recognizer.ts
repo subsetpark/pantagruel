@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.narrowing-recognizer
+
 import ts from "typescript";
 import type { Fact } from "./assumption-env.js";
 import { type IR1Expr, ir1Var } from "./ir1.js";

@@ -1,3 +1,6 @@
+// @archlint.module interface
+// @archlint.domain ts2pant.vocabulary
+
 import type {
   OpaqueExpr,
   OpaqueGuard,

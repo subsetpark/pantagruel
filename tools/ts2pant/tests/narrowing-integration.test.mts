@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.narrowing-integration
+
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";

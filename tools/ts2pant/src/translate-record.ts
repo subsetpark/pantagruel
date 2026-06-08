@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.translate-record
+
 import ts from "typescript";
 import { type NameRegistry, registerName } from "./name-registry.js";
 import type { OpaqueExpr } from "./pant-ast.js";

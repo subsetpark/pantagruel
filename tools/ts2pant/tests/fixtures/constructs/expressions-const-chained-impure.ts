@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 export function chainedReplaceTrim(s: string): string {
   const a = s.replace(/\s+/gu, "");
   const b = a.trim();

@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.nullish-recognizer
+
 /**
  * M4 nullish recognizer (workstream M4: equality and nullish).
  *

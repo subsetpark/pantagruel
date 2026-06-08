@@ -1,4 +1,8 @@
+// @archlint.module test
+// @archlint.domain ts2pant.nullish-recognizer
+
 import assert from "node:assert/strict";
+import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
@@ -89,6 +93,31 @@ describe("nullish narrowing helpers", () => {
         negated: true,
       });
     }
+  });
+
+  it("generated nullish guards map to expected non-null polarity", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(
+          ["x != null", false],
+          ["x !== null", false],
+          ["x !== undefined", false],
+          ["typeof x !== 'undefined'", false],
+          ["x == null", true],
+          ["x === null", true],
+          ["x === undefined", true],
+          ["typeof x === 'undefined'", true],
+        ),
+        ([source, negated]) => {
+          assert.deepEqual(recognize(source), {
+            kind: "non-null",
+            receiver: "x",
+            negated,
+          });
+        },
+      ),
+      { numRuns: 16 },
+    );
   });
 
   it("negateFact flips non-null and is-null", () => {

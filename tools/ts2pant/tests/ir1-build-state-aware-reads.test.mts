@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-build-state-aware-reads
+
 /**
  * Unit tests for the state-aware Map/Set read forms (`map-read`,
  * `set-read`) that the L1 build pass emits inside mutating bodies

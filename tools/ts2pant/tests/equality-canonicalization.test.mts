@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.equality-canonicalization
+
 /**
  * M4 P3 — strict equality canonicalizes through L1; loose equality rejects.
  *

@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Structured loop translation (Meijer et al., FPCA 1991). `for-of` and
 // `.forEach` over an array become catamorphisms:
 //   - Iterator-writes (Shape A): `all x in arr | p' x = v`

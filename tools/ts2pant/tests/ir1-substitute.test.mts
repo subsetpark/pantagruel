@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ir1-substitute
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -425,6 +428,45 @@ describe("ir1-substitute", () => {
               ),
             CaptureRiskError,
           );
+        }),
+      );
+    });
+
+    it("freeVarsIR1Stmt is invariant under block wrapping", () => {
+      fc.assert(
+        fc.property(arbIR1Stmt(), (stmt) => {
+          assertSetEqual(freeVarsIR1Stmt(ir1Block([stmt])), [
+            ...freeVarsIR1Stmt(stmt),
+          ]);
+        }),
+      );
+    });
+
+    it("freeVarsIR1SsaLocation follows property receivers", () => {
+      fc.assert(
+        fc.property(nameArb, arbIR1Expr(), nameArb, (rule, receiver, prop) => {
+          assertSetEqual(
+            freeVarsIR1SsaLocation(ir1SsaPropertyLocation(rule, receiver, prop)),
+            [...freeVarsIR1Expr(receiver)],
+          );
+        }),
+      );
+    });
+
+    it("freeVarsIR1SsaLoopBody includes throw-handle guards", () => {
+      fc.assert(
+        fc.property(arbIR1Expr(), arbIR1Expr(), (receiver, guard) => {
+          const location = ir1SsaPropertyLocation("value", receiver, "value");
+          const version = ir1SsaInitialVersion(location);
+          const body = ir1SsaLoopBody({
+            throwHandles: [ir1SsaThrowHandle(location, version, guard)],
+          });
+          const expected = new Set([
+            ...freeVarsIR1SsaLocation(location),
+            ...freeVarsIR1Expr(guard),
+          ]);
+
+          assertSetEqual(freeVarsIR1SsaLoopBody(body), [...expected]);
         }),
       );
     });

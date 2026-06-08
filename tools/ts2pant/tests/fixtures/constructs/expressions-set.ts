@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Set<T> operations: .has, .size
 // Pantagruel models Set<T> as [T] (the list type already encodes membership
 // via `x in xs` in the SMT backend). Uniqueness is not a tracked invariant.

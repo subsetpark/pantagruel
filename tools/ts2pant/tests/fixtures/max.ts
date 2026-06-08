@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 /**
  * Return the larger of two numbers.
  * @pant all a: Int, b: Int | larger a b >= a and larger a b >= b

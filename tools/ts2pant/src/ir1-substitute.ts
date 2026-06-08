@@ -1,3 +1,6 @@
+// @archlint.module core
+// @archlint.domain ts2pant.ir1-substitute
+
 import {
   type IR1Expr,
   type IR1FoldLeaf,

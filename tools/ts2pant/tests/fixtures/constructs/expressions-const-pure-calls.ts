@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Fixture: const bindings initialized with pure function calls.
 // These patterns exercise the purity oracle — pure calls should eventually
 // be inlineable (wired in Patch 4), impure calls should remain rejected.

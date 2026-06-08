@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Map<K, V> on an interface field expands into two Pantagruel rules:
 //   entriesKey c: Cache, k: String => Bool.
 //   entries c: Cache, k: String, entriesKey c k => Int.

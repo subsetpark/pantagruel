@@ -1,3 +1,6 @@
+// @archlint.module exempt
+// @archlint.exempt-reason test-support
+
 // Map<K, V> in non-field type positions synthesizes a domain handle per
 // (K, V) pair per module. McCarthy's theory of arrays (Kroening & Strichman
 // Ch. 7): synthesized sort is the handle domain; distinct parameter values

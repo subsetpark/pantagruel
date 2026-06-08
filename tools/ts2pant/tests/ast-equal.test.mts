@@ -1,3 +1,6 @@
+// @archlint.module test
+// @archlint.domain ts2pant.ast-equal
+
 /**
  * Unit tests for `structurallyEqualExpression` (M4 helper).
  *
@@ -10,9 +13,58 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
 import { structurallyEqualExpression } from "../src/ast-equal.js";
 import { createSourceFileFromSource } from "../src/extract.js";
+
+const TS_KEYWORDS = new Set([
+  "as",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "undefined",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
+
+const identifierArb = fc
+  .stringMatching(/^[a-z][a-z0-9]{0,6}$/)
+  .filter((s) => !TS_KEYWORDS.has(s));
 
 /**
  * Parse a TS expression. Wraps the source in `const _ = (<expr>);`
@@ -39,7 +91,10 @@ function parseExpr(source: string): ts.Expression {
 
 describe("ast-equal", () => {
   it("identifiers compare structurally", () => {
-    assert.equal(structurallyEqualExpression(parseExpr("a"), parseExpr("a")), true);
+    assert.equal(
+      structurallyEqualExpression(parseExpr("a"), parseExpr("a")),
+      true,
+    );
     assert.equal(
       structurallyEqualExpression(parseExpr("a"), parseExpr("b")),
       false,
@@ -160,17 +215,11 @@ describe("ast-equal", () => {
       true,
     );
     assert.equal(
-      structurallyEqualExpression(
-        parseExpr("((a.b))"),
-        parseExpr("a.b"),
-      ),
+      structurallyEqualExpression(parseExpr("((a.b))"), parseExpr("a.b")),
       true,
     );
     assert.equal(
-      structurallyEqualExpression(
-        parseExpr("(f(x))"),
-        parseExpr("f((x))"),
-      ),
+      structurallyEqualExpression(parseExpr("(f(x))"), parseExpr("f((x))")),
       true,
     );
   });
@@ -265,6 +314,31 @@ describe("ast-equal", () => {
     assert.equal(
       structurallyEqualExpression(parseExpr("a + b"), parseExpr("a + b")),
       false,
+    );
+  });
+
+  it("generated dotted paths compare by structure", () => {
+    fc.assert(
+      fc.property(
+        fc.array(identifierArb, {
+          minLength: 1,
+          maxLength: 6,
+        }),
+        identifierArb,
+        (segments, replacement) => {
+          const source = segments.join(".");
+          const changed = [...segments.slice(0, -1), replacement].join(".");
+
+          assert.equal(
+            structurallyEqualExpression(parseExpr(source), parseExpr(source)),
+            true,
+          );
+          assert.equal(
+            structurallyEqualExpression(parseExpr(source), parseExpr(changed)),
+            source === changed,
+          );
+        },
+      ),
     );
   });
 });
