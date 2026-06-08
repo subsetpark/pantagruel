@@ -145,13 +145,6 @@ jobs:
       fail-fast: false
       matrix:
         test-group: [unit-constructs, unit-rest, integration]
-    container:
-      image: ocaml/opam@sha256:e0d737b2097c164673462f5756fb849306467f1ea4e617c5a69d8e95fa6de236
-      options: --user root
-    env:
-      OPAMROOT: /home/opam/.opam
-      OPAMROOTISOK: "1"
-      OPAMYES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
