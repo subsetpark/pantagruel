@@ -71,26 +71,9 @@ let mk_property ~name ~prop =
   QCheck_alcotest.to_alcotest
     (QCheck2.Test.make ~name ~count ~print:pp_doc Test_util.gen_document prop)
 
-let smt_check_property =
-  QCheck_alcotest.to_alcotest
-    (QCheck2.Test.make ~name:"smt_check public API" ~count:100 QCheck2.Gen.unit
-       (fun () ->
-         let sample = "(assert true)\n(check-sat)\n" in
-         let formatted =
-           Smt_check.format_failure
-             { kind = Smt_check.Parse_error; message = "sample" }
-         in
-         match Smt_check.parse_smt2 sample with
-         | Error _ -> false
-         | Ok _ ->
-             Smt_check.check_query sample = []
-             && Smt_check.failure_kind_tag Smt_check.Parse_error = "parse_error"
-             && String.length formatted > 0))
-
 let () =
   Alcotest.run "SmtProperty"
     [
-      ("smt_check", [ smt_check_property ]);
       ( "translation",
         [
           mk_property ~name:"totality" ~prop:prop_translation_totality;

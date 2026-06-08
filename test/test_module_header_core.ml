@@ -13,28 +13,34 @@ let supplier tokens =
         tok
     | [] -> Parser.EOF
 
+let gen_upper =
+  QCheck2.Gen.string_size
+    ~gen:QCheck2.Gen.(char_range 'A' 'Z')
+    (QCheck2.Gen.int_range 1 10)
+
 let module_header_properties =
   [
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"module header tokens recognize valid headers"
-         ~count:100 QCheck2.Gen.unit (fun () ->
+         ~count:100 (QCheck2.Gen.pair gen_upper gen_upper)
+         (fun (first, second) ->
            Module_header.parse_module_header_tokens
-             (supplier [ Parser.MODULE; Parser.UPPER_IDENT "DEMO"; Parser.DOT ])
-           = Ok "DEMO"
+             (supplier [ Parser.MODULE; Parser.UPPER_IDENT first; Parser.DOT ])
+           = Ok first
            && Module_header.parse_module_header_tokens
                 (supplier
                    [
                      Parser.UPPER_IDENT "Skip";
                      Parser.DOT;
                      Parser.MODULE;
-                     Parser.UPPER_IDENT "M";
+                     Parser.UPPER_IDENT second;
                      Parser.DOT;
                    ])
-              = Ok "M"
+              = Ok second
            && Result.is_error
                 (Module_header.parse_module_header_tokens
                    (supplier
-                      [ Parser.MODULE; Parser.UPPER_IDENT "BROKEN"; Parser.EOF ]))));
+                      [ Parser.MODULE; Parser.UPPER_IDENT first; Parser.EOF ]))));
   ]
 
 let () =
