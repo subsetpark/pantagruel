@@ -459,7 +459,7 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientAnyParam 1`] = `
-"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\n\\n---\\n\\nambient-any-param = consume-any opaque-value.\\n"
+"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037  => Opaque.\\n\\n---\\n\\nambient-any-param = consume-any opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037.\\n"
 `;
 
 exports[`expressions-free-call-typed.ts > ambientConcrete 1`] = `
@@ -471,7 +471,7 @@ exports[`expressions-free-call-typed.ts > ambientReturnsInterface 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientUnknownReturn 1`] = `
-"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\n\\n---\\n\\nambient-unknown-return = consume-unknown mystery-value.\\n"
+"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031  => Opaque.\\n\\n---\\n\\nambient-unknown-return = consume-unknown opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031.\\n"
 `;
 
 exports[`expressions-functor-lift-property.ts > userName 1`] = `
@@ -1459,7 +1459,7 @@ exports[`opaque-any-unknown.ts > anyArrayReturn 1`] = `
 `;
 
 exports[`opaque-any-unknown.ts > anyParam 1`] = `
-"module ANY_PARAM.\\n\\nOpaque.\\nany-param value: Opaque => Int.\\nopaque_value_23_006f_0070_0061_0071_0075_0065_002d_0061_006e_0079_002d_0075_006e_006b_006e_006f_0077_006e_002e_0074_0073_003a_0037  => Opaque.\\n\\n---\\n\\nany-param value = opaque_value_23_006f_0070_0061_0071_0075_0065_002d_0061_006e_0079_002d_0075_006e_006b_006e_006f_0077_006e_002e_0074_0073_003a_0037.\\n"
+"module ANY_PARAM.\\n\\nOpaque.\\nany-param value: Opaque => Int.\\n\\n---\\n\\nany-param value = value.\\n"
 `;
 
 exports[`opaque-any-unknown.ts > anyReturn 1`] = `

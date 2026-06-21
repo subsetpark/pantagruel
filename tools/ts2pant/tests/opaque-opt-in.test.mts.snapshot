@@ -1,5 +1,5 @@
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 1`] = `
-"module READ_UNKNOWN.\\n\\nOpaque.\\nread-unknown value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0031_0034  => Opaque.\\n\\n---\\n\\nread-unknown value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0031_0034.\\n\\ncheck\\n\\ntrue.\\n"
+"module READ_UNKNOWN.\\n\\nOpaque.\\nread-unknown value: Opaque => Opaque.\\n\\n---\\n\\nread-unknown value = value.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 2`] = `

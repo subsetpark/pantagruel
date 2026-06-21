@@ -208,26 +208,61 @@ function opaqueValueForDynamicExpr(
 }
 
 export function contagiousOpaqueForOperands(
-  ctx: Pick<L1BuildContext, "policy" | "supply">,
+  ctx: Pick<L1BuildContext, "checker" | "policy" | "supply">,
   operands: readonly IR1Expr[],
   originNode: ts.Node,
 ): IR1Expr | null {
   if (ctx.policy !== "opaque") {
     return null;
   }
+  const hasDynamicResult =
+    ts.isExpression(originNode) &&
+    !ts.isCallExpression(originNode) &&
+    !ts.isPropertyAccessExpression(originNode) &&
+    !ts.isElementAccessExpression(originNode) &&
+    hasRecoverableSourceLocation(originNode) &&
+    isDynamicTsType(getOperandDeclaredType(originNode, ctx.checker));
+  const hasDynamicSourceOperand = (() => {
+    const sourceOperands = sourceOperandsForOpaqueContagion(originNode);
+    return sourceOperands.some((operand) =>
+      hasRecoverableSourceLocation(operand) &&
+      isDynamicTsType(getOperandDeclaredType(operand, ctx.checker)),
+    );
+  })();
   // Compute the origin lazily — only once an operand is actually opaque — so
   // the common non-opaque case never touches `sourceRefForNode` (and so a
   // synthetic origin counter is consumed only when it genuinely participates
   // in an opaque identity).
-  if (!operands.some(isOpaqueExpr)) {
+  if (
+    !operands.some(isOpaqueExpr) &&
+    !hasDynamicResult &&
+    !hasDynamicSourceOperand
+  ) {
     return null;
   }
   const origin = sourceRefForNode(originNode, ctx.supply);
   const opaque = contagiousOpaque(operands, origin);
-  if (opaque !== null) {
+  if (opaque !== null || hasDynamicResult || hasDynamicSourceOperand) {
     registerOpaqueValueForOrigin(ctx, origin);
   }
-  return opaque;
+  return opaque ?? ir1Opaque(OPAQUE_DOMAIN, origin);
+}
+
+function sourceOperandsForOpaqueContagion(node: ts.Node): ts.Expression[] {
+  if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) {
+    return [node.operand];
+  }
+  if (ts.isBinaryExpression(node)) {
+    return [node.left, node.right];
+  }
+  if (ts.isConditionalExpression(node)) {
+    return [node.condition, node.whenTrue, node.whenFalse];
+  }
+  return [];
+}
+
+function hasRecoverableSourceLocation(node: ts.Node): boolean {
+  return node.pos >= 0 && node.end >= 0;
 }
 
 /**
@@ -867,15 +902,18 @@ export function tryBuildL1PureSubExpression(
   }
   if (ts.isIdentifier(expr)) {
     const mappedName = ctx.paramNames.get(expr.text);
-    const symbol = ctx.checker.getSymbolAtLocation(expr);
-    if (mappedName !== undefined && symbol?.valueDeclaration === undefined) {
-      return ir1Var(mappedName);
+    if (mappedName !== undefined) {
+      const value = ir1Var(mappedName);
+      const symbol = ctx.checker.getSymbolAtLocation(expr);
+      return symbol?.valueDeclaration === undefined
+        ? value
+        : narrowNullableIdentifierRead(expr, value, ctx);
     }
     const opaque = opaqueValueForDynamicExpr(expr, ctx);
     if (opaque !== null) {
       return opaque;
     }
-    const value = ir1Var(mappedName ?? expr.text);
+    const value = ir1Var(expr.text);
     return narrowNullableIdentifierRead(expr, value, ctx);
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
@@ -1257,7 +1295,7 @@ export function tryBuildL1PureSubExpression(
       }
       args.push(builtArg);
     }
-    const opaque = contagiousOpaqueForOperands(ctx, [callee, ...args], expr);
+    const opaque = opaqueValueForDynamicExpr(expr, ctx);
     if (opaque !== null) {
       return opaque;
     }
