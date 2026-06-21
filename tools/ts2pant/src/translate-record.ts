@@ -5,12 +5,12 @@ import ts from "typescript";
 import { type NameRegistry, registerName } from "./name-registry.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
+import type { UniqueSupply } from "./supply.js";
 import {
   bodyExpr,
   isBodyEffect,
   isBodyUnsupported,
   translateBodyExpr,
-  type UniqueSupply,
 } from "./translate-body.js";
 import {
   cellRegisterName,

@@ -100,25 +100,26 @@ import {
 } from "./nullish-recognizer.js";
 import {
   contagiousOpaque,
+  isOpaqueExpr,
   OPAQUE_DOMAIN,
   type OpaquePolicy,
 } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
-import type {
-  MuSearch,
-  SymbolicState,
-  UniqueSupply,
-} from "./translate-body.js";
+import {
+  freshHygienicBinder,
+  freshSyntheticOrigin,
+  registerOpaqueAlias,
+  type UniqueSupply,
+} from "./supply.js";
+import type { MuSearch, SymbolicState } from "./translate-body.js";
 import {
   expressionHasSideEffects,
   expressionReferencesNames,
   extractReturnFromBranch,
-  freshHygienicBinder,
   isNullableTsType,
   qualifyFieldAccess,
-  registerOpaqueAlias,
   symbolicKey,
 } from "./translate-body.js";
 import {
@@ -142,9 +143,35 @@ import {
   extractBlockReturn,
 } from "./ts-ast-block-return.js";
 
-function sourceRefForNode(node: ts.Node): SourceRef {
-  const sf = node.getSourceFile();
-  const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf, false));
+// `getSourceFile()` is typed non-optional but walks parent pointers; a
+// factory-synthesized node has none and yields `undefined` at runtime.
+function sourceFileOf(node: ts.Node): ts.SourceFile | undefined {
+  return node.getSourceFile() as ts.SourceFile | undefined;
+}
+
+// Recover the real, source-anchored node behind `node`: either `node` itself
+// or its original (set via `ts.setOriginalNode` at SSA-desugaring sites).
+function realSourceNode(node: ts.Node): ts.Node | undefined {
+  if (sourceFileOf(node) !== undefined) {
+    return node;
+  }
+  const original = ts.getOriginalNode(node);
+  return original !== node && sourceFileOf(original) !== undefined
+    ? original
+    : undefined;
+}
+
+// Total: never throws on synthetic nodes. Real nodes (or those anchored to a
+// real original) get their true file:line; an otherwise unrecoverable
+// synthetic node gets a guaranteed-unique origin from the supply counter so
+// distinct opaque values can never collapse onto one Pant identity.
+function sourceRefForNode(node: ts.Node, supply: UniqueSupply): SourceRef {
+  const real = realSourceNode(node);
+  if (real === undefined) {
+    return freshSyntheticOrigin(supply);
+  }
+  const sf = real.getSourceFile();
+  const pos = sf.getLineAndCharacterOfPosition(real.getStart(sf, false));
   return {
     file: sf.fileName.split(/[\\/]/u).pop() ?? sf.fileName,
     line: pos.line + 1,
@@ -175,7 +202,7 @@ function opaqueValueForDynamicExpr(
   if (!isDynamicTsType(type)) {
     return null;
   }
-  const origin = sourceRefForNode(expr);
+  const origin = sourceRefForNode(expr, ctx.supply);
   registerOpaqueValueForOrigin(ctx, origin);
   return ir1Opaque(OPAQUE_DOMAIN, origin);
 }
@@ -188,7 +215,14 @@ export function contagiousOpaqueForOperands(
   if (ctx.policy !== "opaque") {
     return null;
   }
-  const origin = sourceRefForNode(originNode);
+  // Compute the origin lazily — only once an operand is actually opaque — so
+  // the common non-opaque case never touches `sourceRefForNode` (and so a
+  // synthetic origin counter is consumed only when it genuinely participates
+  // in an opaque identity).
+  if (!operands.some(isOpaqueExpr)) {
+    return null;
+  }
+  const origin = sourceRefForNode(originNode, ctx.supply);
   const opaque = contagiousOpaque(operands, origin);
   if (opaque !== null) {
     registerOpaqueValueForOrigin(ctx, origin);

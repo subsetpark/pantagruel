@@ -33,7 +33,7 @@ import {
   recognizeNullishForm,
 } from "../src/nullish-recognizer.js";
 import { loadAst } from "../src/pant-wasm.js";
-import type { UniqueSupply } from "../src/translate-body.js";
+import type { UniqueSupply } from "../src/supply.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {

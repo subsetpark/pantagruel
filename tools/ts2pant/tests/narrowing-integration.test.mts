@@ -18,10 +18,10 @@ import {
 } from "../src/ir1-build.js";
 import { buildL1IfMutation } from "../src/ir1-build-body.js";
 import { loadAst } from "../src/pant-wasm.js";
+import type { UniqueSupply } from "../src/supply.js";
 import {
   makeSymbolicState,
   translateBody,
-  type UniqueSupply,
 } from "../src/translate-body.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
