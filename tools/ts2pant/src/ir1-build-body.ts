@@ -76,13 +76,13 @@ import {
 } from "./narrowing-recognizer.js";
 import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
+import { freshHygienicBinder, type UniqueSupply } from "./supply.js";
 import {
   ambiguousFieldMsg,
   bodyExpr,
   cloneSymbolicState,
   expressionHasSideEffects,
   expressionReferencesNames,
-  freshHygienicBinder,
   getRootIdentifier,
   isBodyUnsupported,
   isGuardStatement,
@@ -92,7 +92,6 @@ import {
   symbolicKey,
   translateBodyExpr,
   translateCallExpr,
-  type UniqueSupply,
   unwrapExpression,
   type WriteEntry,
 } from "./translate-body.js";

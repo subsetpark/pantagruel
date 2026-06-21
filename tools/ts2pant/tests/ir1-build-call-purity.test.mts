@@ -10,7 +10,7 @@ import {
   tryBuildL1PureSubExpression,
 } from "../src/ir1-build.js";
 import { loadAst } from "../src/pant-wasm.js";
-import type { UniqueSupply } from "../src/translate-body.js";
+import type { UniqueSupply } from "../src/supply.js";
 import {
   cellRegisterName,
   IntStrategy,

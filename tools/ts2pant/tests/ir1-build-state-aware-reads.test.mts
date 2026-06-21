@@ -22,10 +22,10 @@ import {
 } from "../src/ir1-build.js";
 import type { IR1Expr } from "../src/ir1.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import type { UniqueSupply } from "../src/supply.js";
 import {
   makeSymbolicState,
   translateBody,
-  type UniqueSupply,
 } from "../src/translate-body.js";
 import { translateSignature } from "../src/translate-signature.js";
 import {

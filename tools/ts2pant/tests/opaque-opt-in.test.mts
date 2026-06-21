@@ -12,10 +12,15 @@ import {
   isOpaqueExpr,
   opaqueValueRuleName,
 } from "../src/opaque.js";
+import { emitDocument } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const OPAQUE_FIXTURE_DIR = resolve(import.meta.dirname, "fixtures/opaque");
+const CONSTRUCTS_FIXTURE_DIR = resolve(
+  import.meta.dirname,
+  "fixtures/constructs",
+);
 
 describe("opaque opt-in policy", () => {
   const origin = { file: "tests/opaque-opt-in.ts", line: 1 };
@@ -122,5 +127,48 @@ describe("opaque opt-in policy", () => {
       const output = await emitAndCheck(doc);
       t.assert.snapshot(output);
     }
+  });
+
+  it("integer mutating-loop bodies build under policy opaque (regression: no synthetic-node crash)", async () => {
+    // Compound-assignment (`+=`) and `++`/`--` desugaring synthesizes
+    // binary-expression nodes with no source file. Under policy "opaque" the
+    // contagion path used to compute an origin for these unconditionally and
+    // crash in `sourceRefForNode`. These fixtures contain no `any`/`unknown`,
+    // so opacity never triggers — they must simply translate without throwing.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["functions-mutating-counter-loop.ts", "sumFirstN"],
+      ["functions-mutating-counter-loop.ts", "sumIfPositiveFirstN"],
+      ["functions-mutating-bounded-while.ts", "sumFirstNWhile"],
+      ["functions-mutating-fixed-point-while.ts", "adjustBalanceTo"],
+    ];
+
+    for (const [file, target] of cases) {
+      const sourceFile = createSourceFile(
+        resolve(CONSTRUCTS_FIXTURE_DIR, file),
+      );
+      await assert.doesNotReject(
+        buildDocumentFromSourceFile(sourceFile, target, { policy: "opaque" }),
+      );
+    }
+  });
+
+  it("opaque operand inside a synthetic loop binop builds without crashing (regression)", async () => {
+    // `a.total += extra` (extra: any) is lowered by the generic bare-while
+    // mutation path, which synthesizes an `a.total + extra` binop with no
+    // source file. Under policy "opaque", `extra` is an OpaqueValue, so the
+    // synthetic node reaches `sourceRefForNode` with an opaque operand — the
+    // case that used to dereference an undefined source file. The build must
+    // not crash, and opacity must propagate (an Opaque domain is emitted).
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "functions-mutating-loop-opaque.ts"),
+    );
+    const doc = await buildDocumentFromSourceFile(
+      sourceFile,
+      "addDynamicWhile",
+      { policy: "opaque" },
+    );
+    const output = emitDocument(doc);
+
+    assert.match(output, /Opaque/u);
   });
 });

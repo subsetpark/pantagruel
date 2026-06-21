@@ -9,8 +9,8 @@ import { buildIR, isBuildUnsupported } from "../src/ir-build.js";
 import type { IRExpr } from "../src/ir.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { loadAst } from "../src/pant-wasm.js";
+import type { UniqueSupply } from "../src/supply.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
-import type { UniqueSupply } from "../src/translate-body.js";
 
 before(async () => {
   await loadAst();

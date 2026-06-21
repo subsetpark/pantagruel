@@ -29,10 +29,7 @@ import {
   ir1Var,
 } from "../src/ir1.js";
 import { loadAst } from "../src/pant-wasm.js";
-import {
-  type UniqueSupply,
-  freshHygienicBinder,
-} from "../src/translate-body.js";
+import { freshHygienicBinder, type UniqueSupply } from "../src/supply.js";
 import { IntStrategy } from "../src/translate-types.js";
 import ts from "typescript";
 

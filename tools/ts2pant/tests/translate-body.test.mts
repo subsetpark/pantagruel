@@ -7,6 +7,7 @@ import * as fc from "fast-check";
 import ts from "typescript";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import * as Supply from "../src/supply.js";
 import * as TB from "../src/translate-body.js";
 import { translateBody } from "../src/translate-body.js";
 import { translateSignature } from "../src/translate-signature.js";
@@ -163,9 +164,12 @@ it("generated body helpers preserve structural translations", () => {
       const stmt = firstStatement(sourceFile);
       const paramNames = new Map([["a", "a"]]);
 
-      TB.registerOpaqueAlias(supply, "alias", ast.litNat(1));
-      assert.equal(ast.strExpr(TB.applyOpaqueAliases(ast.var("alias"), supply)), "1");
-      assert.equal(TB.freshHygienicBinder(supply).startsWith("$"), true);
+      Supply.registerOpaqueAlias(supply, "alias", ast.litNat(1));
+      assert.equal(
+        ast.strExpr(Supply.applyOpaqueAliases(ast.var("alias"), supply)),
+        "1",
+      );
+      assert.equal(Supply.freshHygienicBinder(supply).startsWith("$"), true);
       assert.equal(TB.allocComprehensionBinder(supply, "item").length > 0, true);
       assert.equal(TB.isBodyUnsupported({ unsupported: "x" }), true);
       assert.equal(TB.isBodyEffect({ effect: {} } as never), true);

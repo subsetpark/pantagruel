@@ -45,14 +45,13 @@ import {
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import { isStaticallyBoolTyped } from "./purity.js";
+import { freshHygienicBinder, type UniqueSupply } from "./supply.js";
 import {
   allocComprehensionBinder,
   ambiguousFieldMsg,
   expressionReferencesNames,
-  freshHygienicBinder,
   isNullableTsType,
   qualifyFieldAccess,
-  type UniqueSupply,
 } from "./translate-body.js";
 import {
   cellRegisterMap,

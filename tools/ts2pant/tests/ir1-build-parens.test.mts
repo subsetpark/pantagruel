@@ -30,9 +30,7 @@ import {
   lowerL1ToOpaque,
 } from "../src/ir1-build.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import {
-  type UniqueSupply,
-} from "../src/translate-body.js";
+import type { UniqueSupply } from "../src/supply.js";
 import {
   cellRegisterName,
   IntStrategy,

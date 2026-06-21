@@ -25,10 +25,8 @@ import type { IR1Expr } from "../src/ir1.js";
 import { lowerExpr } from "../src/ir-emit.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import {
-  qualifyFieldAccess,
-  type UniqueSupply,
-} from "../src/translate-body.js";
+import type { UniqueSupply } from "../src/supply.js";
+import { qualifyFieldAccess } from "../src/translate-body.js";
 import {
   cellRegisterName,
   IntStrategy,
