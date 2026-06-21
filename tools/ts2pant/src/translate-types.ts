@@ -11,6 +11,7 @@ import {
   registerName,
 } from "./name-registry.js";
 import {
+  DEFAULT_OPAQUE_POLICY,
   OPAQUE_DOMAIN,
   type OpaquePolicy,
   opaqueValueRuleName,
@@ -1808,6 +1809,12 @@ export interface MapTsTypeOptions {
   readonly policy?: OpaquePolicy | undefined;
 }
 
+function effectiveOpacityPolicy(
+  opts: MapTsTypeOptions | undefined,
+): OpaquePolicy {
+  return opts?.policy ?? DEFAULT_OPAQUE_POLICY;
+}
+
 export const RealStrategy: NumericStrategy = {
   mapNumber() {
     return "Real";
@@ -1840,7 +1847,7 @@ export function mapTsType(
   // move is to refuse and steer the user toward a declared type. Mapping
   // to a generic placeholder would silently let type errors through.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
-    if (opts?.policy === "opaque") {
+    if (effectiveOpacityPolicy(opts) === "opaque") {
       if (synthCell) {
         cellRegisterOpaqueDomain(synthCell);
       }
@@ -2058,7 +2065,7 @@ function mapDynamicTypeNode(
   synthCell: SynthCell | undefined,
   opts: MapTsTypeOptions | undefined,
 ): string {
-  if (opts?.policy === "opaque") {
+  if (effectiveOpacityPolicy(opts) === "opaque") {
     if (synthCell) {
       cellRegisterOpaqueDomain(synthCell);
     }

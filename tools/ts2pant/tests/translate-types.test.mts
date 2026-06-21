@@ -49,7 +49,9 @@ function extractAndTranslate(source: string, strategy = IntStrategy) {
   const sourceFile = createSourceFileFromSource(source);
   const extracted = extractAllTypes(sourceFile);
   const checker = getChecker(sourceFile);
-  const decls = translateTypes(extracted, checker, strategy);
+  const decls = translateTypes(extracted, checker, strategy, undefined, {
+    policy: "reject",
+  });
   return { decls, extracted, checker, sourceFile };
 }
 
@@ -881,7 +883,9 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy),
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });
@@ -894,7 +898,9 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy),
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });
@@ -907,7 +913,9 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy),
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });
@@ -920,7 +928,9 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy),
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });
@@ -935,7 +945,9 @@ describe("mapTsType", () => {
     const sfK = createSourceFileFromSource(sourceK);
     const propK = extractAllTypes(sfK).interfaces[0].properties[0];
     assert.equal(
-      mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK),
+      mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
     // No partial Map domain leaked into the synth state.
@@ -946,7 +958,9 @@ describe("mapTsType", () => {
     const sfV = createSourceFileFromSource(sourceV);
     const propV = extractAllTypes(sfV).interfaces[0].properties[0];
     assert.equal(
-      mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV),
+      mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
     assert.equal(cellV.synth.byKV.size, 0);
@@ -964,7 +978,9 @@ describe("mapTsType", () => {
     // way. Either pre-collapse (the union check fires) or post-collapse
     // (the unknown short-circuit fires) — both surface the sentinel.
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy),
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });
@@ -977,7 +993,9 @@ describe("mapTsType", () => {
     const fn = sourceFile.getFunctionOrThrow("f");
     const returnType = fn.getReturnType().compilerType;
     assert.equal(
-      mapTsType(returnType, checker, IntStrategy, cell),
+      mapTsType(returnType, checker, IntStrategy, cell, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
     // No partial record domain leaked into the synth state.
