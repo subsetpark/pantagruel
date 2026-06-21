@@ -203,11 +203,13 @@ Two translation modes:
 `mapTsType` accepts a `policy: "reject" | "opaque"` option that controls how ts2pant
 handles TypeScript `any` and `unknown`.
 
-- `opaque` is the default. It lowers dynamic TS types to the synthesized `Opaque`
-  domain.
+- `reject` is the default. It skips unsupported dynamic TS types and produces the
+  `UNSUPPORTED_UNKNOWN` steering behavior.
+- `opaque` is an explicit opt-in. It lowers dynamic TS types to the synthesized
+  `Opaque` domain.
 - `Opaque` means the value is present but its structure is erased: the translation
   stays sound, but it is intentionally imprecise.
-- `reject` remains available as an explicit opt-out when a caller wants the
+- `reject` remains available as the explicit steering mode when a caller wants the
   `UNSUPPORTED_UNKNOWN` skip behavior, for example in a fixture meant to steer the
   user toward declaring a real type.
 
