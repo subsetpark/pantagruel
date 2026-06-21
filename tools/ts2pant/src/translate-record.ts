@@ -3,6 +3,7 @@
 
 import ts from "typescript";
 import { type NameRegistry, registerName } from "./name-registry.js";
+import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { UniqueSupply } from "./supply.js";
@@ -59,6 +60,7 @@ export function translateRecordReturn(
   supply: UniqueSupply,
   synthCell: SynthCell | undefined,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  policy?: OpaquePolicy,
 ): PropResult[] {
   const ast = getAst();
 
@@ -145,7 +147,9 @@ export function translateRecordReturn(
     // propagates separately (a field typed `unknown` short-circuits
     // record synthesis with `UNSUPPORTED_UNKNOWN`); surface its
     // user-facing reason explicitly.
-    const mapped = mapTsType(returnType, checker, strategy, synthCell);
+    const mapped = mapTsType(returnType, checker, strategy, synthCell, {
+      policy,
+    });
     if (isUnsupportedUnknown(mapped)) {
       return [
         {
@@ -285,6 +289,7 @@ export function translateRecordReturn(
     synthCell,
     applyConst,
     allocEmittedBinder,
+    policy,
   );
 }
 
@@ -311,6 +316,7 @@ function emitRecordEquations(
   synthCell: SynthCell | undefined,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
   allocEmittedBinder: (hint: string) => string,
+  policy?: OpaquePolicy,
 ): PropResult[] {
   // Stage A (named interface receiver): Map fields encode as a pair of
   // binary rules — `<field>Key(receiver, k)` membership predicate plus a
@@ -420,6 +426,7 @@ function emitRecordEquations(
         checker,
         strategy,
         synthCell,
+        policy,
       );
       if (!elemType) {
         return [
@@ -465,12 +472,14 @@ function emitRecordEquations(
         checker,
         strategy,
         synthCell,
+        policy,
       );
       const vType = getMapValueTypeName(
         field.type,
         checker,
         strategy,
         synthCell,
+        policy,
       );
       if (!keyType || !vType) {
         return [
@@ -556,6 +565,7 @@ function emitRecordEquations(
         synthCell,
         applyConst,
         allocEmittedBinder,
+        policy,
       );
       const subUnsupported = subResults.find((p) => p.kind === "unsupported");
       if (subUnsupported) {
@@ -572,6 +582,8 @@ function emitRecordEquations(
       scopedParams,
       undefined,
       supply,
+      undefined,
+      policy,
     );
     if (isBodyUnsupported(body)) {
       return [
@@ -622,11 +634,14 @@ function getSetElementTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
+  policy?: OpaquePolicy,
 ): string | null {
   if (isSetType(fieldType) || checker.isArrayType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
+        policy,
+      });
       return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }
@@ -653,11 +668,14 @@ function getMapKeyTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
+  policy?: OpaquePolicy,
 ): string | null {
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
+        policy,
+      });
       return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }
@@ -672,11 +690,14 @@ function getMapValueTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
+  policy?: OpaquePolicy,
 ): string | null {
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell, {
+        policy,
+      });
       return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }

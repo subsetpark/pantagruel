@@ -7,7 +7,7 @@ export const OPAQUE_DOMAIN = "Opaque";
 
 export type OpaquePolicy = "reject" | "opaque";
 
-export const DEFAULT_OPAQUE_POLICY: OpaquePolicy = "reject";
+export const DEFAULT_OPAQUE_POLICY: OpaquePolicy = "opaque";
 
 /**
  * Return the Pant-safe nullary rule name for one opaque value identity.

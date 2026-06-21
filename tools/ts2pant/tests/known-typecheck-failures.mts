@@ -50,6 +50,13 @@
  *   - "annotation-types"  the user's `@pant` annotation is itself
  *                         ill-typed against the emitted signature
  *                         (e.g. comparing a Bool result to an Int).
+ *   - "opaque-boundary-mismatch"
+ *                         default-opaque translation removed the
+ *                         old UNSUPPORTED skip, but the emitted
+ *                         standalone Pant still exposes a real
+ *                         type mismatch at a dynamic/concrete
+ *                         boundary. Keep snapshotting the output
+ *                         while the lowering gap remains explicit.
  */
 export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["control-flow.ts > max", "$-binder-leak"],
@@ -69,5 +76,9 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
   ["functions-class.ts > Account.deposit", "requires-external-context"],
+  ["opaque-any-unknown.ts > anyArrayReturn", "list-literal"],
+  ["opaque-any-unknown.ts > anyParam", "opaque-boundary-mismatch"],
+  ["opaque-any-unknown.ts > anyReturn", "opaque-boundary-mismatch"],
+  ["opaque-any-unknown.ts > unknownReturn", "opaque-boundary-mismatch"],
   ["types-composite.ts > getPoint", "list-literal"],
 ]);

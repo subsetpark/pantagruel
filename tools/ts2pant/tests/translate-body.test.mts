@@ -1014,6 +1014,7 @@ describe("if-early-return prelude arms", () => {
         sourceFile,
         functionName: "f",
         strategy: IntStrategy,
+        policy: "reject",
       });
 
       assert.equal(props.length, 1);
@@ -1039,6 +1040,8 @@ describe("if-early-return prelude arms", () => {
       "makeBox",
       IntStrategy,
       synthCell,
+      undefined,
+      { typeMapping: { policy: "reject" } },
     );
 
     const props = translateBody({
@@ -1047,6 +1050,7 @@ describe("if-early-return prelude arms", () => {
       strategy: IntStrategy,
       synthCell,
       paramNameMap,
+      policy: "reject",
     });
 
     assert.equal(props.length, 1);

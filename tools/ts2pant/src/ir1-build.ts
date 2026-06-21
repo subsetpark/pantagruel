@@ -866,11 +866,16 @@ export function tryBuildL1PureSubExpression(
     return tryBuildL1TemplateExpression(expr, ctx);
   }
   if (ts.isIdentifier(expr)) {
+    const mappedName = ctx.paramNames.get(expr.text);
+    const symbol = ctx.checker.getSymbolAtLocation(expr);
+    if (mappedName !== undefined && symbol?.valueDeclaration === undefined) {
+      return ir1Var(mappedName);
+    }
     const opaque = opaqueValueForDynamicExpr(expr, ctx);
     if (opaque !== null) {
       return opaque;
     }
-    const value = ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
+    const value = ir1Var(mappedName ?? expr.text);
     return narrowNullableIdentifierRead(expr, value, ctx);
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
