@@ -198,6 +198,28 @@ Two translation modes:
 - **Pure functions**: `f(x) { ... return expr }` -> `f x = <expr>.`
 - **Mutating functions**: `f(obj) { obj.prop = val }` -> `prop' obj = <val>.` + frame conditions
 
+## Opacity Policy
+
+`mapTsType` accepts a `policy: "reject" | "opaque"` option that controls how ts2pant
+handles TypeScript `any` and `unknown`.
+
+- `opaque` is the default. It lowers dynamic TS types to the synthesized `Opaque`
+  domain.
+- `Opaque` means the value is present but its structure is erased: the translation
+  stays sound, but it is intentionally imprecise.
+- `reject` remains available as an explicit opt-out when a caller wants the
+  `UNSUPPORTED_UNKNOWN` skip behavior, for example in a fixture meant to steer the
+  user toward declaring a real type.
+
+Opacity is contagious. Under M2, opaque inputs propagate through composites and
+operations rather than being silently reinterpreted as concrete values. That means a
+tuple, array, map, record, or expression that depends on dynamic input carries the
+uncertainty forward in the encoding.
+
+Use-site narrowing is a later refinement, covered by M4. The default policy is the
+conservative floor: translate dynamic values as `Opaque`, then let later work recover
+precision at specific uses when the TypeScript checker can prove a concrete type.
+
 ### Opaque AST Constraint
 
 Pantagruel expressions are opaque wasm handles (`OpaqueExpr`). We cannot inspect or
