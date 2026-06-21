@@ -459,7 +459,7 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientAnyParam 1`] = `
-"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\n\\n---\\n\\nambient-any-param = consume-any opaque-value.\\n"
+"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037  => Opaque.\\n\\n---\\n\\nambient-any-param = consume-any opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037.\\n"
 `;
 
 exports[`expressions-free-call-typed.ts > ambientConcrete 1`] = `
@@ -471,7 +471,7 @@ exports[`expressions-free-call-typed.ts > ambientReturnsInterface 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientUnknownReturn 1`] = `
-"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\n\\n---\\n\\nambient-unknown-return = consume-unknown mystery-value.\\n"
+"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031  => Opaque.\\n\\n---\\n\\nambient-unknown-return = consume-unknown opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031.\\n"
 `;
 
 exports[`expressions-functor-lift-property.ts > userName 1`] = `
@@ -827,7 +827,7 @@ exports[`expressions-property-element-access.ts > effectiveBalanceByLiteral 1`] 
 `;
 
 exports[`expressions-property-element-access.ts > getByDynamicKey 1`] = `
-"module GET_BY_DYNAMIC_KEY.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\n> UNSUPPORTED: get-by-dynamic-key return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: computed property access (obj[expr]) is unsupported; use dotted property access or a string-literal index instead.\\n"
+"module GET_BY_DYNAMIC_KEY.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\nOpaque.\\nget-by-dynamic-key a: Account, k: String => Opaque.\\n\\n---\\n\\n> UNSUPPORTED: computed property access (obj[expr]) is unsupported; use dotted property access or a string-literal index instead.\\n"
 `;
 
 exports[`expressions-property-element-access.ts > getOwnerByLiteral 1`] = `
@@ -1455,23 +1455,23 @@ exports[`guards-if-throw.ts > withdraw 1`] = `
 `;
 
 exports[`opaque-any-unknown.ts > anyArrayReturn 1`] = `
-"module ANY_ARRAY_RETURN.\\n\\n> UNSUPPORTED: any-array-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nany-array-return value = [value].\\n"
+"module ANY_ARRAY_RETURN.\\n\\nOpaque.\\nany-array-return value: Int => [Opaque].\\n\\n---\\n\\nany-array-return value = [value].\\n"
 `;
 
 exports[`opaque-any-unknown.ts > anyParam 1`] = `
-"module ANY_PARAM.\\n\\n> UNSUPPORTED: any-param param 'value': TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: anyParam param 'value': TS unknown is not expressible in Pantagruel; declare a specific type.\\n"
+"module ANY_PARAM.\\n\\nOpaque.\\nany-param value: Opaque => Int.\\n\\n---\\n\\nany-param value = value.\\n"
 `;
 
 exports[`opaque-any-unknown.ts > anyReturn 1`] = `
-"module ANY_RETURN.\\n\\n> UNSUPPORTED: any-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nany-return value = value.\\n"
+"module ANY_RETURN.\\n\\nOpaque.\\nany-return value: Int => Opaque.\\n\\n---\\n\\nany-return value = value.\\n"
 `;
 
 exports[`opaque-any-unknown.ts > unknownParam 1`] = `
-"module UNKNOWN_PARAM.\\n\\n> UNSUPPORTED: unknown-param param 'value': TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: unknownParam param 'value': TS unknown is not expressible in Pantagruel; declare a specific type.\\n"
+"module UNKNOWN_PARAM.\\n\\nOpaque.\\nunknown-param value: Opaque => Int.\\n\\n---\\n\\nunknown-param value = 0.\\n"
 `;
 
 exports[`opaque-any-unknown.ts > unknownReturn 1`] = `
-"module UNKNOWN_RETURN.\\n\\n> UNSUPPORTED: unknown-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nunknown-return value = value.\\n"
+"module UNKNOWN_RETURN.\\n\\nOpaque.\\nunknown-return value: Int => Opaque.\\n\\n---\\n\\nunknown-return value = value.\\n"
 `;
 
 exports[`types-composite.ts > getBooks 1`] = `

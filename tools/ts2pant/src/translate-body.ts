@@ -1305,6 +1305,7 @@ function translatePureBody(
       supply,
       synthCell,
       (e) => applyOpaqueAliases(e, supply),
+      policy,
     );
   }
 

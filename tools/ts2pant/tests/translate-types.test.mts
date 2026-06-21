@@ -718,11 +718,15 @@ describe("mapTsType", () => {
       extractAllTypes(sourceFile).interfaces[0].properties;
 
     assert.equal(
-      mapTsType(anyProp.type, checker, IntStrategy),
+      mapTsType(anyProp.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
     assert.equal(
-      mapTsType(unknownProp.type, checker, IntStrategy),
+      mapTsType(unknownProp.type, checker, IntStrategy, undefined, {
+        policy: "reject",
+      }),
       UNSUPPORTED_UNKNOWN,
     );
   });

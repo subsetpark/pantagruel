@@ -1,7 +1,7 @@
 // @archlint.module exempt
 // @archlint.exempt-reason test-support
 
-// Dynamic TS top types reject through the UNSUPPORTED_UNKNOWN path.
+// Dynamic TS top types lower through the default Opaque policy.
 
 export function anyParam(value: any): number {
   return value;

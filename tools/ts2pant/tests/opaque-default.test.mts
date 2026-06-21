@@ -2,63 +2,79 @@
 // @archlint.domain ts2pant.opaque
 
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import { createSourceFileFromSource } from "../src/extract.js";
-import { OPAQUE_DOMAIN } from "../src/opaque.js";
-import { translateSignature } from "../src/translate-signature.js";
-import {
-  IntStrategy,
-  UNSUPPORTED_UNKNOWN_REASON,
-} from "../src/translate-types.js";
-import { buildDocumentFromSourceFile } from "./helpers.mjs";
+import { createSourceFile } from "../src/extract.js";
+import { emitDocument } from "./helpers.mts";
+import { buildDocumentFromSourceFile } from "./helpers.mts";
+
+const CONSTRUCTS_FIXTURE_DIR = resolve(
+  import.meta.dirname,
+  "fixtures/constructs",
+);
 
 describe("opaque default", () => {
-  // PENDING: Patch 2 flips the default opacity policy to opaque.
-  it.skip("any and unknown lower to the Opaque domain with no explicit policy", async () => {
-    const sourceFile = createSourceFileFromSource(`
-        export function withAny(value: any): any {
-          return value;
-        }
-      `);
-
-    const signature = translateSignature(sourceFile, "withAny", IntStrategy);
-    assert.equal(signature.declaration.kind, "rule");
-    if (signature.declaration.kind !== "rule") {
-      throw new Error("expected rule declaration");
-    }
-    assert.equal(signature.declaration.returnType, OPAQUE_DOMAIN);
-
-    const doc = await buildDocumentFromSourceFile(sourceFile, "withAny");
-    assert.ok(
-      doc.declarations.some(
-        (decl) => decl.kind === "domain" && decl.name === OPAQUE_DOMAIN,
-      ),
+  it("any and unknown lower to the Opaque domain with no explicit policy", async () => {
+    const sourceFile = createSourceFile(
+      resolve(CONSTRUCTS_FIXTURE_DIR, "opaque-any-unknown.ts"),
     );
+    const targets = [
+      "anyParam",
+      "anyReturn",
+      "anyArrayReturn",
+      "unknownParam",
+      "unknownReturn",
+    ];
+
+    try {
+      for (const target of targets) {
+        const doc = await buildDocumentFromSourceFile(sourceFile, target);
+        const output = emitDocument(doc);
+
+        assert.match(output, /^Opaque\.$/mu, `${target} should declare Opaque`);
+        assert.doesNotMatch(
+          output,
+          /^> UNSUPPORTED:/mu,
+          `${target} should not reject under the default policy`,
+        );
+      }
+    } finally {
+      sourceFile.getProject().removeSourceFile(sourceFile);
+    }
   });
 
-  // PENDING: Patch 2 flips the default opacity policy to opaque.
-  it.skip("explicit reject policy still emits UNSUPPORTED_UNKNOWN", () => {
-    const sourceFile = createSourceFileFromSource(`
-      export function withUnknown(value: unknown): number {
-        return 0;
-      }
-    `);
+  it("explicit reject policy still emits UNSUPPORTED_UNKNOWN", async () => {
+    const sourceFile = createSourceFile(
+      resolve(CONSTRUCTS_FIXTURE_DIR, "opaque-any-unknown.ts"),
+    );
+    const targets = [
+      "anyParam",
+      "anyReturn",
+      "anyArrayReturn",
+      "unknownParam",
+      "unknownReturn",
+    ];
 
-    const result = translateSignature(
-      sourceFile,
-      "withUnknown",
-      IntStrategy,
-      undefined,
-      undefined,
-      { typeMapping: { policy: "reject" } },
-    );
-    assert.equal(result.declaration.kind, "unsupported");
-    if (result.declaration.kind !== "unsupported") {
-      throw new Error("expected unsupported declaration");
+    try {
+      for (const target of targets) {
+        const doc = await buildDocumentFromSourceFile(sourceFile, target, {
+          policy: "reject",
+        });
+        const output = emitDocument(doc);
+
+        assert.match(
+          output,
+          /^> UNSUPPORTED: .*TS unknown is not expressible in Pantagruel; declare a specific type$/mu,
+          `${target} should keep reject diagnostics`,
+        );
+        assert.doesNotMatch(
+          output,
+          /^Opaque\.$/mu,
+          `${target} should not declare Opaque under reject`,
+        );
+      }
+    } finally {
+      sourceFile.getProject().removeSourceFile(sourceFile);
     }
-    assert.equal(
-      result.declaration.reason,
-      `with-unknown param 'value': ${UNSUPPORTED_UNKNOWN_REASON}`,
-    );
   });
 });
