@@ -224,9 +224,10 @@ export function contagiousOpaqueForOperands(
     isDynamicTsType(getOperandDeclaredType(originNode, ctx.checker));
   const hasDynamicSourceOperand = (() => {
     const sourceOperands = sourceOperandsForOpaqueContagion(originNode);
-    return sourceOperands.some((operand) =>
-      hasRecoverableSourceLocation(operand) &&
-      isDynamicTsType(getOperandDeclaredType(operand, ctx.checker)),
+    return sourceOperands.some(
+      (operand) =>
+        hasRecoverableSourceLocation(operand) &&
+        isDynamicTsType(getOperandDeclaredType(operand, ctx.checker)),
     );
   })();
   // Compute the origin lazily — only once an operand is actually opaque — so
