@@ -12,7 +12,16 @@ import {
 
 function unsupportedReason(source: string, functionName: string): string {
   const sourceFile = createSourceFileFromSource(source);
-  const result = translateSignature(sourceFile, functionName, IntStrategy);
+  const result = translateSignature(
+    sourceFile,
+    functionName,
+    IntStrategy,
+    undefined,
+    undefined,
+    {
+      typeMapping: { policy: "reject" },
+    },
+  );
   assert.equal(result.declaration.kind, "unsupported");
   if (result.declaration.kind !== "unsupported") {
     throw new Error("expected unsupported declaration");
