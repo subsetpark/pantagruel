@@ -10,7 +10,10 @@ import { createSourceFile } from "../src/extract.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
-const SCAFFOLD_ONLY_FIXTURES = new Set(["expressions-for-of-comprehension.ts"]);
+const SCAFFOLD_ONLY_FIXTURES = new Set([
+  "expressions-for-of-comprehension.ts",
+  "foreign-accessor-dependency.ts",
+]);
 
 import { KNOWN_TYPECHECK_FAILURES } from "./known-typecheck-failures.mjs";
 

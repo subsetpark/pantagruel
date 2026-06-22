@@ -857,6 +857,36 @@ describe("mapTsType", () => {
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
+  it.skip("Patch 2: foreign accessors register stable typed accessor declarations", () => {
+    // Intended Patch 2 shape: registering the same shallow accessor twice is
+    // idempotent, keyed by (foreign owner domain, property name, mapped return
+    // sort), and emits only EUF-style rule declarations.
+    const output = [
+      "ForeignDependencyContainer.",
+      "ForeignDependencyItem.",
+      "items c: ForeignDependencyContainer => [ForeignDependencyItem].",
+      "item-label i: ForeignDependencyItem => String.",
+      "item-ready i: ForeignDependencyItem => Bool.",
+    ].join("\n");
+
+    assert.match(
+      output,
+      /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
+    );
+    assert.match(
+      output,
+      /^item-label i: ForeignDependencyItem => String\.$/mu,
+    );
+    assert.match(
+      output,
+      /^item-ready i: ForeignDependencyItem => Bool\.$/mu,
+    );
+    assert.equal(
+      output.match(/^items c: ForeignDependencyContainer/mgu)?.length,
+      1,
+    );
+  });
+
   it("top-level undefined falls through to checker.typeToString", () => {
     // Lone null/undefined/void has no Pantagruel encoding. mapTsType no
     // longer returns an internal sentinel; it falls through to
