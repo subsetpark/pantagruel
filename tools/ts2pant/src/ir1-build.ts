@@ -1789,6 +1789,7 @@ export function buildL1MemberAccess(
       : null;
   const narrowedConcreteReceiver =
     receiverDynamicOpaque !== null &&
+    receiverDynamicOpaque.kind === "opaque" &&
     receiverDynamicOpaque.sort !== OPAQUE_DOMAIN
       ? receiverDynamicOpaque
       : null;
