@@ -16,6 +16,33 @@ export function treeKind(t: Tree): string {
   return t.kind;
 }
 
+/**
+ * Field-reader on a recursive DU: reads the `leaf`-variant `value` field,
+ * discharged by the `kind === "leaf"` discriminant narrowing (same shape as
+ * the non-recursive `getRadius`, now over a self-referential domain).
+ *
+ * @pant leafValue t = cond tree--kind t = "leaf" => tree--value t, true => 0.
+ */
+export function leafValue(t: Tree): number {
+  if (t.kind === "leaf") {
+    return t.value;
+  }
+  return 0;
+}
+
+/**
+ * Reads a self-referential field (`node.left: Tree`) under narrowing, then its
+ * discriminant — exercising the recursive accessor `tree--left … => Tree`.
+ *
+ * @pant leftChildKind t = cond tree--kind t = "node" => tree--kind (tree--left t), true => tree--kind t.
+ */
+export function leftChildKind(t: Tree): string {
+  if (t.kind === "node") {
+    return t.left.kind;
+  }
+  return t.kind;
+}
+
 // `Shape` is a NON-recursive discriminated union — the control. It must keep
 // registering to a synthesized domain (the cycle guard never fires for it).
 type Shape =

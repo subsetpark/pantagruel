@@ -5,9 +5,15 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
-import { emitDocument } from "../src/emit.js";
+import { emitDocument, runCheck } from "../src/emit.js";
 import { loadAst } from "../src/pant-wasm.js";
-import { buildDocument, emitAndCheck } from "./helpers.mjs";
+import {
+  buildDocument,
+  emitAndCheck,
+  getPantBin,
+  PROJECT_ROOT,
+  solverAvailable,
+} from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
@@ -28,17 +34,43 @@ describe("recursive discriminated union", () => {
     const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
     assert.doesNotMatch(output, /UNSUPPORTED/u);
     assert.match(output, /^Tree\.$/mu);
-    assert.match(
-      output,
-      /tree--left s: Tree, tree--kind s = "node" => Tree\./u,
-    );
-    assert.match(
-      output,
-      /tree--value s: Tree, tree--kind s = "leaf" => Int\./u,
-    );
+    assert.match(output, /tree--left s: Tree, tree--kind s = "node" => Tree\./u);
+    assert.match(output, /tree--value s: Tree, tree--kind s = "leaf" => Int\./u);
     // The body resolves against the same `Tree` domain, not a duplicate.
     assert.match(output, /tree-kind t = tree--kind t\./u);
     assert.doesNotMatch(output, /Tree1|Tree2/u);
+  });
+
+  // `treeKind` reads the discriminant; `leafValue` reads a leaf field under
+  // `kind === "leaf"` narrowing; `leftChildKind` reads the *self-referential*
+  // `node.left: Tree` field under `kind === "node"` narrowing, then its
+  // discriminant — exercising the recursive accessor `tree--left … => Tree`.
+  for (const fn of ["treeKind", "leafValue", "leftChildKind"]) {
+    it(`@pant on \`${fn}\` (recursive union) entails`, {
+      skip: !solverAvailable() ? "z3 not available" : undefined,
+    }, async () => {
+      const output = await emitAndCheck(await buildDocument(FIXTURE, fn));
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      const entailments = result.checks.filter(
+        (c) =>
+          c.message.startsWith("OK: Entailed:") ||
+          c.message.startsWith("FAIL: Not entailed:"),
+      );
+      assert.ok(entailments.length >= 1, "expected an entailment result");
+      assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+      assert.ok(entailments.every((c) => c.passed));
+    });
+  }
+
+  it("reads a self-referential field under narrowing", async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "leftChildKind"),
+    );
+    // The `node.left` read resolves through the recursive accessor.
+    assert.match(output, /tree--kind \(tree--left t\)/u);
   });
 
   it("a non-recursive discriminated union still registers (control)", async () => {
