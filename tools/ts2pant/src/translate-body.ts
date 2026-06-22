@@ -20,6 +20,7 @@ import {
   ir1Block,
   ir1Break,
   ir1Continue,
+  ir1Each,
   ir1For,
   ir1Let,
   ir1LitNat,
@@ -216,8 +217,14 @@ export function isNullableTsType(type: ts.Type): boolean {
  *     See `recognizeLetWhilePair` and `emitMuSearch`.
  */
 type PreludeStmt =
-  | { kind: "const"; tsName: string; initializer: ts.Expression }
-  | { kind: "muSearch"; tsName: string; mu: MuSearch }
+  | {
+      kind: "const";
+      tsName: string;
+      initializer: ts.Expression;
+      localName?: string;
+    }
+  | { kind: "muSearch"; tsName: string; mu: MuSearch; localName?: string }
+  | { kind: "forOf" } & RecognizedForOfPush
   | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
   | { kind: "stmt"; stmt: ts.Statement }
   | {
@@ -1193,14 +1200,21 @@ function translatePureBody(
     return [];
   }
 
-  const extracted = extractReturnExpression(node.body, checker);
+  const supply = makeUniqueSupply(synthCell, program);
+  const env = suppliedEnv ?? createL1AssumptionEnv();
+  const extracted = extractReturnExpression(node.body, {
+    checker,
+    strategy,
+    paramNames,
+    state: undefined,
+    supply,
+    env,
+    policy,
+  });
   if (!extracted) {
     const reason = describeRejectedBody(node.body, checker);
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
-
-  const supply = makeUniqueSupply(synthCell, program);
-  const env = suppliedEnv ?? createL1AssumptionEnv();
 
   // M4 Patch 5: functor-lift on the if-conversion shape
   //   `if (x == null) return []; return [f(x)];`
@@ -1246,6 +1260,38 @@ function translatePureBody(
         },
       ];
     }
+  }
+
+  const forOfComprehension = tryBuildForOfComprehensionReturn(
+    extracted,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    policy,
+  );
+  if (forOfComprehension !== null) {
+    if ("error" in forOfComprehension) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${forOfComprehension.error}`,
+        },
+      ];
+    }
+    const argExprs = params.map((p) => ast.var(p.name));
+    const lhs = ast.app(ast.var(functionName), argExprs);
+    return [
+      ...forOfComprehension.prelude.ruleDecls,
+      ...forOfComprehension.loweredLets.propositions,
+      {
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        lhs,
+        rhs: lowerL1ToOpaque(forOfComprehension.each),
+      },
+    ];
   }
 
   const prelude = lowerPreludeBindings(
@@ -1587,6 +1633,114 @@ function translatePureBody(
 interface ExtractedBody {
   bindings: PreludeStmt[];
   returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
+}
+
+function tryBuildForOfComprehensionReturn(
+  extracted: ExtractedBody,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  env: AssumptionEnv,
+  policy?: OpaquePolicy,
+):
+  | {
+      prelude: LoweredPreludeBindings;
+      loweredLets: IR1SsaBodyLowerResult;
+      each: IR1Expr;
+    }
+  | { error: string }
+  | null {
+  if (
+    !ts.isExpression(extracted.returnExpr) ||
+    !ts.isIdentifier(extracted.returnExpr)
+  ) {
+    return null;
+  }
+  const accName = extracted.returnExpr.text;
+  const forOfBindings = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "forOf" }> =>
+      binding.kind === "forOf" && binding.accName === accName,
+  );
+  if (forOfBindings.length === 0) {
+    return null;
+  }
+  if (forOfBindings.length !== 1) {
+    return { error: "for-of build-list comprehension must have one loop" };
+  }
+
+  const accDecls = extracted.bindings.filter(
+    (binding) =>
+      binding.kind === "const" &&
+      binding.tsName === accName &&
+      isEmptyArrayLiteral(binding.initializer),
+  );
+  if (accDecls.length !== 1) {
+    return {
+      error:
+        "for-of build-list comprehension must return its empty-array accumulator",
+    };
+  }
+  if (
+    extracted.bindings.some(
+      (binding) =>
+        (binding.kind === "reassign" && binding.tsName === accName) ||
+        (binding.kind === "stmt" && nodeWritesName(binding.stmt, accName)),
+    )
+  ) {
+    return {
+      error:
+        "for-of build-list comprehension accumulator has unsupported writes",
+    };
+  }
+
+  const forOf = forOfBindings[0]!;
+  const otherBindings = extracted.bindings.filter(
+    (binding) => binding !== forOf && binding !== accDecls[0],
+  );
+  const prelude = lowerPreludeBindings(
+    otherBindings,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    undefined,
+    policy,
+  );
+  if ("error" in prelude) {
+    return prelude;
+  }
+  if (prelude.arms.length > 0) {
+    return {
+      error:
+        "for-of build-list comprehension with early returns is not supported",
+    };
+  }
+  const loweredLets =
+    prelude.letStmts.length === 0
+      ? ir1SsaBodyLowerSuccess()
+      : lowerL1BodyToSsaProps(
+          ir1Block(prelude.letStmts as [IR1Stmt, ...IR1Stmt[]]),
+          [],
+          {
+            applyConst: (e) => applyOpaqueAliases(e, supply),
+          },
+        );
+  if (loweredLets.diagnostics.length > 0) {
+    const first = loweredLets.diagnostics[0];
+    return {
+      error:
+        first?.kind === "unsupported"
+          ? first.reason
+          : "for-of build-list comprehension prelude did not lower",
+    };
+  }
+  return {
+    prelude,
+    loweredLets,
+    each: ir1Each(forOf.binder, forOf.src, forOf.guards, forOf.proj),
+  };
 }
 
 /**
@@ -2037,8 +2191,9 @@ function unwrapNegatedCondition(expr: ts.Expression): ts.Expression | null {
 
 function extractReturnExpression(
   body: ts.Block,
-  checker: ts.TypeChecker,
+  ctx: L1BuildContext,
 ): ExtractedBody | null {
+  const { checker } = ctx;
   // Skip guard statements (if-throw patterns and assertion calls)
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
@@ -2048,6 +2203,8 @@ function extractReturnExpression(
 
   const bindings: PreludeStmt[] = [];
   const letNames = new Set<string>();
+  const emptyArrayAccNames = new Set<string>();
+  let scopedParams = ctx.paramNames;
   let lastLetDeclNames = new Set<string>();
 
   // Every statement before the last must be either a const binding or a
@@ -2059,7 +2216,18 @@ function extractReturnExpression(
   while (i < lastIdx) {
     const mu = recognizeLetWhilePair(stmts, i, checker);
     if (mu) {
-      bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
+      const localName = allocLocalBindingName(
+        ctx.supply,
+        toPantTermName(mu.counterName),
+        scopedParams,
+      );
+      bindings.push({
+        kind: "muSearch",
+        tsName: mu.counterName,
+        mu,
+        localName,
+      });
+      scopedParams = withParam(scopedParams, mu.counterName, localName);
       i += 2;
       continue;
     }
@@ -2078,6 +2246,19 @@ function extractReturnExpression(
         return null;
       }
       bindings.push(...reassigned);
+      i += 1;
+      lastLetDeclNames = new Set();
+      continue;
+    }
+    if (ts.isForOfStatement(stmt)) {
+      const recognized = recognizeForOfPush(stmt, emptyArrayAccNames, {
+        ...ctx,
+        paramNames: scopedParams,
+      });
+      if (recognized === null) {
+        return null;
+      }
+      bindings.push({ kind: "forOf", ...recognized });
       i += 1;
       lastLetDeclNames = new Set();
       continue;
@@ -2126,6 +2307,26 @@ function extractReturnExpression(
     if (loweredBindings === null) {
       return null;
     }
+    const scopedBindings: PreludeStmt[] = [];
+    for (const binding of loweredBindings) {
+      if (
+        binding.kind === "const" &&
+        isEmptyArrayLiteral(binding.initializer)
+      ) {
+        emptyArrayAccNames.add(binding.tsName);
+      }
+      if (binding.kind === "const") {
+        const localName = allocLocalBindingName(
+          ctx.supply,
+          toPantTermName(binding.tsName),
+          scopedParams,
+        );
+        scopedBindings.push({ ...binding, localName });
+        scopedParams = withParam(scopedParams, binding.tsName, localName);
+      } else {
+        scopedBindings.push(binding);
+      }
+    }
     if (stmt.declarationList.flags & ts.NodeFlags.Let) {
       lastLetDeclNames = new Set();
       for (const name of bindingNamesFromDeclarationList(
@@ -2137,7 +2338,7 @@ function extractReturnExpression(
     } else {
       lastLetDeclNames = new Set();
     }
-    bindings.push(...loweredBindings);
+    bindings.push(...scopedBindings);
     i += 1;
   }
 
@@ -2157,6 +2358,52 @@ function extractReturnExpression(
   }
 
   return null;
+}
+
+function isEmptyArrayLiteral(expr: ts.Expression): boolean {
+  let current = expr;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return ts.isArrayLiteralExpression(current) && current.elements.length === 0;
+}
+
+function nodeWritesName(node: ts.Node, name: string): boolean {
+  let found = false;
+  const visit = (current: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (
+      ts.isBinaryExpression(current) &&
+      ts.isIdentifier(current.left) &&
+      current.left.text === name &&
+      isAssignmentOperator(current.operatorToken.kind)
+    ) {
+      found = true;
+      return;
+    }
+    if (
+      (ts.isPrefixUnaryExpression(current) ||
+        ts.isPostfixUnaryExpression(current)) &&
+      ts.isIdentifier(current.operand) &&
+      current.operand.text === name &&
+      (current.operator === ts.SyntaxKind.PlusPlusToken ||
+        current.operator === ts.SyntaxKind.MinusMinusToken)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
 }
 
 function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
@@ -2179,6 +2426,9 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
       if (recognizeEarlyReturnArm(stmt)) {
         i += 1;
         continue;
+      }
+      if (ts.isForOfStatement(stmt)) {
+        return "for-of loop is not a recognized build-list comprehension";
       }
       // An if-shaped statement that didn't match recognizeEarlyReturnArm:
       // diagnose precisely.
@@ -2211,6 +2461,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           }
         } else if (!(declList.flags & ts.NodeFlags.Const)) {
           return VAR_BINDINGS_UNSUPPORTED;
+        }
+        if (constLikeBindingsFromVariableStatement(stmt, body) !== null) {
+          i += 1;
+          continue;
         }
       }
       if (ts.isExpressionStatement(stmt)) {
@@ -2694,6 +2948,11 @@ function lowerPreludeBindings(
       if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
         return { error: "while-loop predicate references a later binding" };
       }
+    } else if (binding.kind === "forOf") {
+      // The comprehension special case consumes recognized for-of prelude
+      // entries before normal lowering. If one reaches this path, the body
+      // is outside the single-comprehension return shape.
+      continue;
     } else {
       // earlyReturn arm — predicate and value must be pure and may not refer
       // to bindings declared after this point. The arm itself binds nothing,
@@ -2904,11 +3163,20 @@ function lowerPreludeBindings(
           fallthroughFacts: acc.fallthroughFacts,
         };
       }
-      const localName = allocLocalBindingName(
-        supply,
-        toPantTermName(binding.tsName),
-        acc.scopedParams,
-      );
+      if (binding.kind === "forOf") {
+        return {
+          tag: "error",
+          error:
+            "for-of loop is only supported as a build-list comprehension returned directly",
+        };
+      }
+      const localName =
+        binding.localName ??
+        allocLocalBindingName(
+          supply,
+          toPantTermName(binding.tsName),
+          acc.scopedParams,
+        );
       const returnTypeResult =
         binding.kind === "const"
           ? mapTsType(
