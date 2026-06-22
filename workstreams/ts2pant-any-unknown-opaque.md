@@ -82,6 +82,8 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 
 ### Milestone 3: ts2pant-opaque-default
 
+*(Planned 2026-06-21 — `gameplans/ts2pant-opaque-default.json`. The M2→M3 observation-window blocker — an opaque-contagion crash on synthetic SSA loop-body nodes — was fixed in PR #329; the corpus runs 111/111 under opaque.)*
+
 **Definition of Done**:
 - Default value of `mapTsType`'s `policy` parameter flips from `"reject"` to `"opaque"`.
 - Every fixture in the corpus that previously rejected on `any` / `unknown` now produces Pant with the `Opaque` encoding; snapshots regenerate exactly once and the regenerated output is the new baseline.
@@ -92,12 +94,15 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 
 **Unlocks**: M4 has a stable target (the opaque baseline is now what narrowing recovers from), M5 has a meaningful sample (the corpus now contains `OpaqueValue` instances to survey).
 
-**Open Questions** (resolve during write-gameplan):
-- Snapshot regeneration discipline — single commit that regenerates all affected snapshots, or per-fixture cleanup commits? Existing precedent in this repo favors single regeneration commits.
+**Open Questions** (resolved during write-gameplan):
+- ~~Snapshot regeneration discipline — single commit vs. per-fixture cleanup commits?~~ **Resolved**: single regeneration co-located with the flip patch (Patch 2), forced by gameplan atomicity — a flip that left snapshots stale would leave the suite red between patches. Matches the repo's single-regeneration-commit precedent.
+- ~~Default-resolution point — flip the pipeline default only, or resolve inside `mapTsType`?~~ **Resolved** (Design B): resolve the default inside `mapTsType` via `opts?.policy ?? DEFAULT_OPAQUE_POLICY` (single source of truth), not only at the pipeline boundary, matching the DoD wording.
 
 ---
 
 ### Milestone 4: ts2pant-opaque-narrowing
+
+*(Planned 2026-06-21 — `gameplans/ts2pant-opaque-narrowing.json`; built atop the landed opaque-default flip.)*
 
 **Definition of Done**:
 - At use sites of `any` / `unknown` values, `checker.getTypeAtLocation(useNode)` is consulted. If the narrowed type is concrete (not `any` / `unknown`), the use lowers to that concrete sort instead of `OpaqueValue`.
@@ -108,15 +113,19 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 
 **Why this is a safe pause point**: Pure precision improvement. The encoding remains sound (we narrow only when the TS compiler asserts the narrowed type, which is a property the TS language already guarantees). Reverting M4 is mechanical (drop the `getTypeAtLocation` call site).
 
-**Unlocks**: M5's survey now reflects post-narrowing opacity — sites that are still opaque after narrowing are the real monomorphization candidates.
+**Unlocks**: M5's survey now reflects post-narrowing opacity — sites that are still opaque after narrowing are the real monomorphization candidates. Also unblocks the guard-analysis workstream's M3b-deferred type-predicate cases — the "future M3c" that `tools/ts2pant/docs/guard-narrowing.md` notes needs a refined-type representation now has the opaque sort-recovery layer to build on.
 
-**Open Questions** (resolve during write-gameplan):
-- Which narrowing forms to handle in the first cut and which to defer (the long tail of narrowing forms — assertion functions, custom type guards, `in` operator — has diminishing returns)?
-- How to express the "cross-function narrowing not trusted" boundary in the printer / diagnostics — does the user see a hint that a parameter is opaque because we declined to follow the caller's narrowing?
+**Open Questions** (resolved during write-gameplan):
+- ~~Which narrowing forms to handle in the first cut and which to defer?~~ **Resolved**: recover every narrowed type that `mapTsType` supports under reject policy (scalars + supported composites + instanceof-class), with a conservative bail to Opaque on `UNSUPPORTED_UNKNOWN`. This covers typeof / `Array.isArray` / `instanceof` / discriminator automatically (TS does the narrowing; we map the result), needs no bespoke per-form allowlist, and ships ungated.
+- ~~How to express the "cross-function narrowing not trusted" boundary in the printer / diagnostics?~~ **Resolved**: no per-occurrence diagnostic — the Opaque sort is already visible in output, and the boundary is documented in `opaque-narrowing.md`. Consistent with the M3 decision to add no opaque diagnostic.
 
 ---
 
 ### Milestone 5: ts2pant-opaque-mono-survey
+
+*(Executed 2026-06-22 — not gameplanned: a read-only survey has no behavior change, feature flag, patch-sequencing, or atomicity surface, so it was implemented directly. Survey tool: `tools/ts2pant/src/mono-survey.ts` + `scripts/mono-survey.mts` (`npm run survey`); report at `tools/ts2pant/docs/opaque-mono-survey.{md,json}`.)*
+
+**Outcome**: Over the dogfood corpus (42 files, 770 top-level functions), **1** function has a top-level `any`/`unknown` parameter (`emit.ts:isExecError`, verdict `disagree-unbounded`); **0%** all-agree, far below the 25% threshold. The dogfood corpus is a strict, self-hosted codebase that avoids top-level `any`/`unknown` by construction, so it is **not representative** of the `any`/`unknown`-heavy user code M6 targets — a near-zero count reflects the corpus, not the value of monomorphization. **Decision: do not proceed to M6 on this evidence; the workstream pauses at M5.** A go decision requires re-surveying representative `any`/`unknown`-heavy user TypeScript; absent that, M5 is the workstream's terminal milestone (the M5 DoD permits closing here). The classifier was validated against `tests/fixtures/mono-survey/cases.ts` (all six verdict branches) so a future re-survey over real inputs is a config change, not new work.
 
 **Definition of Done**:
 - A read-only whole-program pass walks every function whose signature contains `any` / `unknown` (declaration site) and records every call site within the same module (and dep modules if reachable).
@@ -134,10 +143,12 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 - Decision criterion to proceed to M6: at least 25% of sites are in category (a). Below that threshold, the precision recovery is not worth the implementation cost; close the workstream after M5.
 - If proceeding, record the LOC threshold and the maximum-distinct-types threshold for M6 as part of the gameplan handoff.
 
-**Open Questions** (resolve during write-gameplan):
-- Report format — JSON shape for machine consumption (CI artifact?) and Markdown shape for human review?
-- Cross-module reach — do we follow imports into dep modules, or limit to the source file?
-- Treatment of exported functions whose callers are outside the visible program — they cannot be specialized soundly; the report flags them as "external-callers-unknown."
+**Open Questions** (resolved during implementation):
+- ~~Report format?~~ **Resolved**: `opaque-mono-survey.json` (machine, regenerable) + `opaque-mono-survey.md` (human summary with a derived threshold verdict), both written by `npm run survey`.
+- ~~Cross-module reach?~~ **Resolved**: candidates come from the requested files; call sites are scanned across the whole non-foreign program (`resolveSourceFileDependencies` + filter out default-lib/node_modules), so cross-file calls within the corpus are visible without chasing foreign imports.
+- ~~Exported functions with external callers?~~ **Resolved**: flagged `externalCallersUnknown` (a function can be soundly specialized only per-visible-site, never replaced wholesale, when its full caller set is outside the surveyed program).
+
+**Known limitation**: the survey scans top-level `FunctionDeclaration`s only (not class methods or arrow-const bindings). A grep confirmed this does not undercount the dogfood corpus (no arrow-const any/unknown-param helpers exist), but a re-survey over user code should lift this.
 
 ---
 
@@ -180,7 +191,7 @@ M3 and M4 can proceed in parallel once M2 has landed and the observation window 
 | `Opaque` granularity — single global sort vs. per-module-boundary | Decided: single global sort (simpler, can revisit if proofs need finer-grained distinctness). Listed here for traceability. | Resolved at workstream draft |
 | Equality semantics on `Opaque` values | TS structural identity vs. Pant reference identity. Needs a fixture and a documented stance. | M1 gameplan |
 | Interaction with `IsNullish` / list-lift encoding | `unknown \| null` after null-check is `unknown`. Likely composes as `[Opaque]`, but verify. | M2 gameplan |
-| Diagnostic surfacing for opaque-containing rules | Existing `UNSUPPORTED-skip` infrastructure is for rejected files. Opaque-containing files verify; do we still surface a hint? | M3 gameplan |
+| ~~Diagnostic surfacing for opaque-containing rules~~ | **Resolved (M3 gameplan)**: no opaque-origin diagnostic in M3 — the Opaque domain is visible in emitted Pant; revisit only if dogfood shows silent opacity is confusing. | Resolved 2026-06-21 |
 | Cross-module monomorphization | Visibility constraints across dep modules. The survey (M5) measures the cost of *not* crossing modules. | M5 report informs M6 |
 | Treatment of generic functions whose type parameters happen to bind to `any` / `unknown` at a call site | Out of scope for this workstream — generics handling is a separate problem. Recorded to avoid scope creep. | Out of scope |
 
@@ -193,5 +204,9 @@ M3 and M4 can proceed in parallel once M2 has landed and the observation window 
 | No global `Any` top-type with implicit coercions | Considered and rejected. A universal sort with coercions poisons every operation involving it (every Pant rule becomes trivially satisfiable on `Any` arguments). The opaque-sort-with-no-operations encoding preserves soundness because operations on `Opaque` either propagate opacity or are rejected at type-check, neither of which silently succeeds. |
 | Cross-function-call narrowing not trusted by default (M4) | TS flow narrowing across call boundaries depends on assertion-function and predicate-type machinery that does not always survive ts2pant's intermediate representations. Conservative default: at every function boundary, parameters typed `any` / `unknown` re-enter as fresh `OpaqueValue`. Caller-side narrowing applies within the caller only. |
 | Opt-in `"opaque"` policy before default flip (M2 → M3 split) | Lets us validate the encoding on a controlled subset before the corpus-wide regeneration. The observation window between M2 and M3 is the structural reason this workstream is not a single gameplan — it is exactly the kind of pause a gameplan cannot contain. |
+| Resolve the opacity default inside `mapTsType` (M3, Design B) | `mapTsType` resolves an unspecified policy via `opts?.policy ?? DEFAULT_OPAQUE_POLICY`, giving one source of truth shared by the pipeline, direct callers, and tests — matching the DoD's "mapTsType's policy parameter default flips". Design A (flip the pipeline default only) was rejected: it would leave `mapTsType`'s literal default diverging from the product default. Cost: ~10 reject unit tests pinned to explicit `policy: "reject"`, which also keeps the reject path covered. |
+| No opaque-origin diagnostic in M3 | M3 stays a pure default flip. Opacity is already observable in the emitted Pant (the `Opaque` domain), so it is not hidden; adding an informational hint would be a second behavior change with its own snapshot churn. Deferred, to revisit if dogfood shows the silent opacity is confusing. |
+| Opaque-narrowing (M4) reads `getTypeAtLocation` directly, orthogonal to the guard-analysis AssumptionEnv | The AssumptionEnv tracks discriminant/non-null/predicate facts to discharge definedness obligations (partial-access safety); M4 is *sort selection* at a use site. TS's own intra-function flow narrowing is the authority for the narrowed type, so M4 reads `checker.getTypeAtLocation(useNode)` directly rather than inventing a redundant fact kind. The two narrowing layers are complementary, not the same mechanism. |
+| Opaque-narrowing (M4) reuses the synthesized-opaque form's `sort` field | A narrowed-but-unconstrained value is represented as a fresh nullary rule `name => <narrowedSort>` — the existing opaque form already carries `sort` and the lowering/printer honor it, so no new L1 vocabulary is needed. Pant has no `Opaque`→concrete projection, so minting a fresh constant of the narrowed sort is the sound representation (consistent with the per-occurrence opaque-constant model). |
 | Survey-before-implement for monomorphization (M5 → M6 split) | Two reasons: (a) the decision to proceed is conditional on the survey's verdict, which a gameplan cannot encode; (b) the survey itself produces useful diagnostic output even if M6 never lands, so M5 has independent value. |
 | No dedicated design-doc milestone | Project convention: design questions live in the open-questions of the milestone they gate and are resolved during write-gameplan. Recorded here to short-circuit a recurring drafting mistake. |

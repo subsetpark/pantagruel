@@ -1,0 +1,93 @@
+{
+  "files": [
+    "annotations.ts",
+    "assumption-env.ts",
+    "ast-equal.ts",
+    "brand-precondition.ts",
+    "builtins.ts",
+    "definedness-obligation.ts",
+    "effect-error-channel.ts",
+    "emit.ts",
+    "extract.ts",
+    "index.ts",
+    "ir-build.ts",
+    "ir-emit.ts",
+    "ir.ts",
+    "ir1-build-body.ts",
+    "ir1-build.ts",
+    "ir1-lower-body.ts",
+    "ir1-lower.ts",
+    "ir1-printer.ts",
+    "ir1-ssa-collections.ts",
+    "ir1-ssa-counter-loop.ts",
+    "ir1-ssa-fixed-point.ts",
+    "ir1-ssa-foreach.ts",
+    "ir1-ssa-lower.ts",
+    "ir1-ssa-scalars.ts",
+    "ir1-substitute.ts",
+    "ir1.ts",
+    "mono-survey.ts",
+    "name-registry.ts",
+    "narrowing-recognizer.ts",
+    "nullish-recognizer.ts",
+    "opaque.ts",
+    "pant-ast.ts",
+    "pant-wasm.ts",
+    "pipeline.ts",
+    "purity.ts",
+    "supply.ts",
+    "translate-body.ts",
+    "translate-record.ts",
+    "translate-signature.ts",
+    "translate-types.ts",
+    "ts-ast-block-return.ts",
+    "types.ts"
+  ],
+  "totalFunctions": 770,
+  "candidateFunctions": 1,
+  "byVerdict": {
+    "all-agree": 0,
+    "disagree-but-bounded": 0,
+    "disagree-unbounded": 1,
+    "recursive": 0,
+    "oversized": 0,
+    "no-visible-call-sites": 0
+  },
+  "allAgreeFraction": 0,
+  "allAgreeFractionWithCallSites": 0,
+  "dynamicReturnFunctions": 1,
+  "functions": [
+    {
+      "file": "emit.ts",
+      "name": "isExecError",
+      "line": 274,
+      "bodyLoc": 3,
+      "exported": false,
+      "dynamicParams": [
+        "err"
+      ],
+      "dynamicReturn": false,
+      "recursive": false,
+      "callSites": [
+        {
+          "file": "emit.ts",
+          "line": 210,
+          "observed": [
+            {
+              "param": "err",
+              "type": "unknown",
+              "dynamic": true
+            }
+          ]
+        }
+      ],
+      "observedTypesByParam": {
+        "err": [
+          "unknown"
+        ]
+      },
+      "externalCallersUnknown": false,
+      "verdict": "disagree-unbounded"
+    }
+  ]
+}
