@@ -19,7 +19,6 @@ import {
   isAnonymousRecord,
   isMapType,
   isSetType,
-  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
@@ -150,19 +149,19 @@ export function translateRecordReturn(
     const mapped = mapTsType(returnType, checker, strategy, synthCell, {
       policy,
     });
-    if (isUnsupportedUnknown(mapped)) {
+    if (!mapped.ok) {
+      if (mapped.reason === UNSUPPORTED_ANONYMOUS_RECORD) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — anonymous record return shape could not be synthesized`,
+          },
+        ];
+      }
       return [
         {
           kind: "unsupported",
-          reason: `${functionName}: ${UNSUPPORTED_UNKNOWN_REASON}`,
-        },
-      ];
-    }
-    if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — anonymous record return shape could not be synthesized`,
+          reason: `${functionName}: ${mapped.reason}`,
         },
       ];
     }
@@ -642,7 +641,7 @@ function getSetElementTypeName(
       const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
         policy,
       });
-      return isUnsupportedUnknown(mapped) ? null : mapped;
+      return mapped.ok ? mapped.sort : null;
     }
   }
   return null;
@@ -676,7 +675,7 @@ function getMapKeyTypeName(
       const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
         policy,
       });
-      return isUnsupportedUnknown(mapped) ? null : mapped;
+      return mapped.ok ? mapped.sort : null;
     }
   }
   return null;
@@ -698,7 +697,7 @@ function getMapValueTypeName(
       const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell, {
         policy,
       });
-      return isUnsupportedUnknown(mapped) ? null : mapped;
+      return mapped.ok ? mapped.sort : null;
     }
   }
   return null;

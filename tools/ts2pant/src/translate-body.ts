@@ -115,15 +115,14 @@ import {
   fieldRuleName,
   isMapType,
   isSetType,
-  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
+  okSort,
   resolveFieldOwner,
   type SynthCell,
   toPantTermName,
   UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
-  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import {
   type ExtractedBlockConstBinding,
@@ -1097,11 +1096,11 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       // declaration for this case, so the right move here is to bail
       // with a single unsupported PropResult rather than emit broken
       // equations.
-      if (isUnsupportedUnknown(typeName)) {
+      if (!typeName.ok) {
         return [
           {
             kind: "unsupported",
-            reason: `${functionName} param '${param.name}': ${UNSUPPORTED_UNKNOWN_REASON}`,
+            reason: `${functionName} param '${param.name}': ${typeName.reason}`,
           },
         ];
       }
@@ -1112,7 +1111,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       const pantName =
         paramNameMap?.get(param.name) ?? toPantTermName(param.name);
       paramNames.set(param.name, pantName);
-      paramList.push({ name: pantName, type: typeName });
+      paramList.push({ name: pantName, type: typeName.sort });
     }
   }
 
@@ -2669,7 +2668,7 @@ function lowerPreludeBindings(
         toPantTermName(binding.tsName),
         acc.scopedParams,
       );
-      const returnType =
+      const returnTypeResult =
         binding.kind === "const"
           ? mapTsType(
               checker.getTypeAtLocation(binding.initializer),
@@ -2678,13 +2677,14 @@ function lowerPreludeBindings(
               supply.synthCell,
               { policy },
             )
-          : strategy.mapNumber();
-      if (isUnsupportedUnknown(returnType)) {
+          : okSort(strategy.mapNumber());
+      if (!returnTypeResult.ok) {
         return {
           tag: "error",
-          error: `${binding.tsName}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+          error: `${binding.tsName}: ${returnTypeResult.reason}`,
         };
       }
+      const returnType = returnTypeResult.sort;
       const initExpr =
         binding.kind === "const"
           ? buildL1SubExpr(binding.initializer, {
@@ -3869,9 +3869,13 @@ function getArrayElementType(
     return null;
   }
   const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
-  return typeArgs.length === 1
-    ? mapTsType(typeArgs[0]!, checker, strategy, undefined, { policy })
-    : "?";
+  if (typeArgs.length !== 1) {
+    return "?";
+  }
+  const mapped = mapTsType(typeArgs[0]!, checker, strategy, undefined, {
+    policy,
+  });
+  return mapped.ok ? mapped.sort : null;
 }
 
 /**
@@ -4317,6 +4321,12 @@ export function translateCallExpr(
         supply.synthCell,
         { policy },
       );
+      if (!ownerType.ok) {
+        return { unsupported: `Set mutation owner type: ${ownerType.reason}` };
+      }
+      if (!elemType.ok) {
+        return { unsupported: `Set mutation element type: ${elemType.reason}` };
+      }
       const objOpaque = lowerL1ToOpaque(memberR.receiver);
       let elemOpaque: OpaqueExpr | null = null;
       if (methodName !== "clear") {
@@ -4340,8 +4350,8 @@ export function translateCallExpr(
         effect: {
           op: methodName as "add" | "delete" | "clear",
           ruleName: fieldName,
-          ownerType,
-          elemType,
+          ownerType: ownerType.sort,
+          elemType: elemType.sort,
           objExpr: objOpaque,
           elemExpr: elemOpaque,
         },
@@ -4447,13 +4457,21 @@ export function translateCallExpr(
           supply.synthCell,
           { policy },
         );
+        if (!ownerType.ok) {
+          return {
+            unsupported: `Map mutation owner type: ${ownerType.reason}`,
+          };
+        }
+        if (!keyType.ok) {
+          return { unsupported: `Map mutation key type: ${keyType.reason}` };
+        }
         return {
           effect: {
             op: methodName as "set" | "delete",
             ruleName: fieldName,
             keyPredName: `${fieldName}-key`,
-            ownerType,
-            keyType,
+            ownerType: ownerType.sort,
+            keyType: keyType.sort,
             objExpr: lowerL1ToOpaque(memberR.receiver),
             keyExpr: bodyExpr(kExpr),
             valueExpr,
@@ -4470,20 +4488,28 @@ export function translateCallExpr(
       if (typeArgs.length !== 2) {
         return { unsupported: "Map with unexpected arity" };
       }
-      const kType = mapTsType(
+      const kTypeResult = mapTsType(
         typeArgs[0]!,
         checker,
         strategy,
         supply.synthCell,
         { policy },
       );
-      const vType = mapTsType(
+      if (!kTypeResult.ok) {
+        return { unsupported: `Map key type: ${kTypeResult.reason}` };
+      }
+      const vTypeResult = mapTsType(
         typeArgs[1]!,
         checker,
         strategy,
         supply.synthCell,
         { policy },
       );
+      if (!vTypeResult.ok) {
+        return { unsupported: `Map value type: ${vTypeResult.reason}` };
+      }
+      const kType = kTypeResult.sort;
+      const vType = vTypeResult.sort;
       let info = supply.synthCell
         ? lookupMapKV(supply.synthCell.synth, kType, vType)
         : undefined;
@@ -4606,14 +4632,20 @@ export function translateCallExpr(
           supply.synthCell,
           { policy },
         );
+        if (!ownerType.ok) {
+          return { unsupported: `Map read owner type: ${ownerType.reason}` };
+        }
+        if (!keyType.ok) {
+          return { unsupported: `Map read key type: ${keyType.reason}` };
+        }
         return {
           expr: readMapThroughWrites(
             state,
             methodName as "get" | "has",
             fieldName,
             `${fieldName}-key`,
-            ownerType,
-            keyType,
+            ownerType.sort,
+            keyType.sort,
             lowerL1ToOpaque(memberR.receiver),
             bodyExpr(kExpr),
           ),
@@ -4633,20 +4665,28 @@ export function translateCallExpr(
       if (typeArgs.length !== 2) {
         return { unsupported: "Map with unexpected arity" };
       }
-      const kType = mapTsType(
+      const kTypeResult = mapTsType(
         typeArgs[0]!,
         checker,
         strategy,
         supply.synthCell,
         { policy },
       );
-      const vType = mapTsType(
+      if (!kTypeResult.ok) {
+        return { unsupported: `Map key type: ${kTypeResult.reason}` };
+      }
+      const vTypeResult = mapTsType(
         typeArgs[1]!,
         checker,
         strategy,
         supply.synthCell,
         { policy },
       );
+      if (!vTypeResult.ok) {
+        return { unsupported: `Map value type: ${vTypeResult.reason}` };
+      }
+      const kType = kTypeResult.sort;
+      const vType = vTypeResult.sort;
       let info = supply.synthCell
         ? lookupMapKV(supply.synthCell.synth, kType, vType)
         : undefined;
@@ -4793,13 +4833,13 @@ export function translateCallExpr(
                     policy,
                   })
                 : null;
-            if (elemType !== null) {
+            if (ownerType.ok && elemType?.ok) {
               return {
                 expr: readSetThroughWrites(
                   state,
                   fieldName,
-                  ownerType,
-                  elemType,
+                  ownerType.sort,
+                  elemType.sort,
                   lowerL1ToOpaque(memberR.receiver),
                   bodyExpr(arg),
                 ),

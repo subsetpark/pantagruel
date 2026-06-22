@@ -779,7 +779,13 @@ export function extractModuleConsts(
       continue;
     }
     const tsType = checker.getTypeAtLocation(decl);
-    const pantType = mapTsType(tsType, checker, strategy, synthCell);
+    const pantTypeResult = mapTsType(tsType, checker, strategy, synthCell);
+    if (!pantTypeResult.ok) {
+      // The const's type has no Pant sort — skip it rather than emit a
+      // refusal reason as a rule's return type.
+      continue;
+    }
+    const pantType = pantTypeResult.sort;
     // Kebab from the *declaration's* name (not any local alias spelling)
     // so all aliases route to the same Pant rule. With
     // `import { ERR, ERR as Err }`, both `ERR` and `Err` should resolve
@@ -1120,27 +1126,35 @@ function translateReferencedCallable(
   if (returnType.flags & ts.TypeFlags.Void) {
     return null;
   }
-  const params = sig.getParameters().map((param) => {
+  const params: { name: string; type: string }[] = [];
+  for (const param of sig.getParameters()) {
     const paramDecl = param.valueDeclaration ?? decl;
     const paramType = checker.getTypeOfSymbolAtLocation(param, paramDecl);
-    const pantType = mapTsType(paramType, checker, strategy, synthCell, {
+    const mapped = mapTsType(paramType, checker, strategy, synthCell, {
       policy: "opaque",
     });
+    // Can't synthesize a sound rule head with an unmappable parameter type.
+    if (!mapped.ok) {
+      return null;
+    }
     const pantName = synthCell
       ? cellRegisterName(synthCell, toPantTermName(param.name))
       : toPantTermName(param.name);
-    return { name: pantName, type: pantType };
-  });
+    params.push({ name: pantName, type: mapped.sort });
+  }
   const pantReturnType = mapTsType(returnType, checker, strategy, synthCell, {
     policy: "opaque",
   });
+  if (!pantReturnType.ok) {
+    return null;
+  }
   return {
     kind: "rule",
     name: synthCell
       ? cellRegisterName(synthCell, toPantTermName(declName))
       : toPantTermName(declName),
     params,
-    returnType: pantReturnType,
+    returnType: pantReturnType.sort,
   };
 }
 

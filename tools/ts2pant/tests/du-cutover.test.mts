@@ -75,10 +75,10 @@ describe("du-cutover", () => {
       newSynthCell(),
     );
 
-    assert.equal(
-      mapped,
-      UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
-    );
-    assert.doesNotMatch(mapped, / \+ /u);
+    // Refused (not fallen through to the `A + B` union encoding).
+    assert.deepEqual(mapped, {
+      ok: false,
+      reason: UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
+    });
   });
 });

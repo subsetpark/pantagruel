@@ -28,6 +28,7 @@ import {
   detectDiscriminatedUnion,
   emitTupleCtorModule,
   IntStrategy,
+  type MapTsTypeResult,
   mapTsType,
   newSynthCell,
   RealStrategy,
@@ -37,6 +38,16 @@ import {
   UNSUPPORTED_UNKNOWN,
 } from "../src/translate-types.js";
 import type { PantDeclaration } from "../src/types.js";
+
+// Narrow a MapTsTypeResult to its sort, failing the test if it is unsupported.
+// Keeps the success-expecting assertions going *through* the Result type rather
+// than reaching past it with a bare `.sort` on an un-narrowed union.
+function expectSort(result: MapTsTypeResult): string {
+  if (!result.ok) {
+    throw new Error(`expected a Pant sort, got unsupported: ${result.reason}`);
+  }
+  return result.sort;
+}
 
 before(async () => {
   await loadAst();
@@ -104,11 +115,6 @@ it("generated type helpers preserve synth registrations", () => {
       );
       const opaqueReg = TT.registerOpaqueValue(cell.opaqueSynth, "opaque-id");
 
-      assert.equal(TT.isUnsupportedUnknown(TT.UNSUPPORTED_UNKNOWN), true);
-      assert.equal(
-        TT.isUnsupportedDiscriminatedUnionRegistration("Int"),
-        false,
-      );
       assert.equal(TT.isTsNullish(checker.getNullType()), true);
       assert.equal(TT.manglePantTypeToFragment("[Int]"), "ListInt");
       assert.equal(
@@ -198,12 +204,15 @@ it("generated type helpers preserve synth registrations", () => {
       assert.equal(TT.isAnonymousRecord(type), false);
       assert.equal(TT.isMapType(type), false);
       assert.equal(TT.isSetType(type), false);
-      assert.equal(TT.mapTsType(type, checker, IntStrategy, cell), "Int");
+      assert.deepEqual(TT.mapTsType(type, checker, IntStrategy, cell), {
+        ok: true,
+        sort: "Int",
+      });
       const aliasNode = sourceFile
         .getTypeAliasOrThrow("Maybe")
         .getTypeNodeOrThrow().compilerNode;
       const aliasType = checker.getTypeAtLocation(aliasNode);
-      assert.equal(
+      assert.deepEqual(
         TT.mapTsTypeFromTypeNode(
           aliasNode,
           aliasType,
@@ -211,7 +220,7 @@ it("generated type helpers preserve synth registrations", () => {
           IntStrategy,
           cell,
         ),
-        "[Int]",
+        { ok: true, sort: "[Int]" },
       );
       assert.equal(
         TT.resolveFieldOwner(
@@ -307,7 +316,6 @@ it("generated names and type fragments remain Pant-safe", () => {
         assert.notEqual(TT.manglePantTypeToFragment(pantType), "");
         assert.match(TT.depModuleNameForFile(fileName), /^[A-Z][A-Z0-9_]*$/u);
         assert.equal(TT.fieldRuleName(name, "value"), `${term}--value`);
-        assert.equal(TT.isUnsupportedUnknown(TT.UNSUPPORTED_UNKNOWN), true);
       },
     ),
   );
@@ -584,7 +592,10 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
     `);
     const cell = newSynthCell();
 
-    assert.equal(mapTsType(alias.type, checker, IntStrategy, cell), "Shape");
+    assert.equal(
+      expectSort(mapTsType(alias.type, checker, IntStrategy, cell)),
+      "Shape",
+    );
     assert.deepEqual(
       ["kind", "r", "shared"].map((field) =>
         resolveFieldOwner(alias.type, field, checker, IntStrategy, cell),
@@ -616,7 +627,10 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
     const cell = newSynthCell();
     const mapped = mapTsType(alias.type, checker, IntStrategy, cell);
 
-    assert.equal(mapped, "LeftOwnerRec + OwnerRightRec");
+    assert.deepEqual(mapped, {
+      ok: true,
+      sort: "LeftOwnerRec + OwnerRightRec",
+    });
     assert.deepEqual(
       resolveFieldOwner(alias.type, "owner", checker, IntStrategy, cell),
       {
@@ -664,9 +678,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, cell, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, cell, {
+          policy: "opaque",
+        }),
+      ),
       OPAQUE_DOMAIN,
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), [
@@ -684,9 +700,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, cell, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, cell, {
+          policy: "opaque",
+        }),
+      ),
       OPAQUE_DOMAIN,
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), [
@@ -703,9 +721,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, cell, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, cell, {
+          policy: "opaque",
+        }),
+      ),
       "Int",
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
@@ -721,14 +741,14 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(anyProp.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
     assert.equal(
       mapTsType(unknownProp.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -739,9 +759,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, undefined, {
+          policy: "opaque",
+        }),
+      ),
       OPAQUE_DOMAIN,
     );
   });
@@ -755,9 +777,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, cell, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, cell, {
+          policy: "opaque",
+        }),
+      ),
       OPAQUE_DOMAIN,
     );
     cellRegisterOpaqueValue(cell, "foo.ts:1");
@@ -792,9 +816,11 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, cell, {
-        policy: "opaque",
-      }),
+      expectSort(
+        mapTsType(prop.type, checker, IntStrategy, cell, {
+          policy: "opaque",
+        }),
+      ),
       "StringToListOpaqueMap",
     );
 
@@ -848,7 +874,10 @@ describe("mapTsType", () => {
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), "undefined");
+    assert.equal(
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "undefined",
+    );
   });
 
   it("list-lifts `T | null` to `[T]`", () => {
@@ -858,7 +887,10 @@ describe("mapTsType", () => {
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[String]");
+    assert.equal(
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "[String]",
+    );
   });
 
   it("list-lifts multi-arm union with null to `[A + B]`", () => {
@@ -873,7 +905,10 @@ describe("mapTsType", () => {
     const foo = extracted.interfaces.find((i: any) => i.name === "Foo")!;
     const prop = foo.properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[A + B]");
+    assert.equal(
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "[A + B]",
+    );
   });
 
   it("rejects `unknown`", () => {
@@ -890,8 +925,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -905,8 +940,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -920,8 +955,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -935,8 +970,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -952,8 +987,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
     // No partial Map domain leaked into the synth state.
     assert.equal(cellK.synth.byKV.size, 0);
@@ -965,8 +1000,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
     assert.equal(cellV.synth.byKV.size, 0);
   });
@@ -985,8 +1020,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(prop.type, checker, IntStrategy, undefined, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
   });
 
@@ -1000,8 +1035,8 @@ describe("mapTsType", () => {
     assert.equal(
       mapTsType(returnType, checker, IntStrategy, cell, {
         policy: "reject",
-      }),
-      UNSUPPORTED_UNKNOWN,
+      }).ok,
+      false,
     );
     // No partial record domain leaked into the synth state.
     assert.equal(cell.recordSynth.byShape.size, 0);
@@ -1043,39 +1078,10 @@ describe("translateTypes routes `unknown` through `unsupported` declaration", ()
   });
 });
 
-describe("cellRegisterMap / cellRegisterRecord / cellRegisterTupleConstructor reject `unknown` defensively", () => {
-  it("cellRegisterMap returns null when K is the sentinel", async () => {
-    const { cellRegisterMap, newSynthCell, UNSUPPORTED_UNKNOWN } = await import(
-      "../src/translate-types.js"
-    );
-    const cell = newSynthCell();
-    assert.equal(cellRegisterMap(cell, UNSUPPORTED_UNKNOWN, "Int"), null);
-    assert.equal(cell.synth.byKV.size, 0);
-  });
-
-  it("cellRegisterRecord returns null when a field type is the sentinel", async () => {
-    const { cellRegisterRecord, newSynthCell, UNSUPPORTED_UNKNOWN } =
-      await import("../src/translate-types.js");
-    const cell = newSynthCell();
-    assert.equal(
-      cellRegisterRecord(cell, [{ name: "x", type: UNSUPPORTED_UNKNOWN }]),
-      null,
-    );
-    assert.equal(cell.recordSynth.byShape.size, 0);
-  });
-
-  it("cellRegisterTupleConstructor returns null when an element is the sentinel", async () => {
-    const { UNSUPPORTED_UNKNOWN } = await import("../src/translate-types.js");
-    const cell = newSynthCell();
-    assert.equal(
-      cellRegisterTupleConstructor(cell, {
-        elementPantTypes: [UNSUPPORTED_UNKNOWN, "Int"],
-      }),
-      null,
-    );
-    assert.equal(cellTupleShapes(cell).length, 0);
-  });
-});
+// The previous `cellRegister* reject `unknown` defensively` suite was removed:
+// callers now unwrap `mapTsType`'s Result before passing sorts to the
+// synthesizers, so a refusal can no longer reach them as a sentinel string —
+// the guard is enforced by the type system rather than a runtime check.
 
 describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
   it("emits nothing while no opaque id is registered", async () => {
