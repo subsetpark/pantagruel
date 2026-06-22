@@ -449,12 +449,19 @@ export function isBoolReturningDeclarationFileCall(
     return false;
   }
   const returnType = checker.getResolvedSignature(expr)?.getReturnType();
-  return (
-    returnType !== undefined &&
+  if (
+    returnType === undefined ||
     (returnType.flags &
-      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
       0
-  );
+  ) {
+    return false;
+  }
+  return isPredicateLikeDeclarationFileBoolCallName(expr.expression.name.text);
+}
+
+function isPredicateLikeDeclarationFileBoolCallName(name: string): boolean {
+  return /^(is|has)[A-Z_]/.test(name);
 }
 
 /**

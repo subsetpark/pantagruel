@@ -482,6 +482,19 @@ describe("isEffectFree", () => {
     assert.equal(isEffectFree(call, checker), false);
   });
 
+  it("does not admit declaration-file boolean mutators", () => {
+    const sf = createSourceFileFromSource(`
+      function f(xs: Set<string>, value: string) { return xs.delete(value); }
+    `);
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(sf.compilerNode, "f");
+
+    assert.equal(
+      isEffectFree(call, checker, { admitForeignBoolPredicates: true }),
+      false,
+    );
+  });
+
   it("treats known-pure builtin calls as effect-free", () => {
     assert.equal(
       checkEffectFree(`
