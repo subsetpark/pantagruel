@@ -2007,9 +2007,12 @@ export function recognizeForOfPush(
 
   const guards: IR1Expr[] = [];
   for (const guardExpr of push.guardExprs) {
+    if (!isStaticallyBoolTyped(guardExpr, ctx.checker)) {
+      return null;
+    }
     if (
-      !isStaticallyBoolTyped(guardExpr, ctx.checker) ||
-      expressionHasSideEffects(guardExpr, ctx.checker)
+      expressionHasSideEffects(guardExpr, ctx.checker) &&
+      !isBoolDeclarationFileNamespaceCall(guardExpr, ctx.checker)
     ) {
       return null;
     }
@@ -2065,6 +2068,36 @@ function buildPureL1OrNull(
     return null;
   }
   return built;
+}
+
+function isBoolDeclarationFileNamespaceCall(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  if (
+    !ts.isCallExpression(expr) ||
+    !ts.isPropertyAccessExpression(expr.expression)
+  ) {
+    return false;
+  }
+  const sig = checker.getResolvedSignature(expr);
+  const returnType = sig?.getReturnType();
+  if (
+    returnType === undefined ||
+    (returnType.flags &
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
+      0
+  ) {
+    return false;
+  }
+  const symbol = checker.getSymbolAtLocation(expr.expression.name);
+  const resolved =
+    symbol && symbol.flags & ts.SymbolFlags.Alias
+      ? checker.getAliasedSymbol(symbol)
+      : symbol;
+  return (resolved?.getDeclarations() ?? []).some(
+    (decl) => decl.getSourceFile().isDeclarationFile,
+  );
 }
 
 interface RecognizedPushBody {
@@ -2530,6 +2563,9 @@ function constBindingsFromDeclarationList(
   return bindings;
 }
 
+/**
+ * @pant all dl: ForeignVariableDeclarationList | binding-names-from-declaration-list dl = (each d in declarations dl, is-identifier (name d) | identifier-text (name d)).
+ */
 function bindingNamesFromDeclarationList(
   declList: ts.VariableDeclarationList,
 ): readonly string[] {

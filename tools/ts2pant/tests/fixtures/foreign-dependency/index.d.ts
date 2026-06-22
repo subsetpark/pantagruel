@@ -1,10 +1,10 @@
-export interface ForeignDependencyContainer {
-  readonly items: readonly ForeignDependencyItem[];
+export interface DependencyContainer {
+  readonly items: readonly DependencyItem[];
 }
 
-export interface ForeignDependencyItem {
+export interface DependencyItem {
   readonly label: string;
   readonly ready: boolean;
 }
 
-export declare function isReady(item: ForeignDependencyItem): boolean;
+export declare function isReady(item: DependencyItem): boolean;

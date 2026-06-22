@@ -201,6 +201,50 @@ function isDynamicTsType(type: ts.Type): boolean {
   return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0;
 }
 
+function isDeclarationFileCallableSymbol(
+  symbol: ts.Symbol | undefined,
+  checker: ts.TypeChecker,
+): boolean {
+  if (symbol === undefined) {
+    return false;
+  }
+  const resolved =
+    symbol.flags & ts.SymbolFlags.Alias
+      ? checker.getAliasedSymbol(symbol)
+      : symbol;
+  return (resolved.getDeclarations() ?? []).some((decl) => {
+    const sf = decl.getSourceFile();
+    return (
+      sf.isDeclarationFile &&
+      (ts.isFunctionDeclaration(decl) || ts.isMethodSignature(decl))
+    );
+  });
+}
+
+function isBoolReturningDeclarationFileCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  if (!ts.isPropertyAccessExpression(expr.expression)) {
+    return false;
+  }
+  if (
+    !isDeclarationFileCallableSymbol(
+      checker.getSymbolAtLocation(expr.expression.name),
+      checker,
+    )
+  ) {
+    return false;
+  }
+  const returnType = checker.getResolvedSignature(expr)?.getReturnType();
+  return (
+    returnType !== undefined &&
+    (returnType.flags &
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
+      0
+  );
+}
+
 function narrowedSortForUse(
   expr: ts.Expression,
   ctx: L1BuildContext,
@@ -1103,7 +1147,14 @@ export function tryBuildL1PureSubExpression(
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: "call with spread arguments is unsupported" };
     }
-    if (expressionHasSideEffects(expr.expression, ctx.checker)) {
+    const declarationFilePropertyCallee = isBoolReturningDeclarationFileCall(
+      expr,
+      ctx.checker,
+    );
+    if (
+      !declarationFilePropertyCallee &&
+      expressionHasSideEffects(expr.expression, ctx.checker)
+    ) {
       return null;
     }
     if (isArrayChainCall(expr, ctx.checker)) {
@@ -1305,6 +1356,7 @@ export function tryBuildL1PureSubExpression(
     }
     let callee: IR1Expr | null;
     let args: IR1Expr[];
+    let expectedArgSorts: Map<number, string> | null = null;
     if (ts.isIdentifier(expr.expression)) {
       const fnName =
         ctx.paramNames.get(expr.expression.text) ?? expr.expression.text;
@@ -1314,14 +1366,56 @@ export function tryBuildL1PureSubExpression(
       ts.isPropertyAccessExpression(expr.expression) ||
       ts.isElementAccessExpression(expr.expression)
     ) {
-      const builtCallee = buildL1MemberAccess(expr.expression, ctx, {
-        nativeReceiverLeaf: true,
-      });
-      if (isL1Unsupported(builtCallee)) {
-        return builtCallee;
+      if (ts.isPropertyAccessExpression(expr.expression)) {
+        const calleeSymbol = ctx.checker.getSymbolAtLocation(
+          expr.expression.name,
+        );
+        if (
+          isDeclarationFileCallableSymbol(calleeSymbol, ctx.checker) &&
+          isBoolReturningDeclarationFileCall(expr, ctx.checker)
+        ) {
+          callee = ir1Var(toPantTermName(expr.expression.name.text));
+          args = [];
+          const signature = ctx.checker.getResolvedSignature(expr);
+          const predicate = signature
+            ? ctx.checker.getTypePredicateOfSignature(signature)
+            : undefined;
+          if (
+            predicate?.kind === ts.TypePredicateKind.Identifier &&
+            predicate.type !== undefined
+          ) {
+            const mapped = mapTsType(
+              predicate.type,
+              ctx.checker,
+              ctx.strategy,
+              ctx.supply.synthCell,
+            );
+            if (mapped.ok) {
+              expectedArgSorts = new Map([
+                [predicate.parameterIndex, mapped.sort],
+              ]);
+            }
+          }
+        } else {
+          const builtCallee = buildL1MemberAccess(expr.expression, ctx, {
+            nativeReceiverLeaf: true,
+          });
+          if (isL1Unsupported(builtCallee)) {
+            return builtCallee;
+          }
+          callee = builtCallee;
+          args = [];
+        }
+      } else {
+        const builtCallee = buildL1MemberAccess(expr.expression, ctx, {
+          nativeReceiverLeaf: true,
+        });
+        if (isL1Unsupported(builtCallee)) {
+          return builtCallee;
+        }
+        callee = builtCallee;
+        args = [];
       }
-      callee = builtCallee;
-      args = [];
     } else {
       const builtCallee = tryBuildL1PureSubExpression(expr.expression, ctx);
       if (builtCallee === null || isL1Unsupported(builtCallee)) {
@@ -1330,8 +1424,12 @@ export function tryBuildL1PureSubExpression(
       callee = builtCallee;
       args = [];
     }
-    for (const arg of expr.arguments) {
-      const builtArg = tryBuildL1PureSubExpression(arg, ctx);
+    for (const [index, arg] of expr.arguments.entries()) {
+      const expectedSort = expectedArgSorts?.get(index);
+      const builtArg = tryBuildL1PureSubExpression(arg, {
+        ...ctx,
+        ...(expectedSort === undefined ? {} : { expectedSort }),
+      });
       if (builtArg === null || isL1Unsupported(builtArg)) {
         return builtArg;
       }
@@ -1949,7 +2047,10 @@ function tryRegisterForeignAccessorForMember(
       reason: `foreign accessor .${fieldName}: unsupported property type ${ctx.checker.typeToString(propertyType)}`,
     };
   }
-  const returnSort = mapTsType(propertyType, ctx.checker, ctx.strategy, cell);
+  const returnSort =
+    ctx.expectedSort === undefined
+      ? mapTsType(propertyType, ctx.checker, ctx.strategy, cell)
+      : { ok: true as const, sort: ctx.expectedSort };
   if (!returnSort.ok) {
     return {
       kind: "unsupported",
@@ -2001,6 +2102,7 @@ function receiverTypeForFieldAccess(
   ctx: L1BuildContext,
 ): ts.Type {
   const declared = getOperandDeclaredType(receiverNode, ctx.checker);
+  const narrowed = ctx.checker.getTypeAtLocation(receiverNode);
   const detected = detectDiscriminatedUnion(declared, ctx.checker);
   if (
     detected &&
@@ -2009,9 +2111,20 @@ function receiverTypeForFieldAccess(
         variant.fields.some((field) => field.name === fieldName),
       ))
   ) {
+    if (narrowed !== declared) {
+      const foreign = foreignDomainForType(
+        narrowed,
+        ctx.checker,
+        ctx.strategy,
+        ctx.supply.synthCell,
+      );
+      if (foreign?.ok) {
+        return narrowed;
+      }
+    }
     return declared;
   }
-  return ctx.checker.getTypeAtLocation(receiverNode);
+  return narrowed;
 }
 
 function queryDiscriminatedUnionFieldDischarge(
