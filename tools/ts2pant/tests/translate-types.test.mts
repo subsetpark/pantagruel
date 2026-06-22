@@ -142,6 +142,19 @@ it("generated type helpers preserve synth registrations", () => {
         TT.emitOpaqueSynthDecls(opaqueReg.synth).decls.length > 0,
         true,
       );
+      assert.deepEqual(TT.emptyForeignAccessorSynth().byKey.size, 0);
+      const accessorReg = TT.registerForeignAccessor(
+        cell.foreignAccessorSynth,
+        cell.registry,
+        "ForeignGenerated",
+        "label",
+        "String",
+      );
+      assert.equal(accessorReg.entry?.ruleName, "generated-label");
+      assert.equal(
+        TT.emitForeignAccessorSynthDecls(accessorReg.synth).decls.length,
+        1,
+      );
       assert.match(
         TT.depModuleNameForFile(`${typeName}.ts`),
         /^[A-Z][A-Z0-9_]*$/u,
@@ -166,6 +179,11 @@ it("generated type helpers preserve synth registrations", () => {
         opaqueValueRuleName("opaque-id"),
       );
       assert.notEqual(TT.cellLookupOpaqueValue(cell, "opaque-id"), undefined);
+      assert.equal(
+        TT.cellRegisterForeignAccessor(cell, "ForeignGenerated", "value", "Int")
+          ?.ruleName,
+        "generated-value",
+      );
       assert.equal(TT.cellRegisterName(cell, "freshName"), "fresh-name");
       assert.equal(TT.cellIsUsed(cell, "freshName"), true);
       const tupleShape = { elementPantTypes: ["Int", "Bool"] };
@@ -857,34 +875,94 @@ describe("mapTsType", () => {
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
-  it.skip("Patch 2: foreign accessors register stable typed accessor declarations", () => {
-    // Intended Patch 2 shape: registering the same shallow accessor twice is
-    // idempotent, keyed by (foreign owner domain, property name, mapped return
-    // sort), and emits only EUF-style rule declarations.
-    const output = [
-      "ForeignDependencyContainer.",
-      "ForeignDependencyItem.",
-      "items c: ForeignDependencyContainer => [ForeignDependencyItem].",
-      "item-label i: ForeignDependencyItem => String.",
-      "item-ready i: ForeignDependencyItem => Bool.",
-    ].join("\n");
+  it("foreign accessors register stable typed accessor declarations", () => {
+    const cell = newSynthCell();
+    const containerDomain = TT.registerForeignDomain(
+      cell.foreignDomainSynth,
+      cell.registry,
+      "foreign-dependency:ForeignDependencyContainer",
+      "DependencyContainer",
+    );
+    cell.foreignDomainSynth = containerDomain.synth;
+    cell.registry = containerDomain.registry;
+    const itemDomain = TT.registerForeignDomain(
+      cell.foreignDomainSynth,
+      cell.registry,
+      "foreign-dependency:ForeignDependencyItem",
+      "DependencyItem",
+    );
+    cell.foreignDomainSynth = itemDomain.synth;
+    cell.registry = itemDomain.registry;
 
-    assert.match(
-      output,
-      /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
+    const items = TT.cellRegisterForeignAccessor(
+      cell,
+      containerDomain.domain,
+      "items",
+      `[${itemDomain.domain}]`,
     );
-    assert.match(
-      output,
-      /^item-label i: ForeignDependencyItem => String\.$/mu,
+    const itemsAgain = TT.cellRegisterForeignAccessor(
+      cell,
+      containerDomain.domain,
+      "items",
+      `[${itemDomain.domain}]`,
     );
-    assert.match(
-      output,
-      /^item-ready i: ForeignDependencyItem => Bool\.$/mu,
+    const label = TT.cellRegisterForeignAccessor(
+      cell,
+      itemDomain.domain,
+      "label",
+      "String",
     );
-    assert.equal(
-      output.match(/^items c: ForeignDependencyContainer/mgu)?.length,
-      1,
+    const ready = TT.cellRegisterForeignAccessor(
+      cell,
+      itemDomain.domain,
+      "ready",
+      "Bool",
     );
+
+    assert.ok(items);
+    assert.ok(label);
+    assert.ok(ready);
+    assert.equal(itemsAgain, items);
+    assert.equal(items.ruleName, "items");
+    assert.equal(label.ruleName, "item-label");
+    assert.equal(ready.ruleName, "item-ready");
+    assert.equal(label.returnSort, "String");
+    assert.equal(ready.returnSort, "Bool");
+
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
+      { kind: "domain", name: "ForeignDependencyContainer" },
+      { kind: "domain", name: "ForeignDependencyItem" },
+      {
+        kind: "rule",
+        name: "items",
+        params: [{ name: "c", type: "ForeignDependencyContainer" }],
+        returnType: "[ForeignDependencyItem]",
+      },
+      {
+        kind: "rule",
+        name: "item-label",
+        params: [{ name: "i", type: "ForeignDependencyItem" }],
+        returnType: "String",
+      },
+      {
+        kind: "rule",
+        name: "item-ready",
+        params: [{ name: "i", type: "ForeignDependencyItem" }],
+        returnType: "Bool",
+      },
+    ]);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
+
+    const renamed = newSynthCell(
+      registerName(emptyNameRegistry(), "items").registry,
+    );
+    const collision = TT.cellRegisterForeignAccessor(
+      renamed,
+      "ForeignDependencyContainer",
+      "items",
+      "[ForeignDependencyItem]",
+    );
+    assert.equal(collision?.ruleName, "foreign-dependency-container--items");
   });
 
   it("top-level undefined falls through to checker.typeToString", () => {

@@ -1232,6 +1232,159 @@ export function emitForeignDomainSynthDecls(synth: ForeignDomainSynth): {
   return { decls, synth: { ...synth, emitted } };
 }
 
+export interface ForeignAccessorEntry {
+  readonly key: string;
+  readonly ownerDomain: string;
+  readonly fieldName: string;
+  readonly returnSort: string;
+  readonly ruleName: string;
+}
+
+export interface ForeignAccessorSynth {
+  readonly byKey: ReadonlyMap<string, ForeignAccessorEntry>;
+  readonly emitted: ReadonlySet<string>;
+}
+
+/**
+ * @pant all k: String | ~(foreign-accessor-synth--by-key-key emptyForeignAccessorSynth k).
+ * @pant all k: String | ~(k in foreign-accessor-synth--emitted emptyForeignAccessorSynth).
+ */
+export function emptyForeignAccessorSynth(): ForeignAccessorSynth {
+  return { byKey: new Map(), emitted: new Set() };
+}
+
+/**
+ * Key shallow foreign accessors by the full typed read shape. The return sort
+ * is part of the key so a checker-observed type change cannot silently reuse a
+ * stale declaration with a different result type.
+ */
+function foreignAccessorKey(
+  ownerDomain: string,
+  fieldName: string,
+  returnSort: string,
+): string {
+  return JSON.stringify([ownerDomain, fieldName, returnSort]);
+}
+
+function foreignOwnerLeaf(ownerDomain: string): string {
+  const unprefixed = ownerDomain.replace(/^Foreign/u, "");
+  const words = toPantTermName(unprefixed || ownerDomain)
+    .split("-")
+    .filter((part) => part.length > 0);
+  if (words.length === 0) {
+    return "foreign";
+  }
+  const last = words[words.length - 1]!;
+  if (last === "list" && words.length > 1) {
+    return `${words[words.length - 2]!}-list`;
+  }
+  return last;
+}
+
+function foreignAccessorBinderName(ownerDomain: string): string {
+  const leaf = foreignOwnerLeaf(ownerDomain);
+  const parts = leaf.split("-");
+  return parts.map((part) => part[0] ?? "").join("");
+}
+
+function isForeignReturnSort(returnSort: string): boolean {
+  return returnSort
+    .replace(/\s+/gu, "")
+    .split("+")
+    .every((part) => {
+      const unlisted = part.replace(/^\[+/u, "").replace(/\]+$/u, "");
+      return unlisted.startsWith("Foreign");
+    });
+}
+
+/**
+ * Stable base rule name for a synthesized foreign accessor. Accessors that
+ * project another foreign value keep the TypeScript property name (`items`,
+ * `name`, `declarations`), while primitive projections include the receiver
+ * leaf (`item-label`, `identifier-text`) so common field names remain readable
+ * and less collision-prone. `registerForeignAccessor` still routes this base
+ * through the document name registry; on actual collisions it falls back to
+ * the same owner/field boundary used by `fieldRuleName`.
+ */
+export function foreignAccessorRuleName(
+  ownerDomain: string,
+  fieldName: string,
+  returnSort: string,
+): string {
+  const field = toPantTermName(fieldName);
+  if (isForeignReturnSort(returnSort)) {
+    return field;
+  }
+  return `${foreignOwnerLeaf(ownerDomain)}-${field}`;
+}
+
+export function registerForeignAccessor(
+  synth: ForeignAccessorSynth,
+  registry: NameRegistry,
+  ownerDomain: string,
+  fieldName: string,
+  returnSort: string,
+): {
+  entry: ForeignAccessorEntry | null;
+  synth: ForeignAccessorSynth;
+  registry: NameRegistry;
+} {
+  if (!isValidPantFieldType(ownerDomain) || !isValidPantFieldType(returnSort)) {
+    return { entry: null, synth, registry };
+  }
+  const key = foreignAccessorKey(ownerDomain, fieldName, returnSort);
+  const cached = synth.byKey.get(key);
+  if (cached) {
+    return { entry: cached, synth, registry };
+  }
+  const preferred = foreignAccessorRuleName(ownerDomain, fieldName, returnSort);
+  const claimed = registerName(registry, preferred);
+  const final =
+    claimed.name === preferred
+      ? claimed
+      : registerName(registry, fieldRuleName(ownerDomain, fieldName));
+  const entry: ForeignAccessorEntry = {
+    key,
+    ownerDomain,
+    fieldName,
+    returnSort,
+    ruleName: final.name,
+  };
+  const byKey = new Map(synth.byKey);
+  byKey.set(key, entry);
+  return {
+    entry,
+    synth: { ...synth, byKey },
+    registry: final.registry,
+  };
+}
+
+export function emitForeignAccessorSynthDecls(synth: ForeignAccessorSynth): {
+  decls: PantDeclaration[];
+  synth: ForeignAccessorSynth;
+} {
+  const decls: PantDeclaration[] = [];
+  const emitted = new Set(synth.emitted);
+  for (const [key, entry] of synth.byKey) {
+    if (emitted.has(key)) {
+      continue;
+    }
+    emitted.add(key);
+    decls.push({
+      kind: "rule",
+      name: entry.ruleName,
+      params: [
+        {
+          name: foreignAccessorBinderName(entry.ownerDomain),
+          type: entry.ownerDomain,
+        },
+      ],
+      returnType: entry.returnSort,
+    });
+  }
+  return { decls, synth: { ...synth, emitted } };
+}
+
 /**
  * Canonical tuple shape: the ordered Pantagruel element types that a
  * tuple constructor builds. Two TS aliases that share the same shape
@@ -1412,6 +1565,7 @@ export interface SynthCell {
   discriminatedUnionSynth: DiscriminatedUnionSynth;
   opaqueSynth: OpaqueSynth;
   foreignDomainSynth: ForeignDomainSynth;
+  foreignAccessorSynth: ForeignAccessorSynth;
   registry: NameRegistry;
   tupleSynth: TupleSynth;
   /**
@@ -1466,6 +1620,7 @@ export function newSynthCell(
     discriminatedUnionSynth: emptyDiscriminatedUnionSynth(),
     opaqueSynth: emptyOpaqueSynth(),
     foreignDomainSynth: emptyForeignDomainSynth(),
+    foreignAccessorSynth: emptyForeignAccessorSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
     visiting: new Set(),
@@ -1810,6 +1965,25 @@ export function cellLookupOpaqueValue(
   return lookupOpaqueValue(cell.opaqueSynth, id);
 }
 
+/** Cell-mutating wrapper around `registerForeignAccessor`. */
+export function cellRegisterForeignAccessor(
+  cell: SynthCell,
+  ownerDomain: string,
+  fieldName: string,
+  returnSort: string,
+): ForeignAccessorEntry | null {
+  const r = registerForeignAccessor(
+    cell.foreignAccessorSynth,
+    cell.registry,
+    ownerDomain,
+    fieldName,
+    returnSort,
+  );
+  cell.foreignAccessorSynth = r.synth;
+  cell.registry = r.registry;
+  return r.entry;
+}
+
 /** Cell-mutating wrapper around `registerName`. */
 export function cellRegisterName(cell: SynthCell, name: string): string {
   const r = registerName(cell.registry, toPantTermName(name));
@@ -1827,8 +2001,9 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(toPantTermName(name));
 }
 
-/** Cell-mutating wrapper that drains Opaque, Map, discriminated-union, and
- *  Record synth decls. Emits Opaque first so later decls can reference it,
+/** Cell-mutating wrapper that drains Opaque, foreign domains/accessors, Map,
+ *  discriminated-union, and Record synth decls. Emits Opaque first so later
+ *  decls can reference it, then foreign domains before foreign accessors, and
  *  then Maps so Record/DU accessor-rule return types can reference any Map
  *  domain registered bottom-up. Incremental: each call returns
  *  only the entries added since the previous drain.
@@ -1845,6 +2020,10 @@ export function cellEmitSynth(cell: SynthCell): {
   cell.registry = opaqueR.registry;
   const foreignR = emitForeignDomainSynthDecls(cell.foreignDomainSynth);
   cell.foreignDomainSynth = foreignR.synth;
+  const foreignAccessorR = emitForeignAccessorSynthDecls(
+    cell.foreignAccessorSynth,
+  );
+  cell.foreignAccessorSynth = foreignAccessorR.synth;
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
   cell.registry = mapR.registry;
@@ -1861,6 +2040,7 @@ export function cellEmitSynth(cell: SynthCell): {
     decls: [
       ...opaqueR.decls,
       ...foreignR.decls,
+      ...foreignAccessorR.decls,
       ...mapR.decls,
       ...duR.decls,
       ...recR.decls,
