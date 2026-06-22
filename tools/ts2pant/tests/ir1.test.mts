@@ -17,6 +17,7 @@ import {
   ir1SsaBreakHandle,
   ir1SsaCloseLoopHeader,
   ir1SsaContinueHandle,
+  ir1SsaExprEquals,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaLoopBody,
@@ -29,7 +30,6 @@ import {
   ir1SsaRuleOfLocation,
   ir1SsaThrowHandle,
   ir1SsaWrite,
-  ir1SsaExprEquals,
   ir1Var,
 } from "../src/ir1.js";
 
@@ -96,7 +96,10 @@ describe("ir1", () => {
         ),
         true,
       );
-      assert.equal(ir1SsaExprEquals(base, ir1Forall("x", "Int", ir1Var("body"))), false);
+      assert.equal(
+        ir1SsaExprEquals(base, ir1Forall("x", "Int", ir1Var("body"))),
+        false,
+      );
       assert.equal(
         ir1SsaExprEquals(
           base,
@@ -161,8 +164,7 @@ describe("ir1", () => {
       assert.equal(handle.version, version);
       assert.equal(handle.guard, guard);
       assert.throws(
-        () =>
-          ir1SsaThrowHandle(ir1SsaReturnValueLocation("f"), version, guard),
+        () => ir1SsaThrowHandle(ir1SsaReturnValueLocation("f"), version, guard),
         /location mismatch/u,
       );
     });
@@ -189,19 +191,29 @@ describe("ir1", () => {
     it("generated SSA handles preserve location/version invariants", () => {
       fc.assert(
         fc.property(
-          fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+          fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
           fc.integer({ min: 0, max: 1000 }),
           (name, line) => {
-            const location = ir1SsaPropertyLocation("value", ir1Var(name), "value");
+            const location = ir1SsaPropertyLocation(
+              "value",
+              ir1Var(name),
+              "value",
+            );
             const initial = ir1SsaInitialVersion(location);
-            const write = ir1SsaWrite(location, ir1SsaPropertyValue(ir1LitNat(line)));
+            const write = ir1SsaWrite(
+              location,
+              ir1SsaPropertyValue(ir1LitNat(line)),
+            );
             const read = ir1SsaRead(location, initial);
             const join = ir1SsaJoin(location, initial, write.version);
             const header = ir1SsaOpenLoopHeader(location, initial);
 
             ir1SsaCloseLoopHeader(header, write.version);
 
-            assert.equal(ir1OpaqueOriginId({ file: name, line }), `${name}:${line}`);
+            assert.equal(
+              ir1OpaqueOriginId({ file: name, line }),
+              `${name}:${line}`,
+            );
             assert.equal(
               ir1OpaqueOriginId({ file: name, line, column: line + 1 }),
               `${name}:${line}:${line + 1}`,
@@ -209,14 +221,21 @@ describe("ir1", () => {
             assert.equal(ir1SsaRuleOfLocation(location), "value");
             assert.equal(read.version, initial);
             assert.equal(header.closed, true);
-            assert.equal(ir1SsaBreakHandle(location, write.version).version, write.version);
+            assert.equal(
+              ir1SsaBreakHandle(location, write.version).version,
+              write.version,
+            );
             assert.equal(
               ir1SsaContinueHandle(location, write.version).version,
               write.version,
             );
-            assert.equal(ir1SsaReturnHandle(location, write.version).version, write.version);
             assert.equal(
-              ir1SsaThrowHandle(location, write.version, ir1Var(name)).guard.kind,
+              ir1SsaReturnHandle(location, write.version).version,
+              write.version,
+            );
+            assert.equal(
+              ir1SsaThrowHandle(location, write.version, ir1Var(name)).guard
+                .kind,
               "var",
             );
             assert.equal(join.kind, "ssa-join");
@@ -229,7 +248,7 @@ describe("ir1", () => {
     it("generated binder and block constructors preserve supplied parts", () => {
       fc.assert(
         fc.property(
-          fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+          fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
           fc.constantFrom("Nat0", "Int", "Real"),
           (name, typeName) => {
             const body = ir1Var(name);

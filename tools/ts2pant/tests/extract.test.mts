@@ -2,9 +2,9 @@
 // @archlint.domain ts2pant.extract
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import { Project } from "ts-morph";
 import {
   ambientModuleName,

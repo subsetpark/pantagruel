@@ -23,7 +23,6 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
-import { lowerExpr } from "../src/ir-emit.js";
 import {
   buildL1Conditional,
   isL1Unsupported,
@@ -63,7 +62,7 @@ function setupCond(source: string): CondSetup {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn || !fn.body) {
+  if (!fn?.body) {
     throw new Error("setupCond: expected function declaration with a body");
   }
   const synthCell = newSynthCell();
@@ -104,9 +103,7 @@ function setupCond(source: string): CondSetup {
 }
 
 /** Lower an L1 build result and stringify the OpaqueExpr. */
-function lowerToText(
-  result: ReturnType<typeof buildL1Conditional>,
-): string {
+function lowerToText(result: ReturnType<typeof buildL1Conditional>): string {
   if (isL1Unsupported(result)) {
     throw new Error(
       `expected L1 expression, got unsupported: ${result.unsupported}`,

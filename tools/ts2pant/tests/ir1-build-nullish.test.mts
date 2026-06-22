@@ -21,12 +21,12 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
-import { type IR1Expr, ir1Var } from "../src/ir1.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import { type IR1Expr, ir1Var } from "../src/ir1.js";
 import {
   isL1Unsupported,
-  tryBuildL1PureSubExpression,
   type L1BuildContext,
+  tryBuildL1PureSubExpression,
 } from "../src/ir1-build.js";
 import {
   type NullishTranslate,
@@ -80,7 +80,7 @@ function parseBinExpr(
     throw new Error("test helper: expected a trailing variable statement");
   }
   const decl = last.declarationList.declarations[0];
-  if (!decl || !decl.initializer) {
+  if (!decl?.initializer) {
     throw new Error("test helper: expected an initializer");
   }
   let expr: ts.Expression = decl.initializer;

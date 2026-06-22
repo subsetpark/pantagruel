@@ -22,12 +22,12 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import type { IR1Expr } from "../src/ir1.js";
 import {
   type FunctorLiftCandidate,
   lowerL1ToOpaque,
   tryRecognizeFunctorLift,
 } from "../src/ir1-build.js";
-import type { IR1Expr } from "../src/ir1.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
 import {
@@ -62,7 +62,7 @@ function setup(source: string): SetupResult {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn || !fn.body) {
+  if (!fn?.body) {
     throw new Error("setup: expected a function declaration with a body");
   }
   // Build paramNames the same way production does: each TS parameter
@@ -178,7 +178,7 @@ function expectLifted(result: IR1Expr | null): IR1Expr {
   const out = getAst().strExpr(lowerL1ToOpaque(result));
   assert.match(
     out,
-    /\beach\s+\S+\s+in\b/,
+    /\beach\s+\S+\s+in\b/u,
     `expected functor-lift lowering to emit an each-comprehension, got: ${out}`,
   );
   return result;
@@ -391,7 +391,7 @@ describe("ir1-build-functor-lift", () => {
     expectLifted(tryRecognizeFunctorLift(candidate, ctx));
   });
 
-  it("Member operand string-literal element-access (`u[\"next\"] == null`) recognizes", () => {
+  it('Member operand string-literal element-access (`u["next"] == null`) recognizes', () => {
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; readonly next: User | null; }
        function f(u: User): string[] {
@@ -456,11 +456,7 @@ describe("ir1-build-functor-lift", () => {
       supplyBefore,
       "supply.n leaked from failed probe",
     );
-    assert.equal(
-      synthCell.synth,
-      synthBefore,
-      "synthCell.synth leaked",
-    );
+    assert.equal(synthCell.synth, synthBefore, "synthCell.synth leaked");
     assert.equal(
       synthCell.recordSynth,
       recordSynthBefore,
@@ -550,7 +546,6 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
-
   // ------------------------------------------------------------------
   // Substitution / capture avoidance / nesting
   // ------------------------------------------------------------------
@@ -581,7 +576,7 @@ describe("ir1-build-functor-lift", () => {
     const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
     const out = getAst().strExpr(lowerL1ToOpaque(lifted));
     // Match `each <binder> in ...`, extract the binder name.
-    const m = out.match(/\beach\s+(\S+)\s+in\b/);
+    const m = out.match(/\beach\s+(\S+)\s+in\b/u);
     if (!m) {
       throw new Error(`could not parse binder from output: ${out}`);
     }
@@ -638,10 +633,10 @@ describe("ir1-build-functor-lift", () => {
     // surrounding chars aren't valid Pant identifier continuations
     // (alphanumerics, `_`, `-`, plus the trailing-`?`/`!` shapes Pant
     // accepts in identifiers).
-    const escaped = sanitizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = sanitizedName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
     const tokenRx = new RegExp(
       `(?<![A-Za-z0-9?!_-])${escaped}(?![A-Za-z0-9?!_-])`,
-      "g",
+      "gu",
     );
     const occurrences = (out.match(tokenRx) ?? []).length;
     assert.equal(
@@ -679,7 +674,7 @@ describe("ir1-build-functor-lift", () => {
     );
     const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
     const out = getAst().strExpr(lowerL1ToOpaque(lifted));
-    const matches = out.match(/\beach\s+\S+\s+in\b/g) ?? [];
+    const matches = out.match(/\beach\s+\S+\s+in\b/gu) ?? [];
     assert.equal(
       matches.length,
       2,

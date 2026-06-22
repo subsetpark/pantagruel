@@ -2,8 +2,8 @@
 // @archlint.domain ts2pant.pipeline
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { it } from "node:test";
+import * as fc from "fast-check";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { buildPantDocument } from "../src/pipeline.js";
 import { IntStrategy } from "../src/translate-types.js";

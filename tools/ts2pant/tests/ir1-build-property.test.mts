@@ -17,12 +17,9 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
-import {
-  buildL1MemberAccess,
-  type L1BuildContext,
-} from "../src/ir1-build.js";
-import type { IR1Expr } from "../src/ir1.js";
 import { lowerExpr } from "../src/ir-emit.js";
+import type { IR1Expr } from "../src/ir1.js";
+import { buildL1MemberAccess, type L1BuildContext } from "../src/ir1-build.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
@@ -73,7 +70,7 @@ function setupAccess(source: string): AccessSetup {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn || !fn.body) {
+  if (!fn?.body) {
     throw new Error("setup: expected a function declaration with a body");
   }
   const synthCell = newSynthCell();
@@ -216,7 +213,9 @@ describe("ir1-build-property", () => {
        }`,
     );
     const bareOpaque = getAst().strExpr(
-      lowerExpr(lowerL1Expr(buildL1MemberAccess(bare.node, bare.ctx) as IR1Expr)),
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(bare.node, bare.ctx) as IR1Expr),
+      ),
     );
     const parenOpaque = getAst().strExpr(
       lowerExpr(
@@ -243,7 +242,9 @@ describe("ir1-build-property", () => {
        }`,
     );
     const bareOpaque = getAst().strExpr(
-      lowerExpr(lowerL1Expr(buildL1MemberAccess(bare.node, bare.ctx) as IR1Expr)),
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(bare.node, bare.ctx) as IR1Expr),
+      ),
     );
     const parenOpaque = getAst().strExpr(
       lowerExpr(

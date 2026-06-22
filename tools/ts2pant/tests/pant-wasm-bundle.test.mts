@@ -1,8 +1,8 @@
 // @archlint.module test
 // @archlint.domain ts2pant.pant-wasm-bundle
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { checkPantBundle } from "../src/pant-wasm.js";
 
 describe("pant-wasm > checkPantBundle", () => {
@@ -24,10 +24,7 @@ Doc.
 all u: User | u = nobody.
 `;
 
-    const error = await checkPantBundle(
-      consumer,
-      new Map([["DEP_LIB", dep]]),
-    );
+    const error = await checkPantBundle(consumer, new Map([["DEP_LIB", dep]]));
     assert.equal(error, null);
   });
 
@@ -43,7 +40,7 @@ true.
 
     const error = await checkPantBundle(consumer, new Map());
     assert.notEqual(error, null);
-    assert.match(error!, /MISSING/);
+    assert.match(error!, /MISSING/u);
   });
 
   it("reports a typecheck error in a dep module", async () => {
@@ -70,6 +67,6 @@ true.
       new Map([["BROKEN_DEP", dep]]),
     );
     assert.notEqual(error, null);
-    assert.match(error!, /Bogus/);
+    assert.match(error!, /Bogus/u);
   });
 });

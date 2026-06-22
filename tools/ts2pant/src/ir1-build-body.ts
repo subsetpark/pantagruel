@@ -74,7 +74,6 @@ import {
   recognizeNullishNarrowing,
   recognizeTypePredicateNarrowing,
 } from "./narrowing-recognizer.js";
-import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { freshHygienicBinder, type UniqueSupply } from "./supply.js";
 import {
@@ -123,7 +122,7 @@ export interface BuildBodyCtx {
   state: SymbolicState;
   supply: UniqueSupply;
   env: AssumptionEnv;
-  policy?: OpaquePolicy | undefined;
+  expectedSort?: string;
   recognitionHook?: (env: AssumptionEnv, location: string) => void;
   /**
    * When set, this build is inside a foreach loop body. Carries the
@@ -810,7 +809,9 @@ export function buildL1SubExpr(
     state: ctx.state,
     supply: ctx.supply,
     env: ctx.env,
-    policy: ctx.policy,
+    ...(ctx.expectedSort === undefined
+      ? {}
+      : { expectedSort: ctx.expectedSort }),
   };
   if (ts.isNonNullExpression(node)) {
     const nativeNonNull = tryBuildL1PureSubExpression(node, ctxOptions);
@@ -848,7 +849,9 @@ export function buildL1SubExpr(
     state: ctx.state,
     supply: ctx.supply,
     env: ctx.env,
-    policy: ctx.policy,
+    ...(ctx.expectedSort === undefined
+      ? {}
+      : { expectedSort: ctx.expectedSort }),
   });
   if (native !== null) {
     return native;

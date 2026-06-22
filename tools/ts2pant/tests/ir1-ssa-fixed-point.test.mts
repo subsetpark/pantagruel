@@ -2,16 +2,16 @@
 // @archlint.domain ts2pant.ir1-ssa-fixed-point
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 
 import { emitDocument } from "../src/emit.js";
 import type { IR1Expr, IR1Stmt } from "../src/ir1.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import {
   lowerFixedPointLoopL1Body,
   recognizeFixedPointLoopShape,
 } from "../src/ir1-ssa-fixed-point.js";
-import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { newSynthCell, RealStrategy } from "../src/translate-types.js";
 

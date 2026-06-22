@@ -2,10 +2,10 @@
 // @archlint.domain ts2pant.brand-precondition
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
 import {
   BRAND_PREDICATES,
@@ -233,7 +233,10 @@ describe("brand-precondition @pant integration stubs", () => {
           noBody: true,
         });
         const output = emitDocument(doc);
-        assert.match(output, new RegExp(`${functionName} x: Int => Int\\.`));
+        assert.match(
+          output,
+          new RegExp(`${functionName} x: Int => Int\\.`, "u"),
+        );
       }
     } finally {
       rmSync(dir, { force: true, recursive: true });

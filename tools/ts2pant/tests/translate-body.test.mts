@@ -1,8 +1,8 @@
 // @archlint.module test
 // @archlint.domain ts2pant.translate-body
 
-import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { before, describe, it } from "node:test";
 import * as fc from "fast-check";
 import ts from "typescript";
 import { createSourceFileFromSource } from "../src/extract.js";
@@ -15,7 +15,6 @@ import {
   IntStrategy,
   newSynthCell,
   RealStrategy,
-  UNSUPPORTED_UNKNOWN_REASON,
 } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
 
@@ -47,7 +46,9 @@ function assertUnsupportedReason(
     .map((p) => (p as { reason: string }).reason);
   assert.fail(
     `${description}: no unsupported prop matched ${pattern}\n  saw: ${
-      allReasons.length > 0 ? JSON.stringify(allReasons) : "(no unsupported props)"
+      allReasons.length > 0
+        ? JSON.stringify(allReasons)
+        : "(no unsupported props)"
     }`,
   );
 }
@@ -72,10 +73,9 @@ function translateBodyWithSynth(
   });
 }
 
-function finalEquation(props: readonly PropResult[]): Extract<
-  PropResult,
-  { kind: "equation" }
-> {
+function finalEquation(
+  props: readonly PropResult[],
+): Extract<PropResult, { kind: "equation" }> {
   const prop = [...props].reverse().find((p) => p.kind === "equation");
   assert.ok(prop, "expected at least one equation");
   return prop;
@@ -125,7 +125,9 @@ function firstStatement(
   return stmt;
 }
 
-function firstCallExpression(sourceFile: ReturnType<typeof createSourceFileFromSource>): ts.CallExpression {
+function firstCallExpression(
+  sourceFile: ReturnType<typeof createSourceFileFromSource>,
+): ts.CallExpression {
   let call: ts.CallExpression | undefined;
   function visit(node: ts.Node): void {
     if (call) {
@@ -170,13 +172,28 @@ it("generated body helpers preserve structural translations", () => {
         "1",
       );
       assert.equal(Supply.freshHygienicBinder(supply).startsWith("$"), true);
-      assert.equal(TB.allocComprehensionBinder(supply, "item").length > 0, true);
+      assert.equal(
+        TB.allocComprehensionBinder(supply, "item").length > 0,
+        true,
+      );
       assert.equal(TB.isBodyUnsupported({ unsupported: "x" }), true);
       assert.equal(TB.isBodyEffect({ effect: {} } as never), true);
-      assert.equal(ast.strExpr(TB.bodyExpr({ expr: ast.litNat(1) } as never)), "1");
-      assert.equal("expr" in TB.rejectEffect({ expr: ast.litNat(1) } as never), true);
-      assert.equal(TB.symbolicKey(fieldName, ast.var("a")).startsWith(fieldName), true);
-      assert.equal(ast.strExpr(TB.clearedFallback(ast.litBool(false), ast.var("pre"))), "pre");
+      assert.equal(
+        ast.strExpr(TB.bodyExpr({ expr: ast.litNat(1) } as never)),
+        "1",
+      );
+      assert.equal(
+        "expr" in TB.rejectEffect({ expr: ast.litNat(1) } as never),
+        true,
+      );
+      assert.equal(
+        TB.symbolicKey(fieldName, ast.var("a")).startsWith(fieldName),
+        true,
+      );
+      assert.equal(
+        ast.strExpr(TB.clearedFallback(ast.litBool(false), ast.var("pre"))),
+        "pre",
+      );
       assert.equal(TB.ambiguousFieldMsg(fieldName).includes(fieldName), true);
       assert.equal(TB.expressionReferencesNames(expr, new Set(["a"])), true);
       assert.equal(TB.unwrapExpression(expr).kind, expr.kind);
@@ -199,14 +216,32 @@ it("generated body helpers preserve structural translations", () => {
       );
       assert.equal(TB.isNullableTsType(checker.getTypeAtLocation(expr)), false);
       assert.equal(
-        TB.translateBodyExpr(expr, checker, IntStrategy, paramNames, undefined, supply).unsupported,
+        TB.translateBodyExpr(
+          expr,
+          checker,
+          IntStrategy,
+          paramNames,
+          undefined,
+          supply,
+        ).unsupported,
         undefined,
       );
       assert.equal(
-        TB.translateCallExpr(call, checker, IntStrategy, paramNames, undefined, supply).unsupported,
+        TB.translateCallExpr(
+          call,
+          checker,
+          IntStrategy,
+          paramNames,
+          undefined,
+          supply,
+        ).unsupported,
         undefined,
       );
-      assert.equal(translateBody({ sourceFile, functionName: "f", strategy: IntStrategy }).length > 0, true);
+      assert.equal(
+        translateBody({ sourceFile, functionName: "f", strategy: IntStrategy })
+          .length > 0,
+        true,
+      );
     }),
   );
 });
@@ -461,12 +496,16 @@ describe("unsupported patterns", () => {
     const sourceFile = createSourceFileFromSource(source);
     const props = translateBodyWithSynth(sourceFile, "sumFirstNWhile");
 
-    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
     const equations = props.filter((p) => p.kind === "equation");
     assert.ok(equations.length > 0);
     const ast = getAst();
     const totalEq = equations.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     assert.equal(
@@ -489,12 +528,16 @@ describe("unsupported patterns", () => {
     const sourceFile = createSourceFileFromSource(source);
     const props = translateBodyWithSynth(sourceFile, "sumFirstNDescending");
 
-    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
     const equations = props.filter((p) => p.kind === "equation");
     assert.ok(equations.length > 0);
     const ast = getAst();
     const totalEq = equations.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     assert.equal(
@@ -670,10 +713,7 @@ describe("if-early-return prelude arms", () => {
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(
-        ast.strExpr(prop.rhs),
-        "cond a < 0 => 0, true => b",
-      );
+      assert.equal(ast.strExpr(prop.rhs), "cond a < 0 => 0, true => b");
     }
   });
 
@@ -720,7 +760,7 @@ describe("if-early-return prelude arms", () => {
 
     assert.equal(
       getAst().strExpr(finalEquation(props).rhs),
-      "cond is-positive n => 1, true => 0",
+      "cond isPositive n => 1, true => 0",
     );
   });
 
@@ -769,10 +809,7 @@ describe("if-early-return prelude arms", () => {
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(
-        ast.strExpr(prop.rhs),
-        "cond n < 0 => 0 - n, true => n + 1",
-      );
+      assert.equal(ast.strExpr(prop.rhs), "cond n < 0 => 0 - n, true => n + 1");
     }
   });
 
@@ -848,7 +885,10 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
-      assert.match(props[0].reason, /only const bindings followed by a return/u);
+      assert.match(
+        props[0].reason,
+        /only const bindings followed by a return/u,
+      );
     }
   });
 
@@ -872,7 +912,10 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
-      assert.match(props[0].reason, /if-with-else only supported as the final/u);
+      assert.match(
+        props[0].reason,
+        /if-with-else only supported as the final/u,
+      );
     }
   });
 
@@ -973,31 +1016,26 @@ describe("if-early-return prelude arms", () => {
   const unknownCollectionCases = [
     {
       testName:
-        "rejects empty Set record initializer when element type is unknown",
+        "translates empty Set record initializer when element type is unknown",
       returnType: "Bag",
       interfaceSnippet: "interface Bag { items: ReadonlySet<unknown> }",
       returnExpression: "return { items: new Set() };",
-      expectedReason: /f\.items: TS unknown is not expressible/u,
-      reasonLabel: "empty Set record initializer with unknown element type",
     },
     {
-      testName: "rejects empty Map record initializer when key type is unknown",
+      testName:
+        "translates empty Map record initializer when key type is unknown",
       returnType: "Registry",
       interfaceSnippet:
         "interface Registry { byId: ReadonlyMap<unknown, number> }",
       returnExpression: "return { byId: new Map() };",
-      expectedReason: /f\.byId: TS unknown is not expressible/u,
-      reasonLabel: "empty Map record initializer with unknown key type",
     },
     {
       testName:
-        "rejects empty Map record initializer when value type is unknown",
+        "translates empty Map record initializer when value type is unknown",
       returnType: "Registry",
       interfaceSnippet:
         "interface Registry { byId: ReadonlyMap<string, unknown> }",
       returnExpression: "return { byId: new Map() };",
-      expectedReason: /f\.byId: TS unknown is not expressible/u,
-      reasonLabel: "empty Map record initializer with unknown value type",
     },
   ] as const;
 
@@ -1014,20 +1052,18 @@ describe("if-early-return prelude arms", () => {
         sourceFile,
         functionName: "f",
         strategy: IntStrategy,
-        policy: "reject",
       });
 
-      assert.equal(props.length, 1);
-      assertUnsupportedReason(
-        props,
-        tc.expectedReason,
-        tc.reasonLabel,
+      assert.equal(
+        props.some((p) => p.kind === "unsupported"),
+        false,
       );
+      assert.equal(props.length > 0, true);
       assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
     });
   }
 
-  it("rejects anonymous record return with unknown field via public reason", () => {
+  it("translates anonymous record return with unknown field through Opaque", () => {
     const source = `
       function makeBox(): { value: unknown } {
         return { value: 1 };
@@ -1040,8 +1076,6 @@ describe("if-early-return prelude arms", () => {
       "makeBox",
       IntStrategy,
       synthCell,
-      undefined,
-      { typeMapping: { policy: "reject" } },
     );
 
     const props = translateBody({
@@ -1050,17 +1084,13 @@ describe("if-early-return prelude arms", () => {
       strategy: IntStrategy,
       synthCell,
       paramNameMap,
-      policy: "reject",
     });
 
-    assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
-    if (props[0]?.kind === "unsupported") {
-      assert.equal(
-        props[0].reason,
-        `make-box: ${UNSUPPORTED_UNKNOWN_REASON}`,
-      );
-    }
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(props.length > 0, true);
     assert.doesNotMatch(JSON.stringify(props), /__unsupported_unknown__/u);
   });
 
@@ -1249,7 +1279,10 @@ describe("conditional mutations (symbolic last-write)", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
     assert.match(equationRhsText(props), /isDepositAllowed amount/u);
   });
 
@@ -1345,7 +1378,7 @@ describe("conditional mutations (symbolic last-write)", () => {
       });
       assertUnsupportedReason(
         props,
-        /collection mutation outside statement position/,
+        /collection mutation outside statement position/u,
         `${name}: expected the rejectEffect rejection`,
       );
     });
@@ -1411,11 +1444,16 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Fall-through path writes 1; early return path keeps pre-state identity.
-    assert.equal(ast.strExpr(eq.rhs), "cond ~g => 1, true => account--balance a");
+    assert.equal(
+      ast.strExpr(eq.rhs),
+      "cond ~g => 1, true => account--balance a",
+    );
   });
 
   it("sequential composition: later conditional reads earlier unconditional write", () => {
@@ -1436,7 +1474,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Conditional branch sees the prior write (10) rather than the pre-state `balance a`.
@@ -1461,7 +1501,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "user--active' u");
     assert.equal(
@@ -1487,7 +1529,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     assert.equal(ast.strExpr(eq.rhs), "account--balance a + amount");
@@ -1511,7 +1555,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // compound-assign rhs reads the prior write (10) via symbolic state.
@@ -1535,11 +1581,16 @@ describe("conditional mutations (symbolic last-write)", () => {
     const equations = props.filter((p) => p.kind === "equation");
     assert.equal(equations.length, 1);
     const eq = equations[0]!;
-    if (eq.kind !== "equation") return;
+    if (eq.kind !== "equation") {
+      return;
+    }
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Continuation-path (g true) writes v; early-exit (g false) preserves pre-state.
-    assert.equal(ast.strExpr(eq.rhs), "cond g => v, true => account--balance a");
+    assert.equal(
+      ast.strExpr(eq.rhs),
+      "cond g => v, true => account--balance a",
+    );
   });
 
   it("asymmetric writes produce separate per-prop cond equations", () => {
@@ -1563,13 +1614,18 @@ describe("conditional mutations (symbolic last-write)", () => {
     const lhsStrings = equations.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.deepEqual(lhsStrings.sort(), ["account--balance' a", "account--owner' a"]);
+    assert.deepEqual(lhsStrings.sort(), [
+      "account--balance' a",
+      "account--owner' a",
+    ]);
     // Each branch should use the pre-state identity in its untouched arm.
     const balanceEq = equations.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--balance' a",
+      (e) =>
+        e.kind === "equation" && ast.strExpr(e.lhs) === "account--balance' a",
     );
     const ownerEq = equations.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--owner' a",
+      (e) =>
+        e.kind === "equation" && ast.strExpr(e.lhs) === "account--owner' a",
     );
     if (balanceEq?.kind === "equation") {
       assert.equal(
@@ -1610,8 +1666,8 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const rendered = ast.strExpr(
         ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
       );
-      assert.match(rendered, /all (\$\d+) in us \| /);
-      const m = rendered.match(/all (\$\d+) in us \| /)!;
+      assert.match(rendered, /all (\$\d+) in us \| /u);
+      const m = rendered.match(/all (\$\d+) in us \| /u)!;
       const binder = m[1]!;
       assert.equal(ast.strExpr(loopEq.lhs), `user--active' ${binder}`);
       assert.equal(ast.strExpr(loopEq.rhs), "true");
@@ -1641,7 +1697,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const rendered = ast.strExpr(
         ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
       );
-      const binder = rendered.match(/all (\$\d+) in us \| /)?.[1];
+      const binder = rendered.match(/all (\$\d+) in us \| /u)?.[1];
       assert.ok(binder);
       assert.equal(ast.strExpr(loopEq.lhs), `user--score' ${binder}`);
       assert.equal(ast.strExpr(loopEq.rhs), `user--score ${binder} + 1`);
@@ -1673,7 +1729,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const r = ast.strExpr(loopEq.rhs);
       assert.match(
         r,
-        /^cond user--score (\$\d+) > 0 => true, true => user--active \1$/,
+        /^cond user--score (\$\d+) > 0 => true, true => user--active \1$/u,
       );
     }
   });
@@ -1695,14 +1751,15 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
+        e.kind === "equation" &&
+        getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.match(
         ast.strExpr(totalEq.rhs),
-        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/u,
       );
     }
   });
@@ -1726,14 +1783,15 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
+        e.kind === "equation" &&
+        getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.match(
         ast.strExpr(totalEq.rhs),
-        /^account--total a \+ \(\+ over each (\$\d+) in xs, item--value \1 > 0 \| item--value \1\)$/,
+        /^account--total a \+ \(\+ over each (\$\d+) in xs, item--value \1 > 0 \| item--value \1\)$/u,
       );
     }
   });
@@ -1760,7 +1818,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const lhsStrings = eqs.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.ok(lhsStrings.some((s) => /^item--tagged' \$\d+$/.test(s)));
+    assert.ok(lhsStrings.some((s) => /^item--tagged' \$\d+$/u.test(s)));
     assert.ok(lhsStrings.includes("account--total' a"));
   });
 
@@ -1788,7 +1846,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/,
+      /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/u,
       "expected the guarded-Shape-A + Shape-B-fold rejection",
     );
   });
@@ -1811,7 +1869,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /single plain identifier parameter/,
+      /single plain identifier parameter/u,
       "expected the forEach plain-identifier rejection",
     );
   });
@@ -1831,7 +1889,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /single plain identifier parameter/,
+      /single plain identifier parameter/u,
       "expected the forEach plain-identifier rejection",
     );
   });
@@ -1854,7 +1912,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /single plain identifier parameter/,
+      /single plain identifier parameter/u,
       "expected the forEach plain-identifier rejection",
     );
   });
@@ -1882,7 +1940,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /accumulator rhs reads from the accumulator's own root/,
+      /accumulator rhs reads from the accumulator's own root/u,
       "expected the accumulator-self-dependent rhs rejection",
     );
   });
@@ -1910,7 +1968,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /accumulator guard reads from the accumulator's own root/,
+      /accumulator guard reads from the accumulator's own root/u,
       "expected the accumulator-self-dependent guard rejection",
     );
   });
@@ -1977,7 +2035,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /property rooted at the iterator binder/,
+      /property rooted at the iterator binder/u,
       "expected the non-iter-rooted-assign rejection",
     );
   });
@@ -2003,7 +2061,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /cannot shadow the foreach iterator binder/,
+      /cannot shadow the foreach iterator binder/u,
       "expected the foreach iterator shadowing rejection",
     );
   });
@@ -2036,7 +2094,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /iterator-dependent guard inside a loop/,
+      /iterator-dependent guard inside a loop/u,
       "expected the iter-dependent-guard rejection",
     );
   });
@@ -2064,7 +2122,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /foreach body cannot contain a set-effect statement/,
+      /foreach body cannot contain a set-effect statement/u,
       "expected the ensureForeachBodyShape rejection for set-effect",
     );
   });
@@ -2090,7 +2148,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /foreach body cannot contain a map-effect statement/,
+      /foreach body cannot contain a map-effect statement/u,
       "expected the ensureForeachBodyShape rejection for map-effect",
     );
   });
@@ -2120,7 +2178,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assertUnsupportedReason(
       props,
-      /branch body must be a property assignment, Map\/Set effect, or nested if/,
+      /branch body must be a property assignment, Map\/Set effect, or nested if/u,
       "expected the buildL1MutationBody branch-shape rejection",
     );
   });
@@ -2159,14 +2217,15 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
+        e.kind === "equation" &&
+        getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.match(
         ast.strExpr(totalEq.rhs),
-        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/u,
       );
     }
   });
@@ -2286,7 +2345,8 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const ast = getAst();
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
+      (e) =>
+        e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq, "expected a Shape B equation for total");
     if (totalEq?.kind === "equation") {
@@ -2294,7 +2354,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
       assert.match(
         ast.strExpr(totalEq.rhs),
-        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/u,
       );
     }
   });
@@ -2319,13 +2379,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const ast = getAst();
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
+      (e) =>
+        e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq, "expected a Shape B equation for total");
     if (totalEq?.kind === "equation") {
       assert.match(
         ast.strExpr(totalEq.rhs),
-        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/u,
       );
     }
   });
@@ -2404,7 +2465,6 @@ describe("Kleene μ-search (while-loop minimum)", () => {
 
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
-      const ast = getAst();
       // Match any `jN` binder and assert consistent use throughout the
       // comprehension. The specific `N` depends on UniqueSupply slot
       // consumption and shouldn't break hygiene refactors.
@@ -2434,7 +2494,6 @@ describe("Kleene μ-search (while-loop minimum)", () => {
 
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
-      const ast = getAst();
       assert.match(
         equationRhsText(props),
         /min over each (j\d+): Int, \1 >= 0, ~\(\1 in used\) \| \1.*i \+ 1/u,
@@ -2463,10 +2522,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.match(
-        ast.strExpr(prop.rhs),
-        /^base \+ i$/,
-      );
+      assert.match(ast.strExpr(prop.rhs), /^base \+ i$/u);
     }
   });
 
@@ -2574,7 +2630,6 @@ describe("Kleene μ-search (while-loop minimum)", () => {
 
     const prop = finalEquation(props);
     if (prop.kind === "equation") {
-      const ast = getAst();
       assert.match(
         equationRhsText(props),
         /min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1/u,
@@ -2774,7 +2829,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     if (props[0]?.kind === "unsupported") {
       assert.doesNotMatch(
         props[0].reason,
-        /predicate does not reference the counter|not a recognized μ-search/,
+        /predicate does not reference the counter|not a recognized μ-search/u,
       );
     }
   });
@@ -2813,7 +2868,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       // are valid signals that the loop is not a clean μ-search.
       assert.match(
         props[0].reason,
-        /predicate does not reference the counter|predicate has side effects/,
+        /predicate does not reference the counter|predicate has side effects/u,
       );
     }
   });
@@ -2857,7 +2912,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       if (props[0]?.kind === "unsupported") {
         assert.match(
           props[0].reason,
-          /predicate does not reference the counter|predicate has side effects/,
+          /predicate does not reference the counter|predicate has side effects/u,
           `${name} should reject on shadowing or purity path`,
         );
       }
@@ -2888,7 +2943,7 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
       const bodyText = ast.strExpr(a.body);
       assert.match(
         bodyText,
-        /^\S+ in tagged--tags' c <-> \(cond \S+ = x => false, true => \S+ in tagged--tags c\)$/,
+        /^\S+ in tagged--tags' c <-> \(cond \S+ = x => false, true => \S+ in tagged--tags c\)$/u,
         `unexpected body shape: ${bodyText}`,
       );
     }
@@ -2914,7 +2969,7 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
       const bodyText = ast.strExpr(a.body);
       assert.match(
         bodyText,
-        /^\S+ in tagged--tags' c <-> false$/,
+        /^\S+ in tagged--tags' c <-> false$/u,
         `unexpected body shape: ${bodyText}`,
       );
     }

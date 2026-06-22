@@ -2,12 +2,12 @@
 // @archlint.domain ts2pant.ir-build
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
-import { buildIR, isBuildUnsupported } from "../src/ir-build.js";
-import type { IRExpr } from "../src/ir.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import type { IRExpr } from "../src/ir.js";
+import { buildIR, isBuildUnsupported } from "../src/ir-build.js";
 import { loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
@@ -121,6 +121,8 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
       );
     case "var":
     case "lit":
+      return false;
+    default:
       return false;
   }
 }

@@ -5,10 +5,6 @@ import { type IR1Expr, ir1Opaque, type SourceRef } from "./ir1.js";
 
 export const OPAQUE_DOMAIN = "Opaque";
 
-export type OpaquePolicy = "reject" | "opaque";
-
-export const DEFAULT_OPAQUE_POLICY: OpaquePolicy = "opaque";
-
 /**
  * Return the Pant-safe nullary rule name for one opaque value identity.
  *

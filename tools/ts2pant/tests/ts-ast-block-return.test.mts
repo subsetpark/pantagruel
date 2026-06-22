@@ -55,7 +55,7 @@ const TS_KEYWORDS = new Set([
 ]);
 
 const identifierArb = fc
-  .stringMatching(/^[a-z][a-z0-9]{0,6}$/)
+  .stringMatching(/^[a-z][a-z0-9]{0,6}$/u)
   .filter((name) => !TS_KEYWORDS.has(name));
 
 function parseBlock(source: string): ts.Block {

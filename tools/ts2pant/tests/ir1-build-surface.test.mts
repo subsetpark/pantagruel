@@ -2,15 +2,15 @@
 // @archlint.domain ts2pant.ir1-build
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
-import * as B from "../src/ir1-build.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { ir1LitNat, ir1Var } from "../src/ir1.js";
+import * as B from "../src/ir1-build.js";
 import { loadAst } from "../src/pant-wasm.js";
-import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 import type { MuSearch } from "../src/translate-body.js";
+import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -99,7 +99,7 @@ const tsKeywords = new Set([
   "yield",
 ]);
 const identifierArb = fc
-  .stringMatching(/^[a-z][a-z0-9]{0,8}$/)
+  .stringMatching(/^[a-z][a-z0-9]{0,8}$/u)
   .filter((name) => !tsKeywords.has(name));
 
 function firstReturnExpression(source: string): {
@@ -188,16 +188,25 @@ it("generated inputs exercise the ir1-build exported surface", () => {
       assert.equal(B.isL1Unsupported(unsupported), true);
       assert.equal(B.isL1StmtUnsupported(unsupported), true);
       assert.equal(B.isL1ConditionalForm(ir1Var(name)), false);
-      assert.equal(B.contagiousOpaqueForOperands(ctx, [ir1Var(name), ir1LitNat(1)], expr), null);
+      assert.equal(
+        B.contagiousOpaqueForOperands(ctx, [ir1Var(name), ir1LitNat(1)], expr),
+        null,
+      );
       assert.notEqual(B.snapshotAssumptionEnv(ctx), undefined);
       assert.equal(B.unwrapParens(expr).kind !== undefined, true);
       assert.equal(B.isCollectionMutationCall(expr, ctx), false);
       assert.equal(B.isArrayChainCall(expr, ctx), false);
       assert.equal(B.tryBuildBuiltinCall(expr, ctx) === null, true);
-      assert.equal(B.tryBuildL1PureSubExpression(expr, ctx).kind !== undefined, true);
+      assert.equal(
+        B.tryBuildL1PureSubExpression(expr, ctx).kind !== undefined,
+        true,
+      );
       assert.equal(B.tryBuildL1Cardinality(expr, ctx) === null, true);
       assert.equal(B.elementAccessLiteralKey(keyed.expr), name);
-      assert.equal(B.buildL1MemberAccess(expr, ctx).unsupported !== undefined, true);
+      assert.equal(
+        B.buildL1MemberAccess(expr, ctx).unsupported !== undefined,
+        true,
+      );
       assert.equal(
         B.tryRecognizeFunctorLift(
           { guard: expr, thenExpr: expr, elseExpr: expr, contextNode: expr },
@@ -205,10 +214,19 @@ it("generated inputs exercise the ir1-build exported surface", () => {
         ),
         null,
       );
-      assert.equal(B.buildL1Conditional(expr, ctx).unsupported !== undefined, true);
-      assert.equal(B.buildL1ConditionalFromArms([], expr, ctx).unsupported !== undefined, true);
+      assert.equal(
+        B.buildL1Conditional(expr, ctx).unsupported !== undefined,
+        true,
+      );
+      assert.equal(
+        B.buildL1ConditionalFromArms([], expr, ctx).unsupported !== undefined,
+        true,
+      );
       assert.equal(B.lowerL1ToOpaque(ir1Var(name)) !== undefined, true);
-      assert.notEqual(B.buildL1IncrementStep(ir1Var(name), "add", ir1LitNat(1)), undefined);
+      assert.notEqual(
+        B.buildL1IncrementStep(ir1Var(name), "add", ir1LitNat(1)),
+        undefined,
+      );
       const muCtx = {
         ...ctx,
         checker: muChecker,

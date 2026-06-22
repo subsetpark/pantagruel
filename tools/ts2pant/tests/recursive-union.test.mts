@@ -28,8 +28,14 @@ describe("recursive discriminated union", () => {
     const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
     assert.doesNotMatch(output, /UNSUPPORTED/u);
     assert.match(output, /^Tree\.$/mu);
-    assert.match(output, /tree--left s: Tree, tree--kind s = "node" => Tree\./u);
-    assert.match(output, /tree--value s: Tree, tree--kind s = "leaf" => Int\./u);
+    assert.match(
+      output,
+      /tree--left s: Tree, tree--kind s = "node" => Tree\./u,
+    );
+    assert.match(
+      output,
+      /tree--value s: Tree, tree--kind s = "leaf" => Int\./u,
+    );
     // The body resolves against the same `Tree` domain, not a duplicate.
     assert.match(output, /tree-kind t = tree--kind t\./u);
     assert.doesNotMatch(output, /Tree1|Tree2/u);

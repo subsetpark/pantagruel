@@ -165,5 +165,4 @@ describe("ir1-ssa-contract", () => {
     assert.equal(write.value.op, "clear");
     assert.equal(write.value.elem, null);
   });
-
 });

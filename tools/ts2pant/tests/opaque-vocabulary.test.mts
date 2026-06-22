@@ -5,13 +5,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { irOpaque } from "../src/ir.js";
 import { lowerExpr } from "../src/ir-emit.js";
+import { ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
 import { formatIR1Expr } from "../src/ir1-printer.js";
 import {
   freeVarsIR1Expr,
   substituteIR1ExprSubtree,
 } from "../src/ir1-substitute.js";
-import { ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
 import { loadAst } from "../src/pant-wasm.js";
 

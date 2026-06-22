@@ -2,40 +2,43 @@
 // @archlint.domain ts2pant.any-rejection
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
+import { emitDocument } from "../src/emit.js";
 import { createSourceFileFromSource } from "../src/extract.js";
+import { loadAst } from "../src/pant-wasm.js";
 import { translateSignature } from "../src/translate-signature.js";
 import {
+  cellEmitSynth,
   IntStrategy,
-  UNSUPPORTED_UNKNOWN_REASON,
+  newSynthCell,
 } from "../src/translate-types.js";
 
-function unsupportedReason(source: string, functionName: string): string {
+before(async () => {
+  await loadAst();
+});
+
+function signatureOutput(source: string, functionName: string): string {
   const sourceFile = createSourceFileFromSource(source);
+  const synthCell = newSynthCell();
   const result = translateSignature(
     sourceFile,
     functionName,
     IntStrategy,
-    undefined,
-    undefined,
-    {
-      typeMapping: { policy: "reject" },
-    },
+    synthCell,
   );
-  assert.equal(result.declaration.kind, "unsupported");
-  if (result.declaration.kind !== "unsupported") {
-    throw new Error("expected unsupported declaration");
-  }
-  return result.declaration.reason;
-}
-
-function reasonCause(reason: string): string {
-  return reason.slice(reason.indexOf(": ") + 2);
+  const { decls } = cellEmitSynth(synthCell);
+  return emitDocument({
+    moduleName: "ANY_OPAQUE",
+    imports: [],
+    declarations: [...decls, result.declaration],
+    propositions: [],
+    checks: [],
+  });
 }
 
 describe("any rejection", () => {
-  it("any maps to UNSUPPORTED_UNKNOWN with the same reason as unknown", () => {
-    const anyReason = unsupportedReason(
+  it("any and unknown parameters map to the shared Opaque domain", () => {
+    const anyOutput = signatureOutput(
       `
         function withAny(value: any): number {
           return 0;
@@ -43,7 +46,7 @@ describe("any rejection", () => {
       `,
       "withAny",
     );
-    const unknownReason = unsupportedReason(
+    const unknownOutput = signatureOutput(
       `
         function withUnknown(value: unknown): number {
           return 0;
@@ -51,18 +54,10 @@ describe("any rejection", () => {
       `,
       "withUnknown",
     );
-    const anyCause = reasonCause(anyReason);
-    const unknownCause = reasonCause(unknownReason);
 
-    assert.equal(anyCause, unknownCause);
-    assert.equal(anyCause, UNSUPPORTED_UNKNOWN_REASON);
-    assert.equal(
-      anyReason,
-      `with-any param 'value': ${UNSUPPORTED_UNKNOWN_REASON}`,
-    );
-    assert.equal(
-      unknownReason,
-      `with-unknown param 'value': ${UNSUPPORTED_UNKNOWN_REASON}`,
-    );
+    assert.match(anyOutput, /^Opaque\.$/mu);
+    assert.match(anyOutput, /^with-any value: Opaque => Int\.$/mu);
+    assert.match(unknownOutput, /^Opaque\.$/mu);
+    assert.match(unknownOutput, /^with-unknown value: Opaque => Int\.$/mu);
   });
 });

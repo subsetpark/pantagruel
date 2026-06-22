@@ -8,8 +8,8 @@ import {
   createAssumptionEnv,
   discriminantFactsInScope,
   enterFrame,
-  pushFact,
   type Fact,
+  pushFact,
 } from "../src/assumption-env.js";
 import {
   renderDefinednessObligation,
@@ -148,8 +148,8 @@ describe("definedness", () => {
   it("renders generated discriminant, nullish, and type-predicate obligations", () => {
     fc.assert(
       fc.property(
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
         fc.boolean(),
         (receiver, literal, negated) => {
           const ast = getAst();
@@ -175,7 +175,10 @@ describe("definedness", () => {
           });
 
           assert.match(definedness.text, /shape--kind/u);
-          assert.match(definedness.text, new RegExp(JSON.stringify(literal), "u"));
+          assert.match(
+            definedness.text,
+            new RegExp(JSON.stringify(literal), "u"),
+          );
           assert.match(nullish.text, negated ? /->/u : /true/u);
           assert.match(predicate.text, negated ? /^~/u : /true/u);
         },

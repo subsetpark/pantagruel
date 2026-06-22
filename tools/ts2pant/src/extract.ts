@@ -1107,7 +1107,6 @@ function translateReferencedCallable(
       strategy,
       synthCell,
       undefined,
-      { typeMapping: { policy: "opaque" } },
     );
     if (sig.declaration.kind !== "rule") {
       return null;
@@ -1130,9 +1129,7 @@ function translateReferencedCallable(
   for (const param of sig.getParameters()) {
     const paramDecl = param.valueDeclaration ?? decl;
     const paramType = checker.getTypeOfSymbolAtLocation(param, paramDecl);
-    const mapped = mapTsType(paramType, checker, strategy, synthCell, {
-      policy: "opaque",
-    });
+    const mapped = mapTsType(paramType, checker, strategy, synthCell);
     // Can't synthesize a sound rule head with an unmappable parameter type.
     if (!mapped.ok) {
       return null;
@@ -1142,9 +1139,7 @@ function translateReferencedCallable(
       : toPantTermName(param.name);
     params.push({ name: pantName, type: mapped.sort });
   }
-  const pantReturnType = mapTsType(returnType, checker, strategy, synthCell, {
-    policy: "opaque",
-  });
+  const pantReturnType = mapTsType(returnType, checker, strategy, synthCell);
   if (!pantReturnType.ok) {
     return null;
   }

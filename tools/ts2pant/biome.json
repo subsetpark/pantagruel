@@ -48,8 +48,20 @@
     }
   },
   "files": {
-    "includes": ["src/**", "tests/**", "!src/wasm/**"]
+    "includes": ["src/**", "tests/**", "!src/wasm", "!tests/fixtures"]
   },
+  "overrides": [
+    {
+      "includes": ["tests/**"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noSecrets": "off"
+          }
+        }
+      }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

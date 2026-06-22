@@ -13,6 +13,7 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import type ts from "typescript";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
@@ -20,7 +21,6 @@ import {
   containsUnsupportedOperator,
   translateSignature,
 } from "../src/translate-signature.js";
-import ts from "typescript";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
 
@@ -192,10 +192,7 @@ describe("equality-canonicalization (signature/guard path)", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(
-      getAst().strExpr(result.declaration.guard!),
-      "~(amount ~= 0)",
-    );
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount ~= 0)");
   });
 
   it("== wrapped in `as`/non-null assertion still rejects (no raw-text fallback)", () => {
@@ -389,9 +386,6 @@ describe("equality-canonicalization (signature/guard path)", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(
-      getAst().strExpr(result.declaration.guard!),
-      "~(amount <= 0)",
-    );
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount <= 0)");
   });
 });

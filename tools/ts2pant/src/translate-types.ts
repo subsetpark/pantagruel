@@ -10,12 +10,7 @@ import {
   type NameRegistry,
   registerName,
 } from "./name-registry.js";
-import {
-  DEFAULT_OPAQUE_POLICY,
-  OPAQUE_DOMAIN,
-  type OpaquePolicy,
-  opaqueValueRuleName,
-} from "./opaque.js";
+import { OPAQUE_DOMAIN, opaqueValueRuleName } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration, PropResult } from "./types.js";
@@ -32,24 +27,6 @@ import type { PantDeclaration, PropResult } from "./types.js";
  */
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
-/**
- * Sentinel returned by `mapTsType` when the TypeScript type is `unknown`
- * or `any`.
- * Pantagruel is monomorphic over named domains; there is no polymorphism
- * mechanism to absorb a dynamic top type into. Mapping it to a fresh
- * domain per call site loses the TS author's intent ("I'll narrow this
- * later") and silently lets type errors through. The translator rejects
- * it explicitly so the user can declare a real type or interface
- * (steering rule 1 — the TS itself is ambiguous, not the recognizer).
- *
- * The value is not a valid Pantagruel identifier so emission of a
- * signature carrying it will fail visibly rather than reference an
- * undeclared domain. The reason text is exported alongside so downstream
- * "UNSUPPORTED-skip" infrastructure can surface it to the user.
- */
-export const UNSUPPORTED_UNKNOWN = "__unsupported_unknown__";
-export const UNSUPPORTED_UNKNOWN_REASON =
-  "TS unknown is not expressible in Pantagruel; declare a specific type";
 export const UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON =
   "field access on a non-discriminated union is not expressible in Pantagruel";
 export const UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON =
@@ -832,7 +809,6 @@ function registerDiscriminatedUnionDomain(
   detection: DiscriminatedUnionDetection,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  opts?: MapTsTypeOptions,
 ): string | null {
   // Same recursive type seen before (in-flight self-reference, or an earlier
   // completed registration): reuse its domain by identity.
@@ -860,7 +836,6 @@ function registerDiscriminatedUnionDomain(
       strategy,
       reg.name,
       reg.name,
-      opts,
     );
     if (domain === null) {
       cell.recursiveDomains.delete(type);
@@ -878,7 +853,6 @@ function registerDiscriminatedUnionDomain(
       strategy,
       discriminatedUnionPreferredDomain(type),
       undefined,
-      opts,
     );
   } finally {
     cell.visiting.delete(type);
@@ -896,7 +870,6 @@ export function cellRegisterDiscriminatedUnion(
   // rather than allocating a fresh name; the caller already advanced the
   // registry.
   reservedDomain?: string,
-  opts?: MapTsTypeOptions,
 ): string | null {
   const variants: Array<{
     key: string;
@@ -924,7 +897,7 @@ export function cellRegisterDiscriminatedUnion(
       if (field.name === detection.discriminant) {
         continue;
       }
-      const mapped = mapTsType(field.type, checker, strategy, cell, opts);
+      const mapped = mapTsType(field.type, checker, strategy, cell);
       if (
         !mapped.ok ||
         !isValidPantFieldType(mapped.sort) ||
@@ -1189,6 +1162,72 @@ export function emitOpaqueSynthDecls(
   };
 }
 
+export interface ForeignDomainEntry {
+  readonly key: string;
+  readonly domain: string;
+}
+
+export interface ForeignDomainSynth {
+  readonly byKey: ReadonlyMap<string, ForeignDomainEntry>;
+  readonly emitted: ReadonlySet<string>;
+}
+
+export function emptyForeignDomainSynth(): ForeignDomainSynth {
+  return { byKey: new Map(), emitted: new Set() };
+}
+
+function toPantDomainName(name: string): string {
+  const words = toPantTermName(name)
+    .split("-")
+    .filter((part) => part.length > 0);
+  const stem = words.map(capitalize).join("");
+  return stem.length > 0 ? stem : "Foreign";
+}
+
+export function registerForeignDomain(
+  synth: ForeignDomainSynth,
+  registry: NameRegistry,
+  key: string,
+  preferredName: string,
+): {
+  domain: string;
+  synth: ForeignDomainSynth;
+  registry: NameRegistry;
+} {
+  const cached = synth.byKey.get(key);
+  if (cached) {
+    return { domain: cached.domain, synth, registry };
+  }
+  const reg = registerName(
+    registry,
+    `Foreign${toPantDomainName(preferredName)}`,
+  );
+  const entry: ForeignDomainEntry = { key, domain: reg.name };
+  const byKey = new Map(synth.byKey);
+  byKey.set(key, entry);
+  return {
+    domain: entry.domain,
+    synth: { ...synth, byKey },
+    registry: reg.registry,
+  };
+}
+
+export function emitForeignDomainSynthDecls(synth: ForeignDomainSynth): {
+  decls: PantDeclaration[];
+  synth: ForeignDomainSynth;
+} {
+  const decls: PantDeclaration[] = [];
+  const emitted = new Set(synth.emitted);
+  for (const [key, entry] of synth.byKey) {
+    if (emitted.has(key)) {
+      continue;
+    }
+    emitted.add(key);
+    decls.push({ kind: "domain", name: entry.domain });
+  }
+  return { decls, synth: { ...synth, emitted } };
+}
+
 /**
  * Canonical tuple shape: the ordered Pantagruel element types that a
  * tuple constructor builds. Two TS aliases that share the same shape
@@ -1368,6 +1407,7 @@ export interface SynthCell {
   recordSynth: RecordSynth;
   discriminatedUnionSynth: DiscriminatedUnionSynth;
   opaqueSynth: OpaqueSynth;
+  foreignDomainSynth: ForeignDomainSynth;
   registry: NameRegistry;
   tupleSynth: TupleSynth;
   /**
@@ -1421,6 +1461,7 @@ export function newSynthCell(
     recordSynth: emptyRecordSynth(),
     discriminatedUnionSynth: emptyDiscriminatedUnionSynth(),
     opaqueSynth: emptyOpaqueSynth(),
+    foreignDomainSynth: emptyForeignDomainSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
     visiting: new Set(),
@@ -1798,6 +1839,8 @@ export function cellEmitSynth(cell: SynthCell): {
   const opaqueR = emitOpaqueSynthDecls(cell.opaqueSynth, cell.registry);
   cell.opaqueSynth = opaqueR.synth;
   cell.registry = opaqueR.registry;
+  const foreignR = emitForeignDomainSynthDecls(cell.foreignDomainSynth);
+  cell.foreignDomainSynth = foreignR.synth;
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
   cell.registry = mapR.registry;
@@ -1811,7 +1854,13 @@ export function cellEmitSynth(cell: SynthCell): {
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
   return {
-    decls: [...opaqueR.decls, ...mapR.decls, ...duR.decls, ...recR.decls],
+    decls: [
+      ...opaqueR.decls,
+      ...foreignR.decls,
+      ...mapR.decls,
+      ...duR.decls,
+      ...recR.decls,
+    ],
     assertions: duR.assertions,
   };
 }
@@ -1948,14 +1997,38 @@ export const IntStrategy: NumericStrategy = {
   },
 };
 
-export interface MapTsTypeOptions {
-  readonly policy?: OpaquePolicy | undefined;
+function canonicalSymbol(sym: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {
+  return sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
 }
 
-function effectiveOpacityPolicy(
-  opts: MapTsTypeOptions | undefined,
-): OpaquePolicy {
-  return opts?.policy ?? DEFAULT_OPAQUE_POLICY;
+function isForeignSourceFile(sf: ts.SourceFile): boolean {
+  const fileName = sf.fileName.replace(/\\/gu, "/");
+  return (
+    /\/node_modules\//u.test(fileName) ||
+    /\/typescript\/lib\/(?:lib\..*|typescript)\.d\.ts$/u.test(fileName)
+  );
+}
+
+function foreignSymbolKey(
+  rawSymbol: ts.Symbol,
+  checker: ts.TypeChecker,
+): { key: string; preferredName: string } | null {
+  const symbol = canonicalSymbol(rawSymbol, checker);
+  const decls = symbol.declarations;
+  if (!decls || decls.length === 0) {
+    return null;
+  }
+  if (!decls.every((decl) => isForeignSourceFile(decl.getSourceFile()))) {
+    return null;
+  }
+  const sources = decls
+    .map((decl) => `${decl.getSourceFile().fileName}:${decl.pos}:${decl.end}`)
+    .sort()
+    .join("|");
+  return {
+    key: `${symbol.getName()}@${sources}`,
+    preferredName: symbol.getName(),
+  };
 }
 
 export const RealStrategy: NumericStrategy = {
@@ -1981,22 +2054,16 @@ export function mapTsType(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
-  opts?: MapTsTypeOptions,
 ): MapTsTypeResult {
   const flags = type.flags;
 
-  // Reject `any` / `unknown` explicitly. Pantagruel is monomorphic over
-  // named domains — there is no `Any`/`Unknown` top — so the only honest
-  // move is to refuse and steer the user toward a declared type. Mapping
-  // to a generic placeholder would silently let type errors through.
+  // `any` / `unknown` are dynamic tops in TypeScript. Pantagruel is
+  // monomorphic, so they lower to one shared uninterpreted Opaque sort.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
-    if (effectiveOpacityPolicy(opts) === "opaque") {
-      if (synthCell) {
-        cellRegisterOpaqueDomain(synthCell);
-      }
-      return okSort(OPAQUE_DOMAIN);
+    if (synthCell) {
+      cellRegisterOpaqueDomain(synthCell);
     }
-    return unsupportedType(UNSUPPORTED_UNKNOWN_REASON);
+    return okSort(OPAQUE_DOMAIN);
   }
 
   if (flags & ts.TypeFlags.String || flags & ts.TypeFlags.StringLiteral) {
@@ -2015,7 +2082,7 @@ export function mapTsType(
 
   const iteratorElem = getBuiltinIteratorElementType(type, checker);
   if (iteratorElem !== null) {
-    const elem = mapTsType(iteratorElem, checker, strategy, synthCell, opts);
+    const elem = mapTsType(iteratorElem, checker, strategy, synthCell);
     if (!elem.ok) {
       return elem;
     }
@@ -2027,7 +2094,7 @@ export function mapTsType(
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     const elements: string[] = [];
     for (const t of typeArgs) {
-      const elem = mapTsType(t, checker, strategy, synthCell, opts);
+      const elem = mapTsType(t, checker, strategy, synthCell);
       if (!elem.ok) {
         return elem;
       }
@@ -2040,7 +2107,7 @@ export function mapTsType(
   if (checker.isArrayType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       if (!elem.ok) {
         return elem;
       }
@@ -2055,7 +2122,7 @@ export function mapTsType(
   if (isSetType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       if (!elem.ok) {
         return elem;
       }
@@ -2071,13 +2138,13 @@ export function mapTsType(
   if (isMapType(type) && synthCell) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
+      const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       // Propagate the refusal rather than registering a Map keyed by or
       // valued in a non-sort — the failure can no longer reach a domain name.
       if (!kType.ok) {
         return kType;
       }
-      const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell, opts);
+      const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
       if (!vType.ok) {
         return vType;
       }
@@ -2097,11 +2164,11 @@ export function mapTsType(
     );
     if (nonBrandParts.length > 0 && nonBrandParts.length < type.types.length) {
       if (nonBrandParts.length === 1) {
-        return mapTsType(nonBrandParts[0]!, checker, strategy, synthCell, opts);
+        return mapTsType(nonBrandParts[0]!, checker, strategy, synthCell);
       }
       const parts: string[] = [];
       for (const part of nonBrandParts) {
-        const mapped = mapTsType(part, checker, strategy, synthCell, opts);
+        const mapped = mapTsType(part, checker, strategy, synthCell);
         if (!mapped.ok) {
           return mapped;
         }
@@ -2126,7 +2193,6 @@ export function mapTsType(
           detection,
           checker,
           strategy,
-          opts,
         );
         if (domain !== null) {
           return okSort(domain);
@@ -2151,7 +2217,7 @@ export function mapTsType(
     }
     const parts: string[] = [];
     for (const t of nonNullTypes) {
-      const mapped = mapTsType(t, checker, strategy, synthCell, opts);
+      const mapped = mapTsType(t, checker, strategy, synthCell);
       if (!mapped.ok) {
         return mapped;
       }
@@ -2179,13 +2245,7 @@ export function mapTsType(
     if (synthCell && !synthCell.visiting.has(type)) {
       synthCell.visiting.add(type);
       try {
-        return registerAnonymousRecord(
-          type,
-          checker,
-          strategy,
-          synthCell,
-          opts,
-        );
+        return registerAnonymousRecord(type, checker, strategy, synthCell);
       } finally {
         synthCell.visiting.delete(type);
       }
@@ -2200,6 +2260,23 @@ export function mapTsType(
   // Named type (interface, class, enum, type alias)
   const symbol = type.aliasSymbol ?? type.symbol;
   if (symbol) {
+    const foreign = foreignSymbolKey(symbol, checker);
+    if (foreign) {
+      if (synthCell) {
+        const registered = registerForeignDomain(
+          synthCell.foreignDomainSynth,
+          synthCell.registry,
+          foreign.key,
+          foreign.preferredName,
+        );
+        synthCell.foreignDomainSynth = registered.synth;
+        synthCell.registry = registered.registry;
+        return okSort(registered.domain);
+      }
+      return unsupportedType(
+        `foreign type '${foreign.preferredName}' is not analyzed and requires a synth cell for uninterpreted-domain emission`,
+      );
+    }
     return okSort(symbol.getName());
   }
 
@@ -2222,17 +2299,11 @@ function isNullishTypeNode(node: ts.TypeNode): boolean {
   );
 }
 
-function mapDynamicTypeNode(
-  synthCell: SynthCell | undefined,
-  opts: MapTsTypeOptions | undefined,
-): MapTsTypeResult {
-  if (effectiveOpacityPolicy(opts) === "opaque") {
-    if (synthCell) {
-      cellRegisterOpaqueDomain(synthCell);
-    }
-    return okSort(OPAQUE_DOMAIN);
+function mapDynamicTypeNode(synthCell: SynthCell | undefined): MapTsTypeResult {
+  if (synthCell) {
+    cellRegisterOpaqueDomain(synthCell);
   }
-  return unsupportedType(UNSUPPORTED_UNKNOWN_REASON);
+  return okSort(OPAQUE_DOMAIN);
 }
 
 function mapTsTypeNodePart(
@@ -2240,26 +2311,24 @@ function mapTsTypeNodePart(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
-  opts?: MapTsTypeOptions,
 ): MapTsTypeResult {
   if (isDynamicTypeNode(node)) {
-    return mapDynamicTypeNode(synthCell, opts);
+    return mapDynamicTypeNode(synthCell);
   }
   return mapTsType(
     checker.getTypeFromTypeNode(node),
     checker,
     strategy,
     synthCell,
-    opts,
   );
 }
 
 /**
  * Map an explicitly declared TS type node when the syntactic union shape
  * carries precision the checker erases. In particular, TypeScript reduces
- * `unknown | null` and `number | unknown` to plain `unknown`; opaque policy
- * needs to preserve the declared composite positions as `[Opaque]` and
- * `Int + Opaque` rather than collapsing them to `Opaque`.
+ * `unknown | null` and `number | unknown` to plain `unknown`; preserve the
+ * declared composite positions as `[Opaque]` and `Int + Opaque` rather than
+ * collapsing them to `Opaque`.
  */
 export function mapTsTypeFromTypeNode(
   node: ts.TypeNode,
@@ -2267,10 +2336,9 @@ export function mapTsTypeFromTypeNode(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
-  opts?: MapTsTypeOptions,
 ): MapTsTypeResult {
   if (!ts.isUnionTypeNode(node) || !node.types.some(isDynamicTypeNode)) {
-    return mapTsType(fallbackType, checker, strategy, synthCell, opts);
+    return mapTsType(fallbackType, checker, strategy, synthCell);
   }
 
   const hasNullish = node.types.some(isNullishTypeNode);
@@ -2281,7 +2349,7 @@ export function mapTsTypeFromTypeNode(
 
   const parts: string[] = [];
   for (const part of nonNullTypes) {
-    const mapped = mapTsTypeNodePart(part, checker, strategy, synthCell, opts);
+    const mapped = mapTsTypeNodePart(part, checker, strategy, synthCell);
     if (!mapped.ok) {
       return mapped;
     }
@@ -2326,7 +2394,6 @@ function registerAnonymousRecord(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell,
-  opts?: MapTsTypeOptions,
 ): MapTsTypeResult {
   const properties = type.getProperties();
   const fields: RecordSynthField[] = [];
@@ -2344,7 +2411,7 @@ function registerAnonymousRecord(
     if (!propType) {
       return unsupportedType(UNSUPPORTED_ANONYMOUS_RECORD);
     }
-    const mapped = mapTsType(propType, checker, strategy, synthCell, opts);
+    const mapped = mapTsType(propType, checker, strategy, synthCell);
     // Propagate the field's refusal reason unchanged (unknown, nested
     // anonymous-record, or recursive discriminated union) so the cause is
     // not masked as a generic anonymous-record failure.
@@ -2439,7 +2506,6 @@ export function translateTypes(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
-  opts?: MapTsTypeOptions,
 ): PantDeclaration[] {
   const decls: PantDeclaration[] = [];
 
@@ -2467,20 +2533,8 @@ export function translateTypes(
           // nested Map inside V (e.g., `inner: Map<K, Map<K', V'>>`)
           // registers its own synthesized domain and the Stage A rule's V
           // references it.
-          const kType = mapTsType(
-            typeArgs[0]!,
-            checker,
-            strategy,
-            synthCell,
-            opts,
-          );
-          const vType = mapTsType(
-            typeArgs[1]!,
-            checker,
-            strategy,
-            synthCell,
-            opts,
-          );
+          const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+          const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
           if (!kType.ok) {
             decls.push({
               kind: "unsupported",
@@ -2523,13 +2577,7 @@ export function translateTypes(
           continue;
         }
       }
-      const fieldType = mapTsType(
-        prop.type,
-        checker,
-        strategy,
-        synthCell,
-        opts,
-      );
+      const fieldType = mapTsType(prop.type, checker, strategy, synthCell);
       if (!fieldType.ok) {
         decls.push({
           kind: "unsupported",
@@ -2547,7 +2595,7 @@ export function translateTypes(
   }
 
   for (const alias of extracted.aliases) {
-    const aliasType = mapTsType(alias.type, checker, strategy, synthCell, opts);
+    const aliasType = mapTsType(alias.type, checker, strategy, synthCell);
     if (!aliasType.ok) {
       decls.push({
         kind: "unsupported",

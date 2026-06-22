@@ -2,8 +2,8 @@
 // @archlint.domain ts2pant.ir1-ssa-foreach
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 
 import {
   type IR1FoldLeaf,
@@ -20,8 +20,8 @@ import {
   lowerForeachShapeAAsGeneralLoop,
   lowerForeachShapeBAsGeneralLoop,
   lowerShapeAExpr,
-  shapeAKey,
   type ShapeASummaryState,
+  shapeAKey,
   summarizeForeachShapeABody,
   summarizeShapeAAssign,
   summarizeShapeACond,
@@ -88,7 +88,10 @@ describe("ir1-ssa-foreach", () => {
         const diagnostics = [];
         const assign = ir1Assign(ir1Member(item, prop), ir1LitNat(1));
         assert.equal(summarizeShapeAAssign(assign, state, diagnostics), true);
-        assert.equal(summarizeForeachShapeABody(assign, state, diagnostics), true);
+        assert.equal(
+          summarizeForeachShapeABody(assign, state, diagnostics),
+          true,
+        );
         assert.equal(
           summarizeShapeACond(
             {
@@ -102,19 +105,30 @@ describe("ir1-ssa-foreach", () => {
           true,
         );
         const lowered = lowerShapeAExpr(ir1Member(item, prop), state);
-        assert.deepEqual(lowerForeachShapeAAsGeneralLoop({
-          binder: "item",
-          source,
-          body: assign,
-        }).diagnostics, []);
-        assert.deepEqual(lowerForeachShapeBAsGeneralLoop({
-          binder: "item",
-          source,
-          foldLeaves: shapeBFoldLeaves(),
-        }).diagnostics, []);
-        assert.equal(shapeAKey(prop, getAst().var("item")).startsWith(prop), true);
+        assert.deepEqual(
+          lowerForeachShapeAAsGeneralLoop({
+            binder: "item",
+            source,
+            body: assign,
+          }).diagnostics,
+          [],
+        );
+        assert.deepEqual(
+          lowerForeachShapeBAsGeneralLoop({
+            binder: "item",
+            source,
+            foldLeaves: shapeBFoldLeaves(),
+          }).diagnostics,
+          [],
+        );
         assert.equal(
-          foreachShapeBAccumulatorKey(prop, getAst().var("account")).startsWith(prop),
+          shapeAKey(prop, getAst().var("item")).startsWith(prop),
+          true,
+        );
+        assert.equal(
+          foreachShapeBAccumulatorKey(prop, getAst().var("account")).startsWith(
+            prop,
+          ),
           true,
         );
         assert.equal(getAst().strExpr(lowered).length > 0, true);
@@ -147,18 +161,15 @@ describe("ir1-ssa-foreach", () => {
     }
   });
 
-  it(
-    "Shape A: header join's loopBackVersion equals the per-iteration write version",
-    () => {
-      const result = lowerShapeA();
+  it("Shape A: header join's loopBackVersion equals the per-iteration write version", () => {
+    const result = lowerShapeA();
 
-      for (const body of result.program.loopBodies) {
-        const header = body.headerJoins[0]!;
-        const write = body.writes[0]!;
-        assert.equal(header.loopBackVersion, write.version);
-      }
-    },
-  );
+    for (const body of result.program.loopBodies) {
+      const header = body.headerJoins[0]!;
+      const write = body.writes[0]!;
+      assert.equal(header.loopBackVersion, write.version);
+    }
+  });
 
   it("Shape A: emits a single per-element quantified equation per location", () => {
     const ast = getAst();
@@ -203,29 +214,26 @@ describe("ir1-ssa-foreach", () => {
     }
   });
 
-  it(
-    "Shape B: accumulator-fold write reads prior version through the header join",
-    () => {
-      const result = lowerShapeB();
+  it("Shape B: accumulator-fold write reads prior version through the header join", () => {
+    const result = lowerShapeB();
 
-      for (const body of result.program.loopBodies) {
-        const header = body.headerJoins[0]!;
-        const write = body.writes[0]!;
-        assert.equal(header.loopBackVersion, write.version);
-        assert.notEqual(header.loopBackVersion, header.preheaderVersion);
-        assert.equal(write.value.kind, "property");
-        if (write.value.kind === "property") {
-          assert.equal(write.value.value.kind, "binop");
-          if (write.value.value.kind === "binop") {
-            assert.deepEqual(
-              write.value.value.lhs,
-              ir1Member(account, write.location.ruleName),
-            );
-          }
+    for (const body of result.program.loopBodies) {
+      const header = body.headerJoins[0]!;
+      const write = body.writes[0]!;
+      assert.equal(header.loopBackVersion, write.version);
+      assert.notEqual(header.loopBackVersion, header.preheaderVersion);
+      assert.equal(write.value.kind, "property");
+      if (write.value.kind === "property") {
+        assert.equal(write.value.value.kind, "binop");
+        if (write.value.value.kind === "binop") {
+          assert.deepEqual(
+            write.value.value.lhs,
+            ir1Member(account, write.location.ruleName),
+          );
         }
       }
-    },
-  );
+    }
+  });
 
   it("Shape B: emits one accumulator-fold equation per location", () => {
     const ast = getAst();

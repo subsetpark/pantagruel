@@ -240,8 +240,11 @@ describe("for-of comprehension integration", () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "mapLabels"),
     );
-    assert.match(output, /map-labels xs = \(each x in xs \| item--label x\)\./);
-    assert.doesNotMatch(output, /UNSUPPORTED/);
+    assert.match(
+      output,
+      /map-labels xs = \(each x in xs \| item--label x\)\./u,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   it("filtered build-list emits a guarded each", async () => {
@@ -250,35 +253,33 @@ describe("for-of comprehension integration", () => {
     );
     assert.match(
       output,
-      /filter-if-active xs = \(each x in xs, item--active x \| x\)\./,
+      /filter-if-active xs = \(each x in xs, item--active x \| x\)\./u,
     );
-    assert.doesNotMatch(output, /UNSUPPORTED/);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   it("build-list projection can reference a preceding const binding", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "mapWithPreludeConst"),
     );
-    assert.match(output, /offset\s+=> Int\./);
-    assert.match(output, /offset = 1\./);
+    assert.match(output, /offset\s+=> Int\./u);
+    assert.match(output, /offset = 1\./u);
     assert.match(
       output,
-      /map-with-prelude-const xs = \(each x in xs \| item--value x \+ offset\)\./,
+      /map-with-prelude-const xs = \(each x in xs \| item--value x \+ offset\)\./u,
     );
-    assert.doesNotMatch(output, /UNSUPPORTED/);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
-  it(
-    "@pant on a build-list entails",
-    { skip: hasSolver ? false : "z3 unavailable" },
-    async () => {
-      const output = await emitAndCheck(
-        await buildDocument(FIXTURE, "filterIfActive"),
-      );
-      const result = runCheck(output);
-      assert.match(result.output, /OK: Entailed:/);
-    },
-  );
+  it("@pant on a build-list entails", {
+    skip: hasSolver ? false : "z3 unavailable",
+  }, async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "filterIfActive"),
+    );
+    const result = runCheck(output);
+    assert.match(result.output, /OK: Entailed:/u);
+  });
 
   it("continue-filter build-list emits the same guarded each", async () => {
     const output = await emitAndCheck(
@@ -286,17 +287,17 @@ describe("for-of comprehension integration", () => {
     );
     assert.match(
       output,
-      /filter-continue-active xs = \(each x in xs, item--active x \| x\)\./,
+      /filter-continue-active xs = \(each x in xs, item--active x \| x\)\./u,
     );
-    assert.doesNotMatch(output, /UNSUPPORTED/);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   it("Set source build-list emits an each comprehension", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "collectSet"),
     );
-    assert.match(output, /collect-set xs = \(each x in xs \| x\)\./);
-    assert.doesNotMatch(output, /UNSUPPORTED/);
+    assert.match(output, /collect-set xs = \(each x in xs \| x\)\./u);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   it("out-of-scope scalar fold still refuses with a precise reason", async () => {
@@ -305,7 +306,7 @@ describe("for-of comprehension integration", () => {
     );
     assert.match(
       output,
-      /UNSUPPORTED: sum-lengths .* for-of loop is not a recognized build-list comprehension/,
+      /UNSUPPORTED: sum-lengths .* for-of loop is not a recognized build-list comprehension/u,
     );
   });
 
@@ -315,7 +316,7 @@ describe("for-of comprehension integration", () => {
     );
     assert.match(
       output,
-      /UNSUPPORTED: map-entry-copy .* for-of loop is not a recognized build-list comprehension/,
+      /UNSUPPORTED: map-entry-copy .* for-of loop is not a recognized build-list comprehension/u,
     );
   });
 });

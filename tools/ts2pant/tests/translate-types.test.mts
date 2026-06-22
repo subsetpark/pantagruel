@@ -1,11 +1,14 @@
 // @archlint.module test
 // @archlint.domain ts2pant.translate-types
+// biome-ignore-all lint/security/noSecrets: type translation tests assert generated domain names that trigger entropy false positives
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import { emitDocument } from "../src/emit.js";
 import {
+  createSourceFile,
   createSourceFileFromSource,
   type ExtractedInterface,
   extractAllTypes,
@@ -35,7 +38,6 @@ import {
   resolveFieldOwner,
   type TupleShape,
   translateTypes,
-  UNSUPPORTED_UNKNOWN,
 } from "../src/translate-types.js";
 import type { PantDeclaration } from "../src/types.js";
 
@@ -61,9 +63,7 @@ function extractAndTranslate(source: string, strategy = IntStrategy) {
   const sourceFile = createSourceFileFromSource(source);
   const extracted = extractAllTypes(sourceFile);
   const checker = getChecker(sourceFile);
-  const decls = translateTypes(extracted, checker, strategy, undefined, {
-    policy: "reject",
-  });
+  const decls = translateTypes(extracted, checker, strategy);
   return { decls, extracted, checker, sourceFile };
 }
 
@@ -307,7 +307,7 @@ it("generated type helpers preserve synth registrations", () => {
 it("generated names and type fragments remain Pant-safe", () => {
   fc.assert(
     fc.property(
-      fc.stringMatching(/^[A-Za-z_][A-Za-z0-9_]{0,16}$/),
+      fc.stringMatching(/^[A-Za-z_][A-Za-z0-9_]{0,16}$/u),
       fc.constantFrom("Int", "Real", "Bool", "[Int]", "String * Int"),
       fc.constantFrom("foo.ts", "foo-bar.ts", "_private.ts", "123.ts"),
       (name, pantType, fileName) => {
@@ -669,7 +669,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
 });
 
 describe("mapTsType", () => {
-  it("opaque policy maps `any` to the shared Opaque sort", async () => {
+  it("maps `any` to the shared Opaque sort", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: any; }`;
@@ -678,11 +678,7 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, cell, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy, cell)),
       OPAQUE_DOMAIN,
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), [
@@ -691,7 +687,7 @@ describe("mapTsType", () => {
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
-  it("opaque policy maps `unknown` to the shared Opaque sort", async () => {
+  it("maps `unknown` to the shared Opaque sort", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: unknown; }`;
@@ -700,11 +696,7 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, cell, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy, cell)),
       OPAQUE_DOMAIN,
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), [
@@ -712,7 +704,7 @@ describe("mapTsType", () => {
     ]);
   });
 
-  it("opaque policy leaves concrete types unchanged", async () => {
+  it("leaves concrete types unchanged", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: number; }`;
@@ -721,17 +713,13 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, cell, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy, cell)),
       "Int",
     );
     assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
-  it("reject policy keeps `any` and `unknown` unsupported", () => {
+  it("maps `any` and `unknown` without a synth cell", () => {
     const source = `interface Foo { anyVal: any; unknownVal: unknown; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -739,36 +727,28 @@ describe("mapTsType", () => {
       extractAllTypes(sourceFile).interfaces[0].properties;
 
     assert.equal(
-      mapTsType(anyProp.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(anyProp.type, checker, IntStrategy)),
+      OPAQUE_DOMAIN,
     );
     assert.equal(
-      mapTsType(unknownProp.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(unknownProp.type, checker, IntStrategy)),
+      OPAQUE_DOMAIN,
     );
   });
 
-  it("opaque policy without a synth cell maps `any` to Opaque", () => {
+  it("without a synth cell maps `any` to Opaque", () => {
     const source = `interface Foo { val: any; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, undefined, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
       OPAQUE_DOMAIN,
     );
   });
 
-  it("opaque policy domain emission dedupes with opaque value emission", async () => {
+  it("domain emission dedupes with opaque value emission", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: any; }`;
@@ -777,11 +757,7 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, cell, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy, cell)),
       OPAQUE_DOMAIN,
     );
     cellRegisterOpaqueValue(cell, "foo.ts:1");
@@ -807,7 +783,7 @@ describe("mapTsType", () => {
     ]);
   });
 
-  it("opaque policy propagates through nested composite positions", async () => {
+  it("propagates through nested composite positions", async () => {
     await loadAst();
     const cell = newSynthCell();
     const source = `interface Foo { val: Map<string, any[]>; }`;
@@ -816,11 +792,7 @@ describe("mapTsType", () => {
     const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
 
     assert.equal(
-      expectSort(
-        mapTsType(prop.type, checker, IntStrategy, cell, {
-          policy: "opaque",
-        }),
-      ),
+      expectSort(mapTsType(prop.type, checker, IntStrategy, cell)),
       "StringToListOpaqueMap",
     );
 
@@ -860,6 +832,29 @@ describe("mapTsType", () => {
         returnType: OPAQUE_DOMAIN,
       },
     ]);
+  });
+
+  it("maps unanalyzed foreign named types to distinct domains", async () => {
+    await loadAst();
+    const sourceFile = createSourceFile(
+      resolve(import.meta.dirname, "../src/translate-body.ts"),
+    );
+    const checker = getChecker(sourceFile);
+    const fn = sourceFile.getFunctionOrThrow("bindingNamesFromDeclarationList");
+    const param = fn.getParameters()[0];
+    assert.ok(param);
+    const cell = newSynthCell();
+
+    assert.equal(
+      expectSort(
+        mapTsType(param.getType().compilerType, checker, IntStrategy, cell),
+      ),
+      "ForeignVariableDeclarationList",
+    );
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
+      { kind: "domain", name: "ForeignVariableDeclarationList" },
+    ]);
+    assert.deepEqual(emitSynthDeclsOnly(cell), []);
   });
 
   it("top-level undefined falls through to checker.typeToString", () => {
@@ -902,7 +897,7 @@ describe("mapTsType", () => {
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const extracted = extractAllTypes(sourceFile);
-    const foo = extracted.interfaces.find((i: any) => i.name === "Foo")!;
+    const foo = extracted.interfaces.find((i) => i.name === "Foo")!;
     const prop = foo.properties[0];
 
     assert.equal(
@@ -911,11 +906,7 @@ describe("mapTsType", () => {
     );
   });
 
-  it("rejects `unknown`", () => {
-    // Pantagruel is monomorphic over named domains; there is no top type
-    // to absorb `unknown` into. mapTsType returns the dedicated
-    // UNSUPPORTED_UNKNOWN sentinel so downstream UNSUPPORTED-skip
-    // infrastructure can surface a clear diagnostic to the user.
+  it("maps `unknown` to `Opaque`", () => {
     const source = `interface Foo { val: unknown; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -923,14 +914,12 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      OPAQUE_DOMAIN,
     );
   });
 
-  it("propagates `unknown` through tuple element", () => {
+  it("composes `unknown` through tuple element", () => {
     const source = `interface Foo { val: [unknown, number]; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -938,14 +927,12 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "Opaque * Int",
     );
   });
 
-  it("propagates `unknown` through array element", () => {
+  it("composes `unknown` through array element", () => {
     const source = `interface Foo { val: unknown[]; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -953,14 +940,12 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "[Opaque]",
     );
   });
 
-  it("propagates `unknown` through Set element", () => {
+  it("composes `unknown` through Set element", () => {
     const source = `interface Foo { val: Set<unknown>; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
@@ -968,64 +953,47 @@ describe("mapTsType", () => {
     const prop = extracted.interfaces[0].properties[0];
 
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      "[Opaque]",
     );
   });
 
-  it("propagates `unknown` through Map K and V", () => {
-    // `Map<unknown, Int>` previously synthesized a domain like
-    // `__unsupported_unknown__ToIntMap` because the all-underscore
-    // sentinel happens to satisfy `manglePantTypeToFragment`'s
-    // identifier check. Reject before the synth registers.
+  it("composes `unknown` through Map K and V", () => {
     const cellK = newSynthCell();
     const sourceK = `interface Foo { val: Map<unknown, number>; }`;
     const sfK = createSourceFileFromSource(sourceK);
     const propK = extractAllTypes(sfK).interfaces[0].properties[0];
     assert.equal(
-      mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK)),
+      "OpaqueToIntMap",
     );
-    // No partial Map domain leaked into the synth state.
-    assert.equal(cellK.synth.byKV.size, 0);
+    assert.equal(cellK.synth.byKV.size, 1);
 
     const cellV = newSynthCell();
     const sourceV = `interface Foo { val: Map<string, unknown>; }`;
     const sfV = createSourceFileFromSource(sourceV);
     const propV = extractAllTypes(sfV).interfaces[0].properties[0];
     assert.equal(
-      mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV)),
+      "StringToOpaqueMap",
     );
-    assert.equal(cellV.synth.byKV.size, 0);
+    assert.equal(cellV.synth.byKV.size, 1);
   });
 
-  it("propagates `unknown` through union members", () => {
+  it("composes `unknown` through union members", () => {
     const source = `interface Foo { val: string | unknown; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    // `string | unknown` collapses to `unknown` at the TS-checker
-    // layer, but the union branch must propagate the sentinel either
-    // way. Either pre-collapse (the union check fires) or post-collapse
-    // (the unknown short-circuit fires) — both surface the sentinel.
     assert.equal(
-      mapTsType(prop.type, checker, IntStrategy, undefined, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(prop.type, checker, IntStrategy)),
+      OPAQUE_DOMAIN,
     );
   });
 
-  it("propagates `unknown` through anonymous record field", () => {
+  it("composes `unknown` through anonymous record field", () => {
     const cell = newSynthCell();
     const source = `function f(): { x: unknown } { return { x: 1 }; }`;
     const sourceFile = createSourceFileFromSource(source);
@@ -1033,31 +1001,25 @@ describe("mapTsType", () => {
     const fn = sourceFile.getFunctionOrThrow("f");
     const returnType = fn.getReturnType().compilerType;
     assert.equal(
-      mapTsType(returnType, checker, IntStrategy, cell, {
-        policy: "reject",
-      }).ok,
-      false,
+      expectSort(mapTsType(returnType, checker, IntStrategy, cell)),
+      "XRec",
     );
-    // No partial record domain leaked into the synth state.
-    assert.equal(cell.recordSynth.byShape.size, 0);
+    assert.equal(cell.recordSynth.byShape.size, 1);
   });
 });
 
-describe("translateTypes routes `unknown` through `unsupported` declaration", () => {
-  it("interface field with `unknown` type emits an unsupported decl", () => {
+describe("translateTypes routes `unknown` through Opaque", () => {
+  it("interface field with `unknown` type emits an Opaque field", () => {
     const { decls } = extractAndTranslate(`interface Foo { val: unknown; }`);
-    // The `Foo` domain decl is still pushed; the field accessor rule
-    // is replaced by an `unsupported` decl carrying the user-facing
-    // reason, so the emitted Pant text never contains the sentinel.
     assert.ok(decls.some((d) => d.kind === "domain" && d.name === "Foo"));
-    const unsupported = decls.find((d) => d.kind === "unsupported");
-    assert.ok(unsupported);
-    if (unsupported.kind !== "unsupported") {
-      throw new Error("expected unsupported decl");
-    }
-    assert.match(unsupported.reason, /Foo\.val/u);
-    assert.match(unsupported.reason, /TS unknown is not expressible/u);
-    // No rule decl referencing the sentinel string leaks through.
+    assert.ok(
+      decls.some(
+        (d) =>
+          d.kind === "rule" &&
+          d.name === "foo--val" &&
+          d.returnType === OPAQUE_DOMAIN,
+      ),
+    );
     assert.ok(
       !decls.some(
         (d) =>
@@ -1067,14 +1029,11 @@ describe("translateTypes routes `unknown` through `unsupported` declaration", ()
     );
   });
 
-  it("alias `T = unknown` emits an unsupported decl", () => {
+  it("alias `T = unknown` emits an Opaque alias", () => {
     const { decls } = extractAndTranslate(`type Foo = unknown;`);
-    const unsupported = decls.find((d) => d.kind === "unsupported");
-    assert.ok(unsupported);
-    if (unsupported.kind !== "unsupported") {
-      throw new Error("expected unsupported decl");
-    }
-    assert.match(unsupported.reason, /alias Foo/u);
+    assert.deepEqual(decls, [
+      { kind: "alias", name: "Foo", type: OPAQUE_DOMAIN },
+    ]);
   });
 });
 

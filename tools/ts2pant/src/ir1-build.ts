@@ -98,12 +98,7 @@ import {
   recognizeNullishForm,
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
-import {
-  contagiousOpaque,
-  isOpaqueExpr,
-  OPAQUE_DOMAIN,
-  type OpaquePolicy,
-} from "./opaque.js";
+import { contagiousOpaque, isOpaqueExpr, OPAQUE_DOMAIN } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
@@ -211,23 +206,20 @@ function narrowedSortForUse(
   if (isDynamicTsType(narrowed)) {
     return null;
   }
-  const sort = mapTsType(
-    narrowed,
-    ctx.checker,
-    ctx.strategy,
-    ctx.supply.synthCell,
-    { policy: "reject" },
-  );
-  return sort.ok ? sort.sort : null;
+  const sort = mapTsType(narrowed, ctx.checker, ctx.strategy);
+  if (!sort.ok) {
+    return null;
+  }
+  if (ctx.expectedSort === OPAQUE_DOMAIN && sort.sort !== OPAQUE_DOMAIN) {
+    return null;
+  }
+  return sort.sort;
 }
 
 function opaqueValueForDynamicExpr(
   expr: ts.Expression,
   ctx: L1BuildContext,
 ): IR1Expr | null {
-  if (ctx.policy !== "opaque") {
-    return null;
-  }
   const type = getOperandDeclaredType(expr, ctx.checker);
   if (!isDynamicTsType(type)) {
     return null;
@@ -246,9 +238,6 @@ function narrowedOpaqueParamValueForUse(
   expr: ts.Expression,
   ctx: L1BuildContext,
 ): IR1Expr | null {
-  if (ctx.policy !== "opaque") {
-    return null;
-  }
   const type = getOperandDeclaredType(expr, ctx.checker);
   if (!isDynamicTsType(type)) {
     return null;
@@ -263,13 +252,10 @@ function narrowedOpaqueParamValueForUse(
 }
 
 export function contagiousOpaqueForOperands(
-  ctx: Pick<L1BuildContext, "checker" | "policy" | "supply">,
+  ctx: Pick<L1BuildContext, "checker" | "supply">,
   operands: readonly IR1Expr[],
   originNode: ts.Node,
 ): IR1Expr | null {
-  if (ctx.policy !== "opaque") {
-    return null;
-  }
   const hasDynamicResult =
     ts.isExpression(originNode) &&
     !ts.isCallExpression(originNode) &&
@@ -332,7 +318,7 @@ export interface L1BuildContext {
   state: SymbolicState | undefined;
   supply: UniqueSupply;
   env: AssumptionEnv;
-  policy?: OpaquePolicy | undefined;
+  expectedSort?: string;
   recognitionHook?: (env: AssumptionEnv, location: string) => void;
 }
 
@@ -523,7 +509,6 @@ export function tryBuildBuiltinCall(
       ctx.checker,
       ctx.strategy,
       ctx.supply.synthCell,
-      { policy: ctx.policy },
     );
     if (sourceType.ok && sourceType.sort === "[String * Int]") {
       rule = "JS_ARRAY::from-entries";
@@ -817,7 +802,6 @@ function resolveStageASetReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
-    { policy: ctx.policy },
   );
   const setType = ctx.checker.getTypeAtLocation(unwrapped);
   const setTypeArgs = ctx.checker.getTypeArguments(setType as ts.TypeReference);
@@ -829,7 +813,6 @@ function resolveStageASetReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
-    { policy: ctx.policy },
   );
   if (!ownerType.ok || !elemType.ok) {
     return null;
@@ -868,14 +851,12 @@ function resolveStageAMapReadType(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
-    { policy: ctx.policy },
   );
   const keyType = mapTsType(
     typeArgs[0]!,
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
-    { policy: ctx.policy },
   );
   if (!ownerType.ok || !keyType.ok) {
     return null;
@@ -1262,14 +1243,12 @@ export function tryBuildL1PureSubExpression(
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
-          { policy: ctx.policy },
         );
         const vTypeResult = mapTsType(
           typeArgs[1]!,
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
-          { policy: ctx.policy },
         );
         // mapTsType refuses unresolvable TS types (e.g., raw `unknown`). Bail
         // before lookupMapKV / cellRegisterMap so we don't synthesize a domain
@@ -1418,7 +1397,6 @@ function buildL1Stringification(
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
-    { policy: ctx.policy },
   );
   if (
     !pantTypeResult.ok ||
@@ -1790,10 +1768,9 @@ export function buildL1MemberAccess(
       unsupported: "buildL1MemberAccess: unsupported access shape",
     };
   }
-  const receiverDynamicOpaque =
-    ctx.policy === "opaque" && ts.isExpression(receiverNode)
-      ? opaqueValueForDynamicExpr(receiverNode, ctx)
-      : null;
+  const receiverDynamicOpaque = ts.isExpression(receiverNode)
+    ? opaqueValueForDynamicExpr(receiverNode, ctx)
+    : null;
   const narrowedConcreteReceiver =
     receiverDynamicOpaque !== null &&
     receiverDynamicOpaque.kind === "opaque" &&

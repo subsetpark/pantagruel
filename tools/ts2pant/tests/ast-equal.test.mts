@@ -63,7 +63,7 @@ const TS_KEYWORDS = new Set([
 ]);
 
 const identifierArb = fc
-  .stringMatching(/^[a-z][a-z0-9]{0,6}$/)
+  .stringMatching(/^[a-z][a-z0-9]{0,6}$/u)
   .filter((s) => !TS_KEYWORDS.has(s));
 
 /**
@@ -78,7 +78,7 @@ function parseExpr(source: string): ts.Expression {
     throw new Error("test helper: expected a variable statement");
   }
   const decl = stmt.declarationList.declarations[0];
-  if (!decl || !decl.initializer) {
+  if (!decl?.initializer) {
     throw new Error("test helper: expected an initializer");
   }
   // Unwrap the outer parens we added.

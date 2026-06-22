@@ -2,8 +2,8 @@
 // @archlint.domain ts2pant.translate-record
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";

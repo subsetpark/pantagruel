@@ -10,7 +10,6 @@ import {
   runCheck as runCheckWithOptions,
 } from "../src/emit.js";
 import { createSourceFile, type SourceFile } from "../src/extract.js";
-import type { OpaquePolicy } from "../src/opaque.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
 import { IntStrategy } from "../src/translate-types.js";
@@ -38,7 +37,9 @@ let cachedPantBin: string | undefined;
  * before this fix landed traced back to that exact pattern.
  */
 export function getPantBin(): string {
-  if (cachedPantBin !== undefined) return cachedPantBin;
+  if (cachedPantBin !== undefined) {
+    return cachedPantBin;
+  }
   const fromEnv = process.env.PANT_BIN;
   if (fromEnv && existsSync(fromEnv)) {
     cachedPantBin = fromEnv;
@@ -86,7 +87,7 @@ export function assertPantTypeChecks(output: string, timeoutMs = 30_000): void {
 export async function buildDocument(
   fileName: string,
   functionName: string,
-  opts: { noBody?: boolean; policy?: OpaquePolicy } = {},
+  opts: { noBody?: boolean } = {},
 ): Promise<PantDocument> {
   return buildDocumentFromSourceFile(
     createSourceFile(fileName),
@@ -98,14 +99,13 @@ export async function buildDocument(
 export async function buildDocumentFromSourceFile(
   sourceFile: SourceFile,
   functionName: string,
-  opts: { noBody?: boolean; policy?: OpaquePolicy } = {},
+  opts: { noBody?: boolean } = {},
 ): Promise<PantDocument> {
   return buildPantDocument({
     sourceFile,
     functionName,
     strategy: IntStrategy,
     noBody: opts.noBody,
-    policy: opts.policy,
   });
 }
 
