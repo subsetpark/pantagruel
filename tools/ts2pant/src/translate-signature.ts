@@ -37,14 +37,12 @@ import {
   cellIsUsed,
   cellRegisterName,
   isMapType,
-  isUnsupportedUnknown,
   type MapTsTypeOptions,
   mapTsType,
   mapTsTypeFromTypeNode,
   type NumericStrategy,
   type SynthCell,
   toPantTermName,
-  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -1624,21 +1622,26 @@ export function translateSignature(
             synthCell,
             opts?.typeMapping,
           );
-    const paramType = overrides?.get(param.name) ?? defaultType;
-    if (isUnsupportedUnknown(paramType)) {
-      // Don't let the sentinel reach the emitted rule head — route
-      // through the unsupported declaration variant so the document's
-      // surrounding text stays parseable and the user sees a clear
-      // reason. Mirrors the PropResult `unsupported` flow.
+    const override = overrides?.get(param.name);
+    let paramType: string;
+    if (override !== undefined) {
+      paramType = override;
+    } else if (!defaultType.ok) {
+      // Don't let a refusal reach the emitted rule head — route through the
+      // unsupported declaration variant so the document stays parseable and
+      // the user sees a clear reason (covers the `unknown` refusal, the
+      // recursive-discriminated-union refusal, etc.).
       return {
         declaration: {
           kind: "unsupported",
-          reason: `${baseName} param '${param.name}': ${UNSUPPORTED_UNKNOWN_REASON}`,
+          reason: `${baseName} param '${param.name}': ${defaultType.reason}`,
         },
         classification,
         paramNameMap,
         synthCell,
       };
+    } else {
+      paramType = defaultType.sort;
     }
     const pantName = synthCell
       ? cellRegisterName(synthCell, toPantTermName(param.name))
@@ -1702,11 +1705,11 @@ export function translateSignature(
             synthCell,
             opts?.typeMapping,
           );
-    if (isUnsupportedUnknown(returnType)) {
+    if (!returnType.ok) {
       return {
         declaration: {
           kind: "unsupported",
-          reason: `${baseName} return: ${UNSUPPORTED_UNKNOWN_REASON}`,
+          reason: `${baseName} return: ${returnType.reason}`,
         },
         classification,
         paramNameMap,
@@ -1717,7 +1720,7 @@ export function translateSignature(
       kind: "rule",
       name: baseName,
       params,
-      returnType,
+      returnType: returnType.sort,
     };
     if (combinedGuard) {
       decl.guard = combinedGuard;

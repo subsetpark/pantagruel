@@ -18,13 +18,11 @@ import { findFunction, translateSignature } from "./translate-signature.js";
 import {
   cellEmitSynth,
   fieldRuleName,
-  isUnsupportedUnknown,
   mapTsType,
   type NumericStrategy,
   newSynthCell,
   toPantTermName,
   translateTypes,
-  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PantDeclaration, PantDocument, PantRule } from "./types.js";
 
@@ -66,11 +64,11 @@ function mutatingReturnValueDeclarations(
   const returnType = mapTsType(tsReturnType, checker, strategy, synthCell, {
     policy,
   });
-  if (isUnsupportedUnknown(returnType)) {
+  if (!returnType.ok) {
     return [
       {
         kind: "unsupported",
-        reason: `${baseName} return: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        reason: `${baseName} return: ${returnType.reason}`,
       },
     ];
   }
@@ -79,7 +77,7 @@ function mutatingReturnValueDeclarations(
     kind: "rule",
     name: baseName,
     params: sigDecl.params,
-    returnType,
+    returnType: returnType.sort,
   };
   return [returnDecl];
 }

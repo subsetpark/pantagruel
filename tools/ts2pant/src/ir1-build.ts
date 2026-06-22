@@ -131,7 +131,6 @@ import {
   fieldRuleName,
   isMapType,
   isSetType,
-  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
@@ -219,7 +218,7 @@ function narrowedSortForUse(
     ctx.supply.synthCell,
     { policy: "reject" },
   );
-  return isUnsupportedUnknown(sort) ? null : sort;
+  return sort.ok ? sort.sort : null;
 }
 
 function opaqueValueForDynamicExpr(
@@ -526,7 +525,7 @@ export function tryBuildBuiltinCall(
       ctx.supply.synthCell,
       { policy: ctx.policy },
     );
-    if (sourceType === "[String * Int]") {
+    if (sourceType.ok && sourceType.sort === "[String * Int]") {
       rule = "JS_ARRAY::from-entries";
     }
   }
@@ -832,10 +831,10 @@ function resolveStageASetReadType(
     ctx.supply.synthCell,
     { policy: ctx.policy },
   );
-  if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(elemType)) {
+  if (!ownerType.ok || !elemType.ok) {
     return null;
   }
-  return { ownerType, elemType };
+  return { ownerType: ownerType.sort, elemType: elemType.sort };
 }
 
 /**
@@ -878,10 +877,10 @@ function resolveStageAMapReadType(
     ctx.supply.synthCell,
     { policy: ctx.policy },
   );
-  if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(keyType)) {
+  if (!ownerType.ok || !keyType.ok) {
     return null;
   }
-  return { ownerType, keyType };
+  return { ownerType: ownerType.sort, keyType: keyType.sort };
 }
 
 /**
@@ -1258,31 +1257,31 @@ export function tryBuildL1PureSubExpression(
         if (typeArgs.length !== 2) {
           return { unsupported: "Map with unexpected arity" };
         }
-        const kType = mapTsType(
+        const kTypeResult = mapTsType(
           typeArgs[0]!,
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
           { policy: ctx.policy },
         );
-        const vType = mapTsType(
+        const vTypeResult = mapTsType(
           typeArgs[1]!,
           ctx.checker,
           ctx.strategy,
           ctx.supply.synthCell,
           { policy: ctx.policy },
         );
-        // mapTsType returns the unsupported-unknown sentinel for
-        // unresolvable TS types (e.g., raw `unknown`). Bail before
-        // lookupMapKV / cellRegisterMap so we don't synthesize a domain
-        // built on the sentinel — translate-types.ts already guards this
-        // path elsewhere.
-        if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+        // mapTsType refuses unresolvable TS types (e.g., raw `unknown`). Bail
+        // before lookupMapKV / cellRegisterMap so we don't synthesize a domain
+        // built on a non-sort.
+        if (!kTypeResult.ok || !vTypeResult.ok) {
           return {
             unsupported:
               "Map key or value type is unsupported in native call lowering",
           };
         }
+        const kType = kTypeResult.sort;
+        const vType = vTypeResult.sort;
         // `cellRegisterMap` is idempotent (returns the cached entry on
         // re-registration), so always-register-then-lookup is the
         // simplest safe shape. `lookupMapKV` returns `undefined`
@@ -1414,18 +1413,25 @@ function buildL1Stringification(
   if (opaque !== null) {
     return opaque;
   }
-  const pantType = mapTsType(
+  const pantTypeResult = mapTsType(
     tsType,
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
     { policy: ctx.policy },
   );
-  if (!STRINGIFIABLE_PRIMITIVES.has(pantType)) {
+  if (
+    !pantTypeResult.ok ||
+    !STRINGIFIABLE_PRIMITIVES.has(pantTypeResult.sort)
+  ) {
+    const shown = pantTypeResult.ok
+      ? pantTypeResult.sort
+      : pantTypeResult.reason;
     return {
-      unsupported: `template literal substitution has unsupported type "${pantType}" — only String, Int, Real, Bool are stringifiable`,
+      unsupported: `template literal substitution has unsupported type "${shown}" — only String, Int, Real, Bool are stringifiable`,
     };
   }
+  const pantType = pantTypeResult.sort;
   if (pantType === "String") {
     return value;
   }
@@ -2564,6 +2570,8 @@ export function tryRecognizeFunctorLift(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        recursiveDomains: new Map(synthCell.recursiveDomains),
+        visiting: new Set(synthCell.visiting),
         // `imports` is mutated in place via `add(...)` (e.g., the
         // template-literal recognizer registering `TS_PRELUDE` when it
         // lowers a non-string substitution). A probe that descends into
@@ -2592,6 +2600,8 @@ export function tryRecognizeFunctorLift(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.recursiveDomains = new Map(synthSnapshot.recursiveDomains);
+      synthCell.visiting = new Set(synthSnapshot.visiting);
       synthCell.imports = new Set(synthSnapshot.imports);
       synthCell.definednessObligations = [
         ...synthSnapshot.definednessObligations,

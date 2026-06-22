@@ -25,6 +25,9 @@ export function opaqueValueRuleName(id: string): string {
     : `opaque_value_${id.length}_${codeUnits.join("_")}`;
 }
 
+/**
+ * @pant isOpaqueExpr expr <-> ir1-expr--kind expr = "opaque".
+ */
 export function isOpaqueExpr(expr: IR1Expr): boolean {
   return expr.kind === "opaque";
 }

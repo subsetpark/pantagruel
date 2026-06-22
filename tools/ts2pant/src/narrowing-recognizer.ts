@@ -14,7 +14,6 @@ import {
 import {
   detectDiscriminatedUnion,
   IntStrategy,
-  isUnsupportedUnknown,
   mapTsType,
 } from "./translate-types.js";
 
@@ -198,7 +197,7 @@ function isTractableTypePredicateTarget(
     return false;
   }
   const mapped = mapTsType(type, checker, IntStrategy, undefined);
-  return !isUnsupportedUnknown(mapped);
+  return mapped.ok;
 }
 
 /** Recognize a TypeScript boolean test as a narrowing fact. */

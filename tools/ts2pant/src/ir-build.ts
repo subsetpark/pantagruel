@@ -518,6 +518,8 @@ function tryBuildArrayChainCardinality(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        recursiveDomains: new Map(synthCell.recursiveDomains),
+        visiting: new Set(synthCell.visiting),
       }
     : null;
   const opaqueAliasesSnapshot = supply.opaqueAliases
@@ -542,6 +544,8 @@ function tryBuildArrayChainCardinality(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.recursiveDomains = new Map(synthSnapshot.recursiveDomains);
+      synthCell.visiting = new Set(synthSnapshot.visiting);
     }
     if (opaqueAliasesSnapshot !== null) {
       supply.opaqueAliases = new Map(opaqueAliasesSnapshot);
@@ -918,8 +922,26 @@ function buildCollectionMembershipCall(
   if (typeArgs.length !== 2) {
     return { unsupported: "Map with unexpected arity" };
   }
-  const kType = mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell);
-  const vType = mapTsType(typeArgs[1]!, checker, strategy, supply.synthCell);
+  const kTypeResult = mapTsType(
+    typeArgs[0]!,
+    checker,
+    strategy,
+    supply.synthCell,
+  );
+  if (!kTypeResult.ok) {
+    return { unsupported: `Map key type: ${kTypeResult.reason}` };
+  }
+  const vTypeResult = mapTsType(
+    typeArgs[1]!,
+    checker,
+    strategy,
+    supply.synthCell,
+  );
+  if (!vTypeResult.ok) {
+    return { unsupported: `Map value type: ${vTypeResult.reason}` };
+  }
+  const kType = kTypeResult.sort;
+  const vType = vTypeResult.sort;
   let info = supply.synthCell
     ? lookupMapKV(supply.synthCell.synth, kType, vType)
     : undefined;
