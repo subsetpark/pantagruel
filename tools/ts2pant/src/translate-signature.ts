@@ -37,14 +37,14 @@ import {
   cellIsUsed,
   cellRegisterName,
   isMapType,
-  isUnsupportedUnknown,
+  isUnsupportedMappedType,
   type MapTsTypeOptions,
   mapTsType,
   mapTsTypeFromTypeNode,
   type NumericStrategy,
   type SynthCell,
   toPantTermName,
-  UNSUPPORTED_UNKNOWN_REASON,
+  unsupportedMappedTypeReason,
 } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -1625,15 +1625,16 @@ export function translateSignature(
             opts?.typeMapping,
           );
     const paramType = overrides?.get(param.name) ?? defaultType;
-    if (isUnsupportedUnknown(paramType)) {
+    if (isUnsupportedMappedType(paramType)) {
       // Don't let the sentinel reach the emitted rule head — route
       // through the unsupported declaration variant so the document's
       // surrounding text stays parseable and the user sees a clear
-      // reason. Mirrors the PropResult `unsupported` flow.
+      // reason. Mirrors the PropResult `unsupported` flow. Covers both the
+      // `unknown` sentinel and the recursive-discriminated-union refusal.
       return {
         declaration: {
           kind: "unsupported",
-          reason: `${baseName} param '${param.name}': ${UNSUPPORTED_UNKNOWN_REASON}`,
+          reason: `${baseName} param '${param.name}': ${unsupportedMappedTypeReason(paramType)}`,
         },
         classification,
         paramNameMap,
@@ -1702,11 +1703,11 @@ export function translateSignature(
             synthCell,
             opts?.typeMapping,
           );
-    if (isUnsupportedUnknown(returnType)) {
+    if (isUnsupportedMappedType(returnType)) {
       return {
         declaration: {
           kind: "unsupported",
-          reason: `${baseName} return: ${UNSUPPORTED_UNKNOWN_REASON}`,
+          reason: `${baseName} return: ${unsupportedMappedTypeReason(returnType)}`,
         },
         classification,
         paramNameMap,

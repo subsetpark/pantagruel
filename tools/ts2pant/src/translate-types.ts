@@ -77,14 +77,14 @@ export function isUnsupportedDiscriminatedUnionRegistration(
   return pantType === UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
 }
 
-function isUnsupportedMappedType(pantType: string): boolean {
+export function isUnsupportedMappedType(pantType: string): boolean {
   return (
     isUnsupportedUnknown(pantType) ||
     isUnsupportedDiscriminatedUnionRegistration(pantType)
   );
 }
 
-function unsupportedMappedTypeReason(pantType: string): string {
+export function unsupportedMappedTypeReason(pantType: string): string {
   if (isUnsupportedUnknown(pantType)) {
     return UNSUPPORTED_UNKNOWN_REASON;
   }
@@ -822,6 +822,7 @@ export function cellRegisterDiscriminatedUnion(
       if (
         isUnsupportedUnknown(mapped) ||
         mapped === UNSUPPORTED_ANONYMOUS_RECORD ||
+        isUnsupportedDiscriminatedUnionRegistration(mapped) ||
         !isValidPantFieldType(mapped) ||
         !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(field.name)
       ) {
@@ -1256,6 +1257,16 @@ export interface SynthCell {
   opaqueSynth: OpaqueSynth;
   registry: NameRegistry;
   tupleSynth: TupleSynth;
+  /**
+   * Types currently mid-registration as a synthesized domain (discriminated
+   * union or anonymous record). Bounds synthesis-time recursion: a
+   * variant/field whose type is the container being registered re-enters
+   * `mapTsType` on the same `ts.Type`, so without this guard a self-referential
+   * type (e.g. `IR1Expr`) recurses forever. Transient — added before a
+   * container's field loop and removed (in a `finally`) after, so it is empty
+   * between top-level registrations.
+   */
+  visiting: Set<ts.Type>;
   sourceFile?: ts.SourceFile;
   /**
    * Dep modules that build sites have requested at translation time.
@@ -1287,6 +1298,7 @@ export function newSynthCell(
     opaqueSynth: emptyOpaqueSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
+    visiting: new Set(),
     imports: new Set(),
     definednessObligations: [],
   };
@@ -1999,17 +2011,30 @@ export function mapTsType(
     if (synthCell) {
       const detection = detectDiscriminatedUnion(type, checker);
       if (detection) {
-        const domain = cellRegisterDiscriminatedUnion(
-          synthCell,
-          detection,
-          checker,
-          strategy,
-          discriminatedUnionPreferredDomain(type),
-        );
-        if (domain !== null) {
-          return domain;
+        // Recursive discriminated union: a variant field whose type is the
+        // union currently being registered re-enters here on the same
+        // `ts.Type`. Refuse rather than recurse forever (a self-referential
+        // synthesized domain is valid Pant, but the sound recursive encoding
+        // is a separate change — for now this is a graceful UNSUPPORTED).
+        if (synthCell.visiting.has(type)) {
+          return UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
         }
-        return UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
+        synthCell.visiting.add(type);
+        try {
+          const domain = cellRegisterDiscriminatedUnion(
+            synthCell,
+            detection,
+            checker,
+            strategy,
+            discriminatedUnionPreferredDomain(type),
+          );
+          if (domain !== null) {
+            return domain;
+          }
+          return UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON;
+        } finally {
+          synthCell.visiting.delete(type);
+        }
       }
     }
     // List-lift encoding for optionality: strip null/undefined/void before
@@ -2049,15 +2074,24 @@ export function mapTsType(
   // synthesized domain has not actually been registered.
   if (isAnonymousRecord(type)) {
     if (synthCell) {
-      const domain = registerAnonymousRecord(
-        type,
-        checker,
-        strategy,
-        synthCell,
-        opts,
-      );
-      if (domain !== null) {
-        return domain;
+      // Same recursion guard as the discriminated-union branch: a field whose
+      // type is the record currently being registered would recurse forever.
+      if (!synthCell.visiting.has(type)) {
+        synthCell.visiting.add(type);
+        try {
+          const domain = registerAnonymousRecord(
+            type,
+            checker,
+            strategy,
+            synthCell,
+            opts,
+          );
+          if (domain !== null) {
+            return domain;
+          }
+        } finally {
+          synthCell.visiting.delete(type);
+        }
       }
     }
     return UNSUPPORTED_ANONYMOUS_RECORD;
@@ -2222,6 +2256,11 @@ function registerAnonymousRecord(
     // Without this, the parent shape would register with the sentinel
     // string as a field type and emit invalid output.
     if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
+      return null;
+    }
+    // A field whose type is a recursive discriminated union was refused by
+    // the cycle guard; propagate the refusal rather than emit the sentinel.
+    if (isUnsupportedDiscriminatedUnionRegistration(mapped)) {
       return null;
     }
     fields.push({ name: prop.getName(), type: mapped });
