@@ -125,7 +125,7 @@ import {
 import {
   cellRegisterMap,
   cellRegisterName,
-  cellRegisterOpaqueValue,
+  cellRegisterSynthesizedValue,
   type DiscriminantLiteral,
   detectDiscriminatedUnion,
   fieldRuleName,
@@ -182,13 +182,43 @@ function registerOpaqueValueForOrigin(
   ctx: Pick<L1BuildContext, "supply">,
   origin: SourceRef,
 ): void {
+  registerSynthesizedValueForOrigin(ctx, origin, OPAQUE_DOMAIN);
+}
+
+function registerSynthesizedValueForOrigin(
+  ctx: Pick<L1BuildContext, "supply">,
+  origin: SourceRef,
+  sort: string,
+): void {
   if (ctx.supply.synthCell !== undefined) {
-    cellRegisterOpaqueValue(ctx.supply.synthCell, ir1OpaqueOriginId(origin));
+    cellRegisterSynthesizedValue(
+      ctx.supply.synthCell,
+      ir1OpaqueOriginId(origin),
+      sort,
+    );
   }
 }
 
 function isDynamicTsType(type: ts.Type): boolean {
   return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0;
+}
+
+function narrowedSortForUse(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): string | null {
+  const narrowed = ctx.checker.getTypeAtLocation(expr);
+  if (isDynamicTsType(narrowed)) {
+    return null;
+  }
+  const sort = mapTsType(
+    narrowed,
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+    { policy: "reject" },
+  );
+  return isUnsupportedUnknown(sort) ? null : sort;
 }
 
 function opaqueValueForDynamicExpr(
