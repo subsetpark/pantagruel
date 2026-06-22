@@ -3,10 +3,17 @@
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 
-import { emitDocument } from "../src/emit.js";
-import { buildDocument } from "./helpers.mjs";
+import { emitDocument, runCheck } from "../src/emit.js";
+import { loadAst } from "../src/pant-wasm.js";
+import {
+  buildDocument,
+  emitAndCheck,
+  getPantBin,
+  PROJECT_ROOT,
+  solverAvailable,
+} from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
@@ -14,20 +21,35 @@ const FIXTURE = resolve(
 );
 
 describe("recursive discriminated union", () => {
-  it("refuses gracefully instead of crashing (regression)", async () => {
-    // `treeKind`'s parameter is a self-referential discriminated union
-    // (`Tree` node variant has `left`/`right`: `Tree`). DU synthesis used to
-    // recurse forever and throw `RangeError: Maximum call stack size
-    // exceeded`. It must now build without throwing and refuse the function
-    // with a clean UNSUPPORTED skip — not leak the refusal sentinel into a
-    // rule head.
-    await assert.doesNotReject(buildDocument(FIXTURE, "treeKind"));
-    const output = emitDocument(await buildDocument(FIXTURE, "treeKind"));
-    assert.match(output, /> UNSUPPORTED: tree-kind param 't'/u);
-    assert.doesNotMatch(
-      output,
-      /tree-kind t: discriminated union could not be registered/u,
-    );
+  before(async () => {
+    await loadAst();
+  });
+
+  it("translates a self-referential union to a domain with self-referential accessors", async () => {
+    // `Tree`'s `node` variant has `left`/`right`: `Tree`. DU synthesis once
+    // recursed forever (stack overflow), then refused; it now reserves the
+    // `Tree` domain before mapping fields so the recursive fields resolve to
+    // it. The accessor `tree--left … => Tree` is a total uninterpreted
+    // function — a sound EUF encoding — and the emitted Pant type-checks.
+    const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+    assert.match(output, /^Tree\.$/mu);
+    assert.match(output, /tree--left s: Tree, tree--kind s = "node" => Tree\./u);
+    assert.match(output, /tree--value s: Tree, tree--kind s = "leaf" => Int\./u);
+    // The body resolves against the same `Tree` domain, not a duplicate.
+    assert.match(output, /tree-kind t = tree--kind t\./u);
+    assert.doesNotMatch(output, /Tree1|Tree2/u);
+  });
+
+  it("a @pant annotation over a recursive union entails", {
+    skip: !solverAvailable() ? "z3 not available" : undefined,
+  }, async () => {
+    const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
   });
 
   it("a non-recursive discriminated union still registers (control)", async () => {

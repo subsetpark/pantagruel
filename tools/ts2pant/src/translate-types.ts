@@ -769,12 +769,126 @@ function discriminatedUnionShapeKey(
   return `${discriminant}::${variantKeys.join("||")}`;
 }
 
+// True when a variant field's type contains `needle` — directly, or through
+// array / set / map / tuple / union type-arguments — i.e. the union is
+// directly self-referential. Object-property nesting is deliberately not
+// traversed, so mutual recursion (A holds B holds A) is not treated as
+// self-referential and falls to the graceful-refusal backstop. The `seen` set
+// bounds this pre-check itself against the recursion it is detecting.
+function typeContains(
+  haystack: ts.Type,
+  needle: ts.Type,
+  checker: ts.TypeChecker,
+  seen: Set<ts.Type>,
+): boolean {
+  if (haystack === needle) {
+    return true;
+  }
+  if (seen.has(haystack)) {
+    return false;
+  }
+  seen.add(haystack);
+  if (haystack.isUnionOrIntersection()) {
+    return haystack.types.some((t) => typeContains(t, needle, checker, seen));
+  }
+  if (
+    haystack.flags & ts.TypeFlags.Object &&
+    (haystack as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
+  ) {
+    return checker
+      .getTypeArguments(haystack as ts.TypeReference)
+      .some((a) => typeContains(a, needle, checker, seen));
+  }
+  return false;
+}
+
+function unionIsSelfReferential(
+  type: ts.Type,
+  detection: DiscriminatedUnionDetection,
+  checker: ts.TypeChecker,
+): boolean {
+  const seen = new Set<ts.Type>();
+  return detection.variants.some((variant) =>
+    variant.fields.some((field) =>
+      typeContains(field.type, type, checker, seen),
+    ),
+  );
+}
+
+/**
+ * Single entry point for registering a discriminated-union domain, owning the
+ * recursion bookkeeping so the type-mapping branch and field-owner resolution
+ * share it. Returns the synthesized domain name, or null on refusal.
+ *
+ * A directly self-referential union reserves its domain name before mapping
+ * fields (via `cell.recursiveDomains`) so a self-referential field resolves to that
+ * domain — a sound encoding, since the field accessor is a total uninterpreted
+ * function in EUF. Recursion the self-reference pre-check does not cover
+ * (mutual / indirect) is refused gracefully via the `cell.visiting` backstop.
+ */
+function registerDiscriminatedUnionDomain(
+  cell: SynthCell,
+  type: ts.Type,
+  detection: DiscriminatedUnionDetection,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+): string | null {
+  // Same recursive type seen before (in-flight self-reference, or an earlier
+  // completed registration): reuse its domain by identity.
+  const reserved = cell.recursiveDomains.get(type);
+  if (reserved !== undefined) {
+    return reserved;
+  }
+  if (cell.visiting.has(type)) {
+    return null;
+  }
+  if (unionIsSelfReferential(type, detection, checker)) {
+    const reg = registerName(
+      cell.registry,
+      discriminatedUnionPreferredDomain(type),
+    );
+    cell.registry = reg.registry;
+    cell.recursiveDomains.set(type, reg.name);
+    const domain = cellRegisterDiscriminatedUnion(
+      cell,
+      detection,
+      checker,
+      strategy,
+      reg.name,
+      reg.name,
+    );
+    if (domain === null) {
+      cell.recursiveDomains.delete(type);
+      return null;
+    }
+    cell.recursiveDomains.set(type, domain);
+    return domain;
+  }
+  cell.visiting.add(type);
+  try {
+    return cellRegisterDiscriminatedUnion(
+      cell,
+      detection,
+      checker,
+      strategy,
+      discriminatedUnionPreferredDomain(type),
+    );
+  } finally {
+    cell.visiting.delete(type);
+  }
+}
+
 export function cellRegisterDiscriminatedUnion(
   cell: SynthCell,
   detection: DiscriminatedUnionDetection,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   preferredDomain = "DiscriminatedUnion",
+  // When set, the domain name was pre-reserved by the caller before the field
+  // loop (so a self-referential field could resolve to it). Use it verbatim
+  // rather than allocating a fresh name; the caller already advanced the
+  // registry.
+  reservedDomain?: string,
 ): string | null {
   const variants: Array<{
     key: string;
@@ -837,10 +951,19 @@ export function cellRegisterDiscriminatedUnion(
     return cached.domain;
   }
 
-  const reg1 = registerName(cell.registry, preferredDomain);
-  const bReg = registerName(reg1.registry, "s");
+  let domainName: string;
+  let registryForBinder: NameRegistry;
+  if (reservedDomain === undefined) {
+    const reg1 = registerName(cell.registry, preferredDomain);
+    domainName = reg1.name;
+    registryForBinder = reg1.registry;
+  } else {
+    domainName = reservedDomain;
+    registryForBinder = cell.registry;
+  }
+  const bReg = registerName(registryForBinder, "s");
   const entry: DiscriminatedUnionSynthEntry = {
-    domain: reg1.name,
+    domain: domainName,
     binder: bReg.name,
     discriminant: detection.discriminant,
     discriminantType,
@@ -1249,6 +1372,18 @@ export interface SynthCell {
    * between top-level registrations.
    */
   visiting: Set<ts.Type>;
+  /**
+   * Self-referential discriminated-union types, mapped to their synthesized
+   * domain name. The name is reserved before the field loop so a
+   * self-referential field resolves to the in-flight domain (a sound
+   * synthesized domain — the accessor is a total uninterpreted function in
+   * EUF) rather than recursing. The entry is *retained after registration* as
+   * an identity cache: a recursive type's self-referential field poisons the
+   * structural `byShape` key (it embeds the reserved name), so re-encounters
+   * of the same `ts.Type` must dedupe by identity here, not by shape. Removed
+   * only if registration fails.
+   */
+  recursiveDomains: Map<ts.Type, string>;
   sourceFile?: ts.SourceFile;
   /**
    * Dep modules that build sites have requested at translation time.
@@ -1281,6 +1416,7 @@ export function newSynthCell(
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
     visiting: new Set(),
+    recursiveDomains: new Map(),
     imports: new Set(),
     definednessObligations: [],
   };
@@ -1404,12 +1540,12 @@ function collectFieldOwners(
           variant.fields.some((field) => field.name === fieldName),
         ))
     ) {
-      const owner = cellRegisterDiscriminatedUnion(
+      const owner = registerDiscriminatedUnionDomain(
         synthCell,
+        ty,
         detection,
         checker,
         strategy,
-        discriminatedUnionPreferredDomain(ty),
       );
       if (owner) {
         out.add(owner);
@@ -1976,34 +2112,19 @@ export function mapTsType(
     if (synthCell) {
       const detection = detectDiscriminatedUnion(type, checker);
       if (detection) {
-        // Recursive discriminated union: a variant field whose type is the
-        // union currently being registered re-enters here on the same
-        // `ts.Type`. Refuse rather than recurse forever (a self-referential
-        // synthesized domain is valid Pant, but the sound recursive encoding
-        // is a separate change — for now this is a graceful UNSUPPORTED).
-        if (synthCell.visiting.has(type)) {
-          return unsupportedType(
-            UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
-          );
+        const domain = registerDiscriminatedUnionDomain(
+          synthCell,
+          type,
+          detection,
+          checker,
+          strategy,
+        );
+        if (domain !== null) {
+          return okSort(domain);
         }
-        synthCell.visiting.add(type);
-        try {
-          const domain = cellRegisterDiscriminatedUnion(
-            synthCell,
-            detection,
-            checker,
-            strategy,
-            discriminatedUnionPreferredDomain(type),
-          );
-          if (domain !== null) {
-            return okSort(domain);
-          }
-          return unsupportedType(
-            UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
-          );
-        } finally {
-          synthCell.visiting.delete(type);
-        }
+        return unsupportedType(
+          UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
+        );
       }
     }
     // List-lift encoding for optionality: strip null/undefined/void before
