@@ -1336,6 +1336,23 @@ export function tryBuildL1PureSubExpression(
         ) {
           callee = ir1Var(toPantTermName(expr.expression.name.text));
           args = [];
+          const calleeDecls =
+            calleeSymbol === undefined
+              ? []
+              : calleeSymbol.flags & ts.SymbolFlags.Alias
+                ? (ctx.checker.getAliasedSymbol(calleeSymbol).declarations ??
+                  [])
+                : (calleeSymbol.declarations ?? []);
+          if (calleeDecls.some((decl) => ts.isMethodSignature(decl))) {
+            const receiver = tryBuildL1PureSubExpression(
+              expr.expression.expression,
+              ctx,
+            );
+            if (receiver === null || isL1Unsupported(receiver)) {
+              return receiver;
+            }
+            args.push(receiver);
+          }
           const signature = ctx.checker.getResolvedSignature(expr);
           const predicate = signature
             ? ctx.checker.getTypePredicateOfSignature(signature)

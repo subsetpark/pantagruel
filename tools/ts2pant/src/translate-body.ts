@@ -2011,8 +2011,9 @@ export function recognizeForOfPush(
       return null;
     }
     if (
-      expressionHasSideEffects(guardExpr, ctx.checker) &&
-      !isBoolDeclarationFileNamespaceCall(guardExpr, ctx.checker)
+      !isEffectFree(guardExpr, ctx.checker, {
+        admitForeignBoolPredicates: true,
+      })
     ) {
       return null;
     }
@@ -2068,36 +2069,6 @@ function buildPureL1OrNull(
     return null;
   }
   return built;
-}
-
-function isBoolDeclarationFileNamespaceCall(
-  expr: ts.Expression,
-  checker: ts.TypeChecker,
-): boolean {
-  if (
-    !ts.isCallExpression(expr) ||
-    !ts.isPropertyAccessExpression(expr.expression)
-  ) {
-    return false;
-  }
-  const sig = checker.getResolvedSignature(expr);
-  const returnType = sig?.getReturnType();
-  if (
-    returnType === undefined ||
-    (returnType.flags &
-      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
-      0
-  ) {
-    return false;
-  }
-  const symbol = checker.getSymbolAtLocation(expr.expression.name);
-  const resolved =
-    symbol && symbol.flags & ts.SymbolFlags.Alias
-      ? checker.getAliasedSymbol(symbol)
-      : symbol;
-  return (resolved?.getDeclarations() ?? []).some(
-    (decl) => decl.getSourceFile().isDeclarationFile,
-  );
 }
 
 interface RecognizedPushBody {
@@ -2979,7 +2950,11 @@ function lowerPreludeBindings(
       if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
         return { error: "while-loop init has side effects" };
       }
-      if (expressionHasSideEffects(binding.mu.predicateTsExpr, checker)) {
+      if (
+        expressionHasSideEffects(binding.mu.predicateTsExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
         return { error: "while-loop predicate has side effects" };
       }
       if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
@@ -2996,7 +2971,11 @@ function lowerPreludeBindings(
       // to bindings declared after this point. The arm itself binds nothing,
       // so `blockedNames` here just contains the names of later const /
       // μ-search bindings (earlyReturn entries contribute nothing).
-      if (expressionHasSideEffects(binding.predicateExpr, checker)) {
+      if (
+        expressionHasSideEffects(binding.predicateExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
         return { error: "early-return predicate has side effects" };
       }
       for (const [blockIdx, blockBinding] of binding.blockBindings.entries()) {
@@ -3021,7 +3000,11 @@ function lowerPreludeBindings(
           };
         }
       }
-      if (expressionHasSideEffects(binding.valueExpr, checker)) {
+      if (
+        expressionHasSideEffects(binding.valueExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
         return { error: "early-return value has side effects" };
       }
       if (expressionReferencesNames(binding.predicateExpr, blockedNames)) {

@@ -81,10 +81,7 @@ describe("dogfood: foreign dependency type surfaces", () => {
       output,
       /^identifier-text i: ForeignIdentifier => String\.$/mu,
     );
-    assert.match(
-      output,
-      /^is-identifier node: ForeignIdentifier => Bool\.$/mu,
-    );
+    assert.match(output, /^is-identifier node: ForeignIdentifier => Bool\.$/mu);
     assert.match(
       output,
       /binding-names-from-declaration-list decl-list = \(each decl in declarations decl-list, is-identifier \(name decl\) \| identifier-text \(name decl\)\)\./u,
@@ -107,14 +104,8 @@ describe("foreign dependency fixture", () => {
       output,
       /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
     );
-    assert.match(
-      output,
-      /^item-label i: ForeignDependencyItem => String\.$/mu,
-    );
-    assert.match(
-      output,
-      /^item-ready i: ForeignDependencyItem => Bool\.$/mu,
-    );
+    assert.match(output, /^item-label i: ForeignDependencyItem => String\.$/mu);
+    assert.match(output, /^item-ready i: ForeignDependencyItem => Bool\.$/mu);
     assert.match(
       output,
       /foreign-labels c = \(each item in items c, item-ready item \| item-label item\)\./u,
@@ -122,7 +113,7 @@ describe("foreign dependency fixture", () => {
     assert.doesNotMatch(output, /typescript|VariableDeclaration|Identifier/u);
   });
 
-  it.skip("PENDING Patch 3: foreign-call-predicate fixture @pant annotation is entailed", async () => {
+  it("foreign-call-predicate fixture @pant annotation is entailed", async () => {
     const doc = await buildDocumentFromPath(
       resolve(FIXTURES, "expressions-foreign-call-predicate.ts"),
       "foreignCallEarlyReturn",

@@ -1072,6 +1072,7 @@ function isCallableDeclaration(d: ts.Declaration): boolean {
   return (
     ts.isFunctionDeclaration(d) ||
     ts.isMethodDeclaration(d) ||
+    ts.isMethodSignature(d) ||
     ts.isFunctionExpression(d) ||
     ts.isArrowFunction(d) ||
     ts.isVariableDeclaration(d)
@@ -1084,6 +1085,9 @@ function isNamedCallableDeclaration(d: ts.Declaration): boolean {
   }
   if (ts.isMethodDeclaration(d)) {
     return d.name !== undefined && ts.isIdentifier(d.name);
+  }
+  if (ts.isMethodSignature(d)) {
+    return ts.isIdentifier(d.name);
   }
   if (ts.isVariableDeclaration(d)) {
     return ts.isIdentifier(d.name);
@@ -1100,6 +1104,9 @@ function declarationName(d: ts.Declaration): string | null {
     d.name !== undefined &&
     ts.isIdentifier(d.name)
   ) {
+    return d.name.text;
+  }
+  if (ts.isMethodSignature(d) && ts.isIdentifier(d.name)) {
     return d.name.text;
   }
   if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) {
@@ -1152,6 +1159,17 @@ function translateReferencedCallable(
   }
   const predicate = checker.getTypePredicateOfSignature(sig);
   const params: { name: string; type: string }[] = [];
+  if (ts.isMethodSignature(decl)) {
+    const receiverType = checker.getTypeAtLocation(decl.parent);
+    const mapped = mapTsType(receiverType, checker, strategy, synthCell);
+    if (!mapped.ok) {
+      return null;
+    }
+    const pantName = synthCell
+      ? cellRegisterName(synthCell, "receiver")
+      : "receiver";
+    params.push({ name: pantName, type: mapped.sort });
+  }
   for (const [index, param] of sig.getParameters().entries()) {
     const paramDecl = param.valueDeclaration ?? decl;
     const paramType =
