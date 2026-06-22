@@ -2188,6 +2188,7 @@ function canonicalSymbol(sym: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {
 function isForeignSourceFile(sf: ts.SourceFile): boolean {
   const fileName = sf.fileName.replace(/\\/gu, "/");
   return (
+    sf.isDeclarationFile ||
     /\/node_modules\//u.test(fileName) ||
     /\/typescript\/lib\/(?:lib\..*|typescript)\.d\.ts$/u.test(fileName)
   );
@@ -2366,6 +2367,23 @@ export function mapTsType(
         return okSort(domain);
       }
     }
+  }
+
+  // Array-like declaration-file interfaces such as `ts.NodeArray<T>` expose
+  // a numeric index signature but are not reported by the checker as concrete
+  // arrays. Treat them as Pantagruel lists so shallow foreign accessors can
+  // feed comprehensions without modeling the container object itself.
+  const numberIndexType = type.getNumberIndexType();
+  if (
+    type.getSymbol()?.getName() === "NodeArray" &&
+    numberIndexType !== undefined &&
+    type.getProperty("length") !== undefined
+  ) {
+    const elem = mapTsType(numberIndexType, checker, strategy, synthCell);
+    if (!elem.ok) {
+      return elem;
+    }
+    return okSort(`[${elem.sort}]`);
   }
 
   // Effect Brand<T> intersections refine a value without changing its

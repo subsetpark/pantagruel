@@ -1,12 +1,9 @@
-import {
-  isReady,
-  type ForeignDependencyContainer,
-} from "../foreign-dependency/index.js";
+import type { DependencyContainer } from "../foreign-dependency/index.js";
 
-export function foreignLabels(c: ForeignDependencyContainer): string[] {
+export function foreignLabels(c: DependencyContainer): string[] {
   const labels: string[] = [];
   for (const item of c.items) {
-    if (isReady(item)) {
+    if (item.ready) {
       labels.push(item.label);
     }
   }

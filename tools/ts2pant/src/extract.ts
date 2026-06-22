@@ -373,6 +373,9 @@ export function extractReferencedTypes(
     if (program.isSourceFileFromExternalLibrary(compilerSf)) {
       continue;
     }
+    if (compilerSf.isDeclarationFile) {
+      continue;
+    }
     const types = extractAllTypes(sf);
     aggregated.interfaces.push(...types.interfaces);
     aggregated.aliases.push(...types.aliases);
@@ -943,7 +946,9 @@ export function extractReferencedFunctions(
   }
   const consumerIsPure = classifyFunction(consumerNode, checker) === "pure";
   // Collect (declaration, callSiteNames) pairs for free-function calls
-  // reached from the consumer's body. Keying by the
+  // reached from the consumer's body. This includes bare calls (`fn()`) and
+  // namespace-style dependency predicate calls (`ts.isIdentifier(...)`), both
+  // of which lower to ordinary EUF rule heads. Keying by the
   // resolved declaration deduplicates aliased imports — `import {
   // foo as bar }; bar(); foo();` collapses to one rule head — while
   // the value (a Set of local identifiers) preserves every call-site
@@ -955,7 +960,8 @@ export function extractReferencedFunctions(
   function visit(n: ts.Node): void {
     if (
       ts.isCallExpression(n) &&
-      ts.isIdentifier(n.expression) &&
+      (ts.isIdentifier(n.expression) ||
+        ts.isPropertyAccessExpression(n.expression)) &&
       !n.arguments.some(ts.isSpreadElement)
     ) {
       if (lookupBuiltinByCall(n, checker, program) !== null) {
@@ -966,8 +972,26 @@ export function extractReferencedFunctions(
         ts.forEachChild(n, visit);
         return;
       }
-      const localCalleeName = n.expression.text;
-      let sym = checker.getSymbolAtLocation(n.expression);
+      const sig = checker.getResolvedSignature(n);
+      if (ts.isPropertyAccessExpression(n.expression)) {
+        const returnType = sig?.getReturnType();
+        const isBoolReturn =
+          returnType !== undefined &&
+          (returnType.flags &
+            (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
+            0;
+        if (!isBoolReturn) {
+          ts.forEachChild(n, visit);
+          return;
+        }
+      }
+      const localCalleeName = ts.isIdentifier(n.expression)
+        ? n.expression.text
+        : n.expression.name.text;
+      const calleeNameNode = ts.isIdentifier(n.expression)
+        ? n.expression
+        : n.expression.name;
+      let sym = checker.getSymbolAtLocation(calleeNameNode);
       // Follow import aliases. For an `import { foo } from "./mod.js"`
       // followed by `foo()`, `getSymbolAtLocation` returns the import
       // specifier symbol, not the underlying function declaration. The
@@ -975,7 +999,6 @@ export function extractReferencedFunctions(
       if (sym && sym.flags & ts.SymbolFlags.Alias) {
         sym = checker.getAliasedSymbol(sym);
       }
-      const sig = checker.getResolvedSignature(n);
       const decl = [
         sig?.declaration,
         sym?.valueDeclaration,
@@ -1098,26 +1121,28 @@ function translateReferencedCallable(
   }
   if (ts.isFunctionDeclaration(decl) || ts.isMethodDeclaration(decl)) {
     const tsMorphSf = declSfMap.get(decl.getSourceFile());
-    if (!tsMorphSf) {
-      return null;
+    if (tsMorphSf) {
+      const sig = translateSignature(
+        tsMorphSf,
+        declName,
+        strategy,
+        synthCell,
+        undefined,
+      );
+      if (sig.declaration.kind !== "rule") {
+        return null;
+      }
+      const name = synthCell
+        ? cellRegisterName(synthCell, sig.declaration.name)
+        : sig.declaration.name;
+      return { ...sig.declaration, name };
     }
-    const sig = translateSignature(
-      tsMorphSf,
-      declName,
-      strategy,
-      synthCell,
-      undefined,
-    );
-    if (sig.declaration.kind !== "rule") {
-      return null;
-    }
-    const name = synthCell
-      ? cellRegisterName(synthCell, sig.declaration.name)
-      : sig.declaration.name;
-    return { ...sig.declaration, name };
   }
 
-  const sig = checker.getTypeAtLocation(decl).getCallSignatures()[0];
+  const sig =
+    (ts.isFunctionDeclaration(decl) || ts.isMethodDeclaration(decl)
+      ? checker.getSignatureFromDeclaration(decl)
+      : undefined) ?? checker.getTypeAtLocation(decl).getCallSignatures()[0];
   if (!sig) {
     return null;
   }
@@ -1125,10 +1150,16 @@ function translateReferencedCallable(
   if (returnType.flags & ts.TypeFlags.Void) {
     return null;
   }
+  const predicate = checker.getTypePredicateOfSignature(sig);
   const params: { name: string; type: string }[] = [];
-  for (const param of sig.getParameters()) {
+  for (const [index, param] of sig.getParameters().entries()) {
     const paramDecl = param.valueDeclaration ?? decl;
-    const paramType = checker.getTypeOfSymbolAtLocation(param, paramDecl);
+    const paramType =
+      predicate?.kind === ts.TypePredicateKind.Identifier &&
+      predicate.parameterIndex === index &&
+      predicate.type !== undefined
+        ? predicate.type
+        : checker.getTypeOfSymbolAtLocation(param, paramDecl);
     const mapped = mapTsType(paramType, checker, strategy, synthCell);
     // Can't synthesize a sound rule head with an unmappable parameter type.
     if (!mapped.ok) {
