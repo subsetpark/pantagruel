@@ -832,11 +832,15 @@ function registerDiscriminatedUnionDomain(
   detection: DiscriminatedUnionDetection,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  opts?: MapTsTypeOptions,
 ): string | null {
   // Same recursive type seen before (in-flight self-reference, or an earlier
   // completed registration): reuse its domain by identity.
   const reserved = cell.recursiveDomains.get(type);
-  if (reserved !== undefined) {
+  if (
+    reserved !== undefined &&
+    unionIsSelfReferential(type, detection, checker)
+  ) {
     return reserved;
   }
   if (cell.visiting.has(type)) {
@@ -856,6 +860,7 @@ function registerDiscriminatedUnionDomain(
       strategy,
       reg.name,
       reg.name,
+      opts,
     );
     if (domain === null) {
       cell.recursiveDomains.delete(type);
@@ -872,6 +877,8 @@ function registerDiscriminatedUnionDomain(
       checker,
       strategy,
       discriminatedUnionPreferredDomain(type),
+      undefined,
+      opts,
     );
   } finally {
     cell.visiting.delete(type);
@@ -889,6 +896,7 @@ export function cellRegisterDiscriminatedUnion(
   // rather than allocating a fresh name; the caller already advanced the
   // registry.
   reservedDomain?: string,
+  opts?: MapTsTypeOptions,
 ): string | null {
   const variants: Array<{
     key: string;
@@ -916,7 +924,7 @@ export function cellRegisterDiscriminatedUnion(
       if (field.name === detection.discriminant) {
         continue;
       }
-      const mapped = mapTsType(field.type, checker, strategy, cell);
+      const mapped = mapTsType(field.type, checker, strategy, cell, opts);
       if (
         !mapped.ok ||
         !isValidPantFieldType(mapped.sort) ||
@@ -2118,6 +2126,7 @@ export function mapTsType(
           detection,
           checker,
           strategy,
+          opts,
         );
         if (domain !== null) {
           return okSort(domain);

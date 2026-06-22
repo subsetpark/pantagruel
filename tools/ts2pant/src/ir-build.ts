@@ -518,6 +518,8 @@ function tryBuildArrayChainCardinality(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        recursiveDomains: new Map(synthCell.recursiveDomains),
+        visiting: new Set(synthCell.visiting),
       }
     : null;
   const opaqueAliasesSnapshot = supply.opaqueAliases
@@ -542,6 +544,8 @@ function tryBuildArrayChainCardinality(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.recursiveDomains = new Map(synthSnapshot.recursiveDomains);
+      synthCell.visiting = new Set(synthSnapshot.visiting);
     }
     if (opaqueAliasesSnapshot !== null) {
       supply.opaqueAliases = new Map(opaqueAliasesSnapshot);

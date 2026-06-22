@@ -2570,6 +2570,8 @@ export function tryRecognizeFunctorLift(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        recursiveDomains: new Map(synthCell.recursiveDomains),
+        visiting: new Set(synthCell.visiting),
         // `imports` is mutated in place via `add(...)` (e.g., the
         // template-literal recognizer registering `TS_PRELUDE` when it
         // lowers a non-string substitution). A probe that descends into
@@ -2598,6 +2600,8 @@ export function tryRecognizeFunctorLift(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.recursiveDomains = new Map(synthSnapshot.recursiveDomains);
+      synthCell.visiting = new Set(synthSnapshot.visiting);
       synthCell.imports = new Set(synthSnapshot.imports);
       synthCell.definednessObligations = [
         ...synthSnapshot.definednessObligations,

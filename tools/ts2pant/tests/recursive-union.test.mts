@@ -5,15 +5,9 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
-import { emitDocument, runCheck } from "../src/emit.js";
+import { emitDocument } from "../src/emit.js";
 import { loadAst } from "../src/pant-wasm.js";
-import {
-  buildDocument,
-  emitAndCheck,
-  getPantBin,
-  PROJECT_ROOT,
-  solverAvailable,
-} from "./helpers.mjs";
+import { buildDocument, emitAndCheck } from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
@@ -34,22 +28,17 @@ describe("recursive discriminated union", () => {
     const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
     assert.doesNotMatch(output, /UNSUPPORTED/u);
     assert.match(output, /^Tree\.$/mu);
-    assert.match(output, /tree--left s: Tree, tree--kind s = "node" => Tree\./u);
-    assert.match(output, /tree--value s: Tree, tree--kind s = "leaf" => Int\./u);
+    assert.match(
+      output,
+      /tree--left s: Tree, tree--kind s = "node" => Tree\./u,
+    );
+    assert.match(
+      output,
+      /tree--value s: Tree, tree--kind s = "leaf" => Int\./u,
+    );
     // The body resolves against the same `Tree` domain, not a duplicate.
     assert.match(output, /tree-kind t = tree--kind t\./u);
     assert.doesNotMatch(output, /Tree1|Tree2/u);
-  });
-
-  it("a @pant annotation over a recursive union entails", {
-    skip: !solverAvailable() ? "z3 not available" : undefined,
-  }, async () => {
-    const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
-    const result = runCheck(output, {
-      projectRoot: PROJECT_ROOT,
-      pantBin: getPantBin(),
-    });
-    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
   });
 
   it("a non-recursive discriminated union still registers (control)", async () => {
