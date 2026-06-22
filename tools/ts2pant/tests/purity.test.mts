@@ -14,6 +14,7 @@ import {
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   expressionHasSideEffects,
+  isBoolReturningDeclarationFileCall,
   isEffectFree,
   isKnownPureCall,
   isPureUserCall,
@@ -493,6 +494,16 @@ describe("isEffectFree", () => {
       isEffectFree(call, checker, { admitForeignBoolPredicates: true }),
       false,
     );
+  });
+
+  it("recognizes exact declaration-file has predicates", () => {
+    const sf = createSourceFileFromSource(`
+      function f(xs: Set<string>, value: string) { return xs.has(value); }
+    `);
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(sf.compilerNode, "f");
+
+    assert.equal(isBoolReturningDeclarationFileCall(call, checker), true);
   });
 
   it("treats known-pure builtin calls as effect-free", () => {

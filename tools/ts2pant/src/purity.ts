@@ -461,7 +461,7 @@ export function isBoolReturningDeclarationFileCall(
 }
 
 function isPredicateLikeDeclarationFileBoolCallName(name: string): boolean {
-  return /^(is|has)[A-Z_]/.test(name);
+  return /^(?:is|has)(?:[A-Z_]|$)/.test(name);
 }
 
 /**
