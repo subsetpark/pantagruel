@@ -101,7 +101,11 @@ import {
 import { contagiousOpaque, isOpaqueExpr, OPAQUE_DOMAIN } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { isStaticallyBoolTyped } from "./purity.js";
+import {
+  isBoolReturningDeclarationFileCall,
+  isDeclarationFileCallableSymbol,
+  isStaticallyBoolTyped,
+} from "./purity.js";
 import {
   freshHygienicBinder,
   freshSyntheticOrigin,
@@ -199,50 +203,6 @@ function registerSynthesizedValueForOrigin(
 
 function isDynamicTsType(type: ts.Type): boolean {
   return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0;
-}
-
-function isDeclarationFileCallableSymbol(
-  symbol: ts.Symbol | undefined,
-  checker: ts.TypeChecker,
-): boolean {
-  if (symbol === undefined) {
-    return false;
-  }
-  const resolved =
-    symbol.flags & ts.SymbolFlags.Alias
-      ? checker.getAliasedSymbol(symbol)
-      : symbol;
-  return (resolved.getDeclarations() ?? []).some((decl) => {
-    const sf = decl.getSourceFile();
-    return (
-      sf.isDeclarationFile &&
-      (ts.isFunctionDeclaration(decl) || ts.isMethodSignature(decl))
-    );
-  });
-}
-
-function isBoolReturningDeclarationFileCall(
-  expr: ts.CallExpression,
-  checker: ts.TypeChecker,
-): boolean {
-  if (!ts.isPropertyAccessExpression(expr.expression)) {
-    return false;
-  }
-  if (
-    !isDeclarationFileCallableSymbol(
-      checker.getSymbolAtLocation(expr.expression.name),
-      checker,
-    )
-  ) {
-    return false;
-  }
-  const returnType = checker.getResolvedSignature(expr)?.getReturnType();
-  return (
-    returnType !== undefined &&
-    (returnType.flags &
-      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
-      0
-  );
 }
 
 function narrowedSortForUse(

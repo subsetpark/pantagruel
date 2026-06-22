@@ -447,7 +447,7 @@ describe("isKnownPureCall", () => {
 });
 
 describe("isEffectFree", () => {
-  it.skip("PENDING Patch 2: effect oracle admits a declaration-file bool call under admitForeignBoolPredicates", () => {
+  it("admits a declaration-file bool call under admitForeignBoolPredicates", () => {
     const sf = createSourceFile(
       resolve(
         import.meta.dirname,
@@ -466,7 +466,7 @@ describe("isEffectFree", () => {
     );
   });
 
-  it.skip("PENDING Patch 2: effect oracle keeps a declaration-file bool call effectful by default", () => {
+  it("keeps a declaration-file bool call effectful by default", () => {
     const sf = createSourceFile(
       resolve(
         import.meta.dirname,
