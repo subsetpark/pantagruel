@@ -46,10 +46,13 @@ export type IR1Unop = IRUnop;
 export interface SourceRef {
   file: string;
   line: number;
+  column?: number;
 }
 
 export function ir1OpaqueOriginId(origin: SourceRef): string {
-  return `${origin.file}:${origin.line}`;
+  return origin.column === undefined
+    ? `${origin.file}:${origin.line}`
+    : `${origin.file}:${origin.line}:${origin.column}`;
 }
 
 // --------------------------------------------------------------------------

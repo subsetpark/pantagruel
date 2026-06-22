@@ -202,6 +202,10 @@ describe("ir1", () => {
             ir1SsaCloseLoopHeader(header, write.version);
 
             assert.equal(ir1OpaqueOriginId({ file: name, line }), `${name}:${line}`);
+            assert.equal(
+              ir1OpaqueOriginId({ file: name, line, column: line + 1 }),
+              `${name}:${line}:${line + 1}`,
+            );
             assert.equal(ir1SsaRuleOfLocation(location), "value");
             assert.equal(read.version, initial);
             assert.equal(header.closed, true);
