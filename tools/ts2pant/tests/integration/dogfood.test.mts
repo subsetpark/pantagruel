@@ -60,6 +60,79 @@ describe("dogfood: foreign dependency type surfaces", () => {
       /binding-names-from-declaration-list decl-list: ForeignVariableDeclarationList => \[String\]\./u,
     );
   });
+
+  it.skip("Patch 4: bindingNamesFromDeclarationList translates body with foreign accessors", async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(SRC, "translate-body.ts"),
+      "bindingNamesFromDeclarationList",
+    );
+    const output = await emitAndCheck(doc);
+
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    assert.match(
+      output,
+      /^declarations dl: ForeignVariableDeclarationList => \[ForeignVariableDeclaration\]\.$/mu,
+    );
+    assert.match(
+      output,
+      /^name d: ForeignVariableDeclaration => ForeignIdentifier\.$/mu,
+    );
+    assert.match(
+      output,
+      /^identifier-text i: ForeignIdentifier => String\.$/mu,
+    );
+    assert.match(
+      output,
+      /binding-names-from-declaration-list dl = \(each d in declarations dl, is-identifier \(name d\) \| identifier-text \(name d\)\)\./u,
+    );
+  });
+});
+
+describe("foreign dependency fixture", () => {
+  it.skip("Patch 4: non-typescript imported dependency property reads lower through foreign accessors", async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "foreign-accessor-dependency.ts"),
+      "foreignLabels",
+    );
+    const output = await emitAndCheck(doc);
+
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    assert.match(output, /^ForeignDependencyContainer\.$/mu);
+    assert.match(output, /^ForeignDependencyItem\.$/mu);
+    assert.match(
+      output,
+      /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
+    );
+    assert.match(
+      output,
+      /^item-label i: ForeignDependencyItem => String\.$/mu,
+    );
+    assert.match(
+      output,
+      /^item-ready i: ForeignDependencyItem => Bool\.$/mu,
+    );
+    assert.match(
+      output,
+      /foreign-labels c = \(each i in items c, item-ready i \| item-label i\)\./u,
+    );
+  });
+});
+
+describe("dogfood @pant annotations entail", () => {
+  it.skip("Patch 4: bindingNamesFromDeclarationList annotation is entailed", async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(SRC, "translate-body.ts"),
+      "bindingNamesFromDeclarationList",
+    );
+    const output = await emitAndCheck(doc);
+
+    assert.match(
+      output,
+      /@pant all dl: ForeignVariableDeclarationList \| binding-names-from-declaration-list dl = \(each d in declarations dl, is-identifier \(name d\) \| identifier-text \(name d\)\)\./u,
+    );
+    const check = runCheck(output, { timeoutMs: PANT_TIMEOUT_MS });
+    assert.equal(check.status, 0);
+  });
 });
 
 describe("dogfood: src/translate-types.ts", () => {

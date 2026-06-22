@@ -440,4 +440,37 @@ describe("ir1-build-property", () => {
     );
     assert.equal(templateOpaque, dottedOpaque);
   });
+
+  it.skip("Patch 3: foreign receiver property access lowers to synthesized accessor", () => {
+    // Intended Patch 3 shape for a foreign declaration-file receiver:
+    // `c.items` lowers to `items c`, registers
+    // `items c: ForeignDependencyContainer => [ForeignDependencyItem].`,
+    // and nested `item.label` lowers through `item-label item`.
+    const output = [
+      "items c: ForeignDependencyContainer => [ForeignDependencyItem].",
+      "item-label i: ForeignDependencyItem => String.",
+      "foreign-labels c = (each i in items c, item-ready i | item-label i).",
+    ].join("\n");
+
+    assert.match(
+      output,
+      /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
+    );
+    assert.match(
+      output,
+      /^item-label i: ForeignDependencyItem => String\.$/mu,
+    );
+    assert.match(output, /each i in items c, item-ready i \| item-label i/u);
+  });
+
+  it.skip("Patch 3: unsupported foreign property type refuses without dangling rules", () => {
+    // Intended Patch 3 fallback: if the checker cannot map the property type
+    // to a Pant sort or another foreign domain, member lowering returns
+    // unsupported and does not register a partial accessor declaration.
+    const output =
+      "> UNSUPPORTED: foreign property 'metadata' has unsupported type";
+
+    assert.match(output, /^> UNSUPPORTED: foreign property 'metadata'/mu);
+    assert.doesNotMatch(output, /^metadata .* =>/mu);
+  });
 });
