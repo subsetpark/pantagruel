@@ -233,8 +233,33 @@ function opaqueValueForDynamicExpr(
     return null;
   }
   const origin = sourceRefForNode(expr, ctx.supply);
+  const narrowedSort = narrowedSortForUse(expr, ctx);
+  if (narrowedSort !== null) {
+    registerSynthesizedValueForOrigin(ctx, origin, narrowedSort);
+    return ir1Opaque(narrowedSort, origin);
+  }
   registerOpaqueValueForOrigin(ctx, origin);
   return ir1Opaque(OPAQUE_DOMAIN, origin);
+}
+
+function narrowedOpaqueParamValueForUse(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): IR1Expr | null {
+  if (ctx.policy !== "opaque") {
+    return null;
+  }
+  const type = getOperandDeclaredType(expr, ctx.checker);
+  if (!isDynamicTsType(type)) {
+    return null;
+  }
+  const narrowedSort = narrowedSortForUse(expr, ctx);
+  if (narrowedSort === null) {
+    return null;
+  }
+  const origin = sourceRefForNode(expr, ctx.supply);
+  registerSynthesizedValueForOrigin(ctx, origin, narrowedSort);
+  return ir1Opaque(narrowedSort, origin);
 }
 
 export function contagiousOpaqueForOperands(
@@ -934,6 +959,10 @@ export function tryBuildL1PureSubExpression(
   if (ts.isIdentifier(expr)) {
     const mappedName = ctx.paramNames.get(expr.text);
     if (mappedName !== undefined) {
+      const narrowedOpaque = narrowedOpaqueParamValueForUse(expr, ctx);
+      if (narrowedOpaque !== null) {
+        return narrowedOpaque;
+      }
       const value = ir1Var(mappedName);
       const symbol = ctx.checker.getSymbolAtLocation(expr);
       return symbol?.valueDeclaration === undefined
@@ -1758,7 +1787,12 @@ export function buildL1MemberAccess(
     ctx.policy === "opaque" && ts.isExpression(receiverNode)
       ? opaqueValueForDynamicExpr(receiverNode, ctx)
       : null;
-  if (receiverDynamicOpaque !== null) {
+  const narrowedConcreteReceiver =
+    receiverDynamicOpaque !== null &&
+    receiverDynamicOpaque.sort !== OPAQUE_DOMAIN
+      ? receiverDynamicOpaque
+      : null;
+  if (receiverDynamicOpaque !== null && narrowedConcreteReceiver === null) {
     const opaque = contagiousOpaqueForOperands(
       ctx,
       [receiverDynamicOpaque],
@@ -1797,7 +1831,9 @@ export function buildL1MemberAccess(
   }
 
   let receiverL1: IR1Expr;
-  if (ctx.state === undefined && isMemberSurfaceForm(receiverNode)) {
+  if (narrowedConcreteReceiver !== null) {
+    receiverL1 = narrowedConcreteReceiver;
+  } else if (ctx.state === undefined && isMemberSurfaceForm(receiverNode)) {
     // Pure path: prefer canonical nested Member trees. Cardinality
     // dispatch fires first so a chain like `arr.length.foo` wouldn't
     // silently route `arr.length` through Member.
