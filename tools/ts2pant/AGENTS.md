@@ -221,6 +221,8 @@ uncertainty forward in the encoding.
 Use-site narrowing is a later refinement, covered by M4. The default policy is the
 conservative floor: translate dynamic values as `Opaque`, then let later work recover
 precision at specific uses when the TypeScript checker can prove a concrete type.
+See [`docs/opaque-narrowing.md`](docs/opaque-narrowing.md) for the use-site
+precision-recovery rule and its cross-function boundary.
 
 ### Opaque AST Constraint
 
