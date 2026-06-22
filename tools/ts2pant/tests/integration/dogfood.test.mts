@@ -401,6 +401,9 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "tupleDepModuleName", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyTupleSynth", minChecks: 1 },
     { file: "opaque.ts", fn: "isOpaqueExpr", minChecks: 1 },
+    { file: "ir1-printer.ts", fn: "needsCalleeParens", minChecks: 1 },
+    { file: "ir1-printer.ts", fn: "needsAppArgParens", minChecks: 1 },
+    { file: "ir1-printer.ts", fn: "needsMemberReceiverParens", minChecks: 1 },
     {
       file: resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
       fn: "getRadius",
