@@ -59,7 +59,7 @@ export interface ExtractedTypes {
   enums: ExtractedEnum[];
 }
 
-const COMPILER_OPTIONS = {
+export const COMPILER_OPTIONS = {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.NodeNext,
   moduleResolution: ts.ModuleResolutionKind.NodeNext,

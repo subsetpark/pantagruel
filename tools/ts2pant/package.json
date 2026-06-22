@@ -18,7 +18,8 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:update-snapshots": "NODE_OPTIONS=--max-old-space-size=6144 npx tsx --test --test-update-snapshots --test-timeout=600000 tests/*.test.mts tests/integration/*.test.mts",
     "lint": "biome check src",
-    "lint:fix": "biome check --write src"
+    "lint:fix": "biome check --write src",
+    "survey": "npx tsx scripts/mono-survey.mts"
   },
   "dependencies": {
     "commander": "^13.0.0",
