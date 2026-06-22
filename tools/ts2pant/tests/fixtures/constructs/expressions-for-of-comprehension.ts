@@ -17,7 +17,8 @@ interface Item {
  *   `const acc = []; for (const x of xs) acc.push(f(x)); return acc;`
  * Target Pantagruel encoding: `each x in xs | f(x)`.
  */
-function _mapLabels(xs: Item[]): string[] {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function mapLabels(xs: Item[]): string[] {
   const acc: string[] = [];
   for (const x of xs) {
     acc.push(x.label);
@@ -30,7 +31,8 @@ function _mapLabels(xs: Item[]): string[] {
  *   `const acc = []; for (const x of xs) { if (P) acc.push(x); } return acc;`
  * Target Pantagruel encoding: `each x in xs | x, P`.
  */
-function _filterIfActive(xs: Item[]): Item[] {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function filterIfActive(xs: Item[]): Item[] {
   const acc: Item[] = [];
   for (const x of xs) {
     if (x.active) {
@@ -45,7 +47,8 @@ function _filterIfActive(xs: Item[]): Item[] {
  *   `const acc = []; for (const x of xs) { if (!P) continue; acc.push(x); } return acc;`
  * Target Pantagruel encoding: `each x in xs | x, P`.
  */
-function _filterContinueActive(xs: Item[]): Item[] {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function filterContinueActive(xs: Item[]): Item[] {
   const acc: Item[] = [];
   for (const x of xs) {
     if (!x.active) {
@@ -60,9 +63,10 @@ function _filterContinueActive(xs: Item[]): Item[] {
  * Non-array iterable build-list source (`Set<T>`).
  * Target Pantagruel encoding: `each x in xs | x`.
  *
- * @pant _collectSet xs = each x in xs | x
+ * @pant collectSet xs = (each x in xs | x)
  */
-function _collectSet(xs: Set<string>): string[] {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function collectSet(xs: Set<string>): string[] {
   const acc: string[] = [];
   for (const x of xs) {
     acc.push(x);
@@ -74,7 +78,8 @@ function _collectSet(xs: Set<string>): string[] {
  * Out-of-scope control: a scalar fold with `+=` must keep refusing.
  * Target Pantagruel encoding: none (explicitly out of scope).
  */
-function _sumLengths(xs: string[]): number {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function sumLengths(xs: string[]): number {
   let total = 0;
   for (const x of xs) {
     total += x.length;
@@ -86,7 +91,8 @@ function _sumLengths(xs: string[]): number {
  * Out-of-scope control: Map-entry destructuring must keep refusing.
  * Target Pantagruel encoding: none (explicitly out of scope).
  */
-function _mapEntryCopy(m: Map<string, number>): number[] {
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function mapEntryCopy(m: Map<string, number>): number[] {
   const acc: number[] = [];
   for (const [k, v] of m) {
     void k;

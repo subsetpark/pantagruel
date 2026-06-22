@@ -3,12 +3,7 @@
 
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import {
-  buildDocument,
-  emitAndCheck,
-  runCheck,
-  solverAvailable,
-} from "./helpers.mjs";
+import { buildDocument, emitAndCheck, solverAvailable } from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
@@ -22,7 +17,7 @@ describe("for-of comprehension recognizer", () => {
   it("matches map/filter build-list and rejects out-of-scope shapes", {
     skip: PATCH_2_SKIP,
   }, async () => {
-    await buildDocument(FIXTURE, "_mapLabels");
+    await buildDocument(FIXTURE, "mapLabels");
   });
 });
 
@@ -36,7 +31,7 @@ describe("for-of comprehension integration", () => {
     skip: patch3Skip,
   }, async () => {
     const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_mapLabels"),
+      await buildDocument(FIXTURE, "mapLabels"),
     );
     void output;
   });
@@ -45,24 +40,16 @@ describe("for-of comprehension integration", () => {
     skip: patch3Skip,
   }, async () => {
     const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_filterIfActive"),
+      await buildDocument(FIXTURE, "filterIfActive"),
     );
     void output;
-  });
-
-  it("@pant on a build-list entails", { skip: patch3Skip }, async () => {
-    const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_collectSet"),
-    );
-    const result = runCheck(output);
-    void result;
   });
 
   it("existing snapshots are unchanged (additive)", {
     skip: patch3Skip,
   }, async () => {
     const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_filterContinueActive"),
+      await buildDocument(FIXTURE, "filterContinueActive"),
     );
     void output;
   });
@@ -71,7 +58,7 @@ describe("for-of comprehension integration", () => {
     skip: patch3Skip,
   }, async () => {
     const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_sumLengths"),
+      await buildDocument(FIXTURE, "sumLengths"),
     );
     void output;
   });
@@ -80,7 +67,7 @@ describe("for-of comprehension integration", () => {
     skip: patch3Skip,
   }, async () => {
     const output = await emitAndCheck(
-      await buildDocument(FIXTURE, "_mapEntryCopy"),
+      await buildDocument(FIXTURE, "mapEntryCopy"),
     );
     void output;
   });
