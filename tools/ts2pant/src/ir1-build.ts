@@ -239,7 +239,8 @@ function isBoolReturningDeclarationFileCall(
   const returnType = checker.getResolvedSignature(expr)?.getReturnType();
   return (
     returnType !== undefined &&
-    (returnType.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
+    (returnType.flags &
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
       0
   );
 }
@@ -1146,8 +1147,10 @@ export function tryBuildL1PureSubExpression(
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: "call with spread arguments is unsupported" };
     }
-    const declarationFilePropertyCallee =
-      isBoolReturningDeclarationFileCall(expr, ctx.checker);
+    const declarationFilePropertyCallee = isBoolReturningDeclarationFileCall(
+      expr,
+      ctx.checker,
+    );
     if (
       !declarationFilePropertyCallee &&
       expressionHasSideEffects(expr.expression, ctx.checker)

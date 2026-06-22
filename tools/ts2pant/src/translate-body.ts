@@ -2084,7 +2084,8 @@ function isBoolDeclarationFileNamespaceCall(
   const returnType = sig?.getReturnType();
   if (
     returnType === undefined ||
-    (returnType.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
+    (returnType.flags &
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
       0
   ) {
     return false;
