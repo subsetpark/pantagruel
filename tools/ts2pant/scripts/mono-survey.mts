@@ -19,7 +19,9 @@ const DOCS = resolve(here, "../docs");
 function collectTsFiles(dir: string): string[] {
   const files: string[] = [];
 
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
     const fullPath = resolve(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...collectTsFiles(fullPath));
