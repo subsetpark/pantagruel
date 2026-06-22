@@ -16,9 +16,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, "../src");
 const DOCS = resolve(here, "../docs");
 
-const files = readdirSync(SRC)
-  .filter((f) => f.endsWith(".ts"))
-  .map((f) => resolve(SRC, f));
+function collectTsFiles(dir: string): string[] {
+  const files: string[] = [];
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectTsFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+const files = collectTsFiles(SRC);
 
 const report = surveyMonomorphization(files);
 
