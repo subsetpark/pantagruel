@@ -37,6 +37,7 @@ import {
   isL1ConditionalForm,
   isL1StmtUnsupported,
   isL1Unsupported,
+  type L1BuildContext,
   lowerL1ToOpaque,
   tryBuildBuiltinCall,
   tryBuildL1Cardinality,
@@ -225,6 +226,14 @@ type PreludeStmt =
       valueExpr: ts.Expression;
       blockBindings: readonly ExtractedBlockConstBinding[];
     };
+
+export interface RecognizedForOfPush {
+  binder: string;
+  src: IR1Expr;
+  proj: IR1Expr;
+  guards: IR1Expr[];
+  accName: string;
+}
 
 /** Names a binding introduces into scope (none for an early-return arm). */
 function bindingNames(b: PreludeStmt): readonly string[] {
@@ -1792,6 +1801,238 @@ function recognizeEarlyReturnArm(stmt: ts.Statement): {
     valueExpr: extracted.returnExpr,
     blockBindings: extracted.bindings,
   };
+}
+
+/**
+ * Recognize the pure build-list loop:
+ *
+ *   for (const x of xs) { [if (P)] acc.push(f(x)); }
+ *
+ * The recognizer is intentionally not wired into extraction in Patch 2.
+ * It is a conservative AST matcher plus pure-L1 lowering probe that returns
+ * the exact pieces Patch 3 will wrap in `ir1Each`.
+ */
+export function recognizeForOfPush(
+  stmt: ts.ForOfStatement,
+  accNames: ReadonlySet<string>,
+  ctx: L1BuildContext,
+): RecognizedForOfPush | null {
+  const init = stmt.initializer;
+  if (
+    !ts.isVariableDeclarationList(init) ||
+    !(init.flags & ts.NodeFlags.Const) ||
+    init.declarations.length !== 1
+  ) {
+    return null;
+  }
+  const decl = init.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    return null;
+  }
+
+  const binderTsName = decl.name.text;
+  const binder = toPantTermName(binderTsName);
+  const scopedParams = new Map(ctx.paramNames);
+  scopedParams.set(binderTsName, binder);
+  const scopedCtx: L1BuildContext = { ...ctx, paramNames: scopedParams };
+
+  if (!forOfSourceIsExpressible(stmt, decl, ctx)) {
+    return null;
+  }
+
+  const src = buildPureL1OrNull(stmt.expression, ctx);
+  if (src === null) {
+    return null;
+  }
+
+  const push = recognizeForOfPushBody(stmt.statement, accNames);
+  if (push === null) {
+    return null;
+  }
+  if (expressionHasSideEffects(push.projExpr, ctx.checker)) {
+    return null;
+  }
+  const proj = buildPureL1OrNull(push.projExpr, scopedCtx);
+  if (proj === null) {
+    return null;
+  }
+
+  const guards: IR1Expr[] = [];
+  for (const guardExpr of push.guardExprs) {
+    if (
+      !isStaticallyBoolTyped(guardExpr, ctx.checker) ||
+      expressionHasSideEffects(guardExpr, ctx.checker)
+    ) {
+      return null;
+    }
+    const guard = buildPureL1OrNull(guardExpr, scopedCtx);
+    if (guard === null) {
+      return null;
+    }
+    guards.push(guard);
+  }
+
+  return {
+    binder,
+    src,
+    proj,
+    guards,
+    accName: push.accName,
+  };
+}
+
+function forOfSourceIsExpressible(
+  stmt: ts.ForOfStatement,
+  decl: ts.VariableDeclaration,
+  ctx: L1BuildContext,
+): boolean {
+  const sourceType = mapTsType(
+    ctx.checker.getTypeAtLocation(stmt.expression),
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+    { policy: ctx.policy },
+  );
+  if (!sourceType.ok) {
+    return false;
+  }
+
+  const binderType = mapTsType(
+    ctx.checker.getTypeAtLocation(decl.name),
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+    { policy: ctx.policy },
+  );
+  if (!binderType.ok) {
+    return false;
+  }
+  return sourceType.sort === `[${binderType.sort}]`;
+}
+
+function buildPureL1OrNull(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): IR1Expr | null {
+  const built = tryBuildL1PureSubExpression(expr, ctx);
+  if (built === null || isL1Unsupported(built)) {
+    return null;
+  }
+  return built;
+}
+
+interface RecognizedPushBody {
+  accName: string;
+  projExpr: ts.Expression;
+  guardExprs: ts.Expression[];
+}
+
+function recognizeForOfPushBody(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+): RecognizedPushBody | null {
+  if (ts.isBlock(stmt) && stmt.statements.length === 2) {
+    const guard = recognizeIfContinue(stmt.statements[0]!);
+    if (guard === null) {
+      return null;
+    }
+    const push = recognizePushStatement(stmt.statements[1]!, accNames);
+    if (push === null) {
+      return null;
+    }
+    return {
+      ...push,
+      guardExprs: [guard],
+    };
+  }
+
+  const bodyStmt = unwrapSingleStatementBlock(stmt);
+  if (bodyStmt === null) {
+    return null;
+  }
+
+  const direct = recognizePushStatement(bodyStmt, accNames);
+  if (direct !== null) {
+    return { ...direct, guardExprs: [] };
+  }
+
+  if (ts.isIfStatement(bodyStmt)) {
+    if (bodyStmt.elseStatement !== undefined) {
+      return null;
+    }
+    const guardedPush = recognizeForOfPushBody(
+      bodyStmt.thenStatement,
+      accNames,
+    );
+    if (guardedPush === null || guardedPush.guardExprs.length !== 0) {
+      return null;
+    }
+    return {
+      ...guardedPush,
+      guardExprs: [bodyStmt.expression],
+    };
+  }
+
+  return null;
+}
+
+function unwrapSingleStatementBlock(stmt: ts.Statement): ts.Statement | null {
+  if (!ts.isBlock(stmt)) {
+    return stmt;
+  }
+  return stmt.statements.length === 1 ? stmt.statements[0]! : null;
+}
+
+function recognizePushStatement(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+): Omit<RecognizedPushBody, "guardExprs"> | null {
+  if (!ts.isExpressionStatement(stmt)) {
+    return null;
+  }
+  const expr = stmt.expression;
+  if (
+    !ts.isCallExpression(expr) ||
+    expr.arguments.length !== 1 ||
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    expr.expression.name.text !== "push" ||
+    !ts.isIdentifier(expr.expression.expression)
+  ) {
+    return null;
+  }
+  const accName = expr.expression.expression.text;
+  if (!accNames.has(accName)) {
+    return null;
+  }
+  return { accName, projExpr: expr.arguments[0]! };
+}
+
+function recognizeIfContinue(stmt: ts.Statement): ts.Expression | null {
+  const ifStmt = unwrapSingleStatementBlock(stmt);
+  if (
+    ifStmt === null ||
+    !ts.isIfStatement(ifStmt) ||
+    ifStmt.elseStatement !== undefined ||
+    !isContinueOnly(ifStmt.thenStatement)
+  ) {
+    return null;
+  }
+  return unwrapNegatedCondition(ifStmt.expression);
+}
+
+function isContinueOnly(stmt: ts.Statement): boolean {
+  const inner = unwrapSingleStatementBlock(stmt);
+  return inner !== null && ts.isContinueStatement(inner);
+}
+
+function unwrapNegatedCondition(expr: ts.Expression): ts.Expression | null {
+  if (
+    ts.isPrefixUnaryExpression(expr) &&
+    expr.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    return expr.operand;
+  }
+  return null;
 }
 
 function extractReturnExpression(
