@@ -15,16 +15,26 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import { Project } from "ts-morph";
 import ts from "typescript";
-import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import {
+  COMPILER_OPTIONS,
+  createSourceFileFromSource,
+  getChecker,
+} from "../src/extract.js";
 import { lowerExpr } from "../src/ir-emit.js";
 import type { IR1Expr } from "../src/ir1.js";
-import { buildL1MemberAccess, type L1BuildContext } from "../src/ir1-build.js";
+import {
+  buildL1MemberAccess,
+  createL1AssumptionEnv,
+  type L1BuildContext,
+} from "../src/ir1-build.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
 import { qualifyFieldAccess } from "../src/translate-body.js";
 import {
+  cellEmitSynth,
   cellRegisterName,
   IntStrategy,
   newSynthCell,
@@ -42,6 +52,12 @@ interface PropertyAccessSetup {
 
 interface AccessSetup {
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression;
+  ctx: L1BuildContext;
+}
+
+interface DependencyAccessSetup {
+  sourceFile: ts.SourceFile;
+  checker: ts.TypeChecker;
   ctx: L1BuildContext;
 }
 
@@ -88,6 +104,7 @@ function setupAccess(source: string): AccessSetup {
     paramNames,
     state: undefined,
     supply,
+    env: createL1AssumptionEnv(),
   };
   const stmt = fn.body.statements[0];
   if (!stmt || !ts.isReturnStatement(stmt) || !stmt.expression) {
@@ -103,6 +120,79 @@ function setupAccess(source: string): AccessSetup {
     );
   }
   return { node: expr, ctx };
+}
+
+function setupDependencySource(
+  source: string,
+  dependencyDeclarations: string,
+): DependencyAccessSetup {
+  const project = new Project({
+    compilerOptions: COMPILER_OPTIONS,
+    useInMemoryFileSystem: true,
+  });
+  project.createSourceFile(
+    "/project/node_modules/dep/package.json",
+    JSON.stringify({ name: "dep", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "/project/node_modules/dep/index.d.ts",
+    dependencyDeclarations,
+  );
+  const sourceFile = project.createSourceFile("/project/src/main.ts", source);
+  project.resolveSourceFileDependencies();
+  const checker = project.getTypeChecker().compilerObject;
+  const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
+  if (!fn?.body) {
+    throw new Error("setupDependencySource: expected function with body");
+  }
+  const synthCell = newSynthCell();
+  const paramNames = new Map<string, string>();
+  for (const p of fn.parameters) {
+    if (ts.isIdentifier(p.name)) {
+      const pantName = cellRegisterName(synthCell, toPantTermName(p.name.text));
+      paramNames.set(p.name.text, pantName);
+    }
+  }
+  const supply: UniqueSupply = { n: 0, synthCell };
+  return {
+    sourceFile: sourceFile.compilerNode,
+    checker,
+    ctx: {
+      checker,
+      strategy: IntStrategy,
+      paramNames,
+      state: undefined,
+      supply,
+      env: createL1AssumptionEnv(),
+    },
+  };
+}
+
+function returnExpression(sourceFile: ts.SourceFile): ts.Expression {
+  const fn = sourceFile.statements.find(ts.isFunctionDeclaration);
+  const stmt = fn?.body?.statements.find(ts.isReturnStatement);
+  if (!stmt?.expression) {
+    throw new Error("returnExpression: expected return expression");
+  }
+  return stmt.expression;
+}
+
+function collectAccesses(
+  node: ts.Node,
+): Array<ts.PropertyAccessExpression | ts.ElementAccessExpression> {
+  const out: Array<ts.PropertyAccessExpression | ts.ElementAccessExpression> =
+    [];
+  const visit = (current: ts.Node): void => {
+    if (
+      ts.isPropertyAccessExpression(current) ||
+      ts.isElementAccessExpression(current)
+    ) {
+      out.push(current);
+    }
+    current.forEachChild(visit);
+  };
+  visit(node);
+  return out;
 }
 
 function expectMember(result: IR1Expr | { unsupported: string }): {
@@ -441,36 +531,188 @@ describe("ir1-build-property", () => {
     assert.equal(templateOpaque, dottedOpaque);
   });
 
-  it.skip("Patch 3: foreign receiver property access lowers to synthesized accessor", () => {
-    // Intended Patch 3 shape for a foreign declaration-file receiver:
-    // `c.items` lowers to `items c`, registers
-    // `items c: ForeignDependencyContainer => [ForeignDependencyItem].`,
-    // and nested `item.label` lowers through `item-label item`.
-    const output = [
-      "items c: ForeignDependencyContainer => [ForeignDependencyItem].",
-      "item-label i: ForeignDependencyItem => String.",
-      "foreign-labels c = (each i in items c, item-ready i | item-label i).",
-    ].join("\n");
+  it("foreign receiver property access lowers to synthesized accessor", () => {
+    const { sourceFile, ctx } = setupDependencySource(
+      `
+        import type { DependencyContainer } from "dep";
+        export function f(c: DependencyContainer) {
+          return c.items;
+        }
+      `,
+      `
+        export interface DependencyItem {
+          readonly label: string;
+          readonly ready: boolean;
+        }
+        export interface DependencyContainer {
+          readonly items: readonly DependencyItem[];
+        }
+      `,
+    );
+    const expr = returnExpression(sourceFile);
+    assert.ok(ts.isPropertyAccessExpression(expr));
 
-    assert.match(
-      output,
-      /^items c: ForeignDependencyContainer => \[ForeignDependencyItem\]\.$/mu,
-    );
-    assert.match(
-      output,
-      /^item-label i: ForeignDependencyItem => String\.$/mu,
-    );
-    assert.match(output, /each i in items c, item-ready i \| item-label i/u);
+    const result = buildL1MemberAccess(expr, ctx);
+    const { receiver, name } = expectMember(result);
+    assert.equal(name, "items");
+    assert.equal(receiver.kind, "var");
+    assert.equal(receiver.name, "c");
+    assert.deepEqual(cellEmitSynth(ctx.supply.synthCell!).decls, [
+      { kind: "domain", name: "ForeignDependencyContainer" },
+      { kind: "domain", name: "ForeignDependencyItem" },
+      {
+        kind: "rule",
+        name: "items",
+        params: [{ name: "c", type: "ForeignDependencyContainer" }],
+        returnType: "[ForeignDependencyItem]",
+      },
+    ]);
   });
 
-  it.skip("Patch 3: unsupported foreign property type refuses without dangling rules", () => {
-    // Intended Patch 3 fallback: if the checker cannot map the property type
-    // to a Pant sort or another foreign domain, member lowering returns
-    // unsupported and does not register a partial accessor declaration.
-    const output =
-      "> UNSUPPORTED: foreign property 'metadata' has unsupported type";
+  it("nested foreign reads compose through synthesized accessors", () => {
+    const { sourceFile, ctx } = setupDependencySource(
+      `
+        import type { VariableDeclaration } from "dep";
+        export function f(decl: VariableDeclaration) {
+          return decl.name.text;
+        }
+      `,
+      `
+        export interface Identifier {
+          readonly text: string;
+        }
+        export interface VariableDeclaration {
+          readonly name: Identifier;
+        }
+      `,
+    );
+    const expr = returnExpression(sourceFile);
+    assert.ok(ts.isPropertyAccessExpression(expr));
 
-    assert.match(output, /^> UNSUPPORTED: foreign property 'metadata'/mu);
-    assert.doesNotMatch(output, /^metadata .* =>/mu);
+    const result = buildL1MemberAccess(expr, ctx);
+    const outer = expectMember(result);
+    assert.equal(outer.name, "identifier-text");
+    const inner = expectMember(outer.receiver);
+    assert.equal(inner.name, "name");
+    assert.deepEqual(
+      cellEmitSynth(ctx.supply.synthCell!).decls.filter(
+        (decl) => decl.kind === "rule",
+      ),
+      [
+        {
+          kind: "rule",
+          name: "identifier-text",
+          params: [{ name: "i", type: "ForeignIdentifier" }],
+          returnType: "String",
+        },
+        {
+          kind: "rule",
+          name: "name",
+          params: [{ name: "d", type: "ForeignVariableDeclaration" }],
+          returnType: "ForeignIdentifier",
+        },
+      ],
+    );
+  });
+
+  it("repeated foreign reads share one synthesized declaration", () => {
+    const { sourceFile, ctx } = setupDependencySource(
+      `
+        import type { DependencyContainer } from "dep";
+        export function f(c: DependencyContainer) {
+          return c.items.length + c.items.length;
+        }
+      `,
+      `
+        export interface DependencyItem { readonly label: string; }
+        export interface DependencyContainer {
+          readonly items: readonly DependencyItem[];
+        }
+      `,
+    );
+    const accesses = collectAccesses(returnExpression(sourceFile)).filter(
+      (access): access is ts.PropertyAccessExpression =>
+        ts.isPropertyAccessExpression(access) && access.name.text === "items",
+    );
+    assert.equal(accesses.length, 2);
+
+    for (const access of accesses) {
+      const result = buildL1MemberAccess(access, ctx);
+      assert.equal(expectMember(result).name, "items");
+    }
+    const rules = cellEmitSynth(ctx.supply.synthCell!).decls.filter(
+      (decl) => decl.kind === "rule" && decl.name === "items",
+    );
+    assert.equal(rules.length, 1);
+  });
+
+  it("declList.declarations lowers through a TypeScript dependency accessor", () => {
+    const { sourceFile, ctx } = setupDependencySource(
+      `
+        import type { VariableDeclarationList } from "dep";
+        export function f(declList: VariableDeclarationList) {
+          return declList.declarations;
+        }
+      `,
+      `
+        export interface VariableDeclaration {
+          readonly name: Identifier;
+        }
+        export interface Identifier {
+          readonly text: string;
+        }
+        export interface VariableDeclarationList {
+          readonly declarations: readonly VariableDeclaration[];
+        }
+      `,
+    );
+    const expr = returnExpression(sourceFile);
+    assert.ok(ts.isPropertyAccessExpression(expr));
+
+    const result = buildL1MemberAccess(expr, ctx);
+    assert.equal(expectMember(result).name, "declarations");
+    assert.deepEqual(
+      cellEmitSynth(ctx.supply.synthCell!).decls.filter(
+        (decl) => decl.kind === "rule",
+      ),
+      [
+        {
+          kind: "rule",
+          name: "declarations",
+          params: [{ name: "dl", type: "ForeignVariableDeclarationList" }],
+          returnType: "[ForeignVariableDeclaration]",
+        },
+      ],
+    );
+  });
+
+  it("unsupported foreign property type refuses without dangling rules", () => {
+    const { sourceFile, ctx } = setupDependencySource(
+      `
+        import type { DependencyContainer } from "dep";
+        export function f(c: DependencyContainer) {
+          return c.metadata;
+        }
+      `,
+      `
+        export interface DependencyContainer {
+          readonly metadata: () => void;
+        }
+      `,
+    );
+    const expr = returnExpression(sourceFile);
+    assert.ok(ts.isPropertyAccessExpression(expr));
+
+    const result = buildL1MemberAccess(expr, ctx);
+    assert.ok("unsupported" in result);
+    if ("unsupported" in result) {
+      assert.match(result.unsupported, /foreign accessor \.metadata/u);
+      assert.match(result.unsupported, /unsupported property type/u);
+    }
+    const decls = cellEmitSynth(ctx.supply.synthCell!).decls;
+    assert.deepEqual(
+      decls.filter((decl) => decl.kind === "rule"),
+      [],
+    );
   });
 });
