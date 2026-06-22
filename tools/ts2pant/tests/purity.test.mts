@@ -447,6 +447,41 @@ describe("isKnownPureCall", () => {
 });
 
 describe("isEffectFree", () => {
+  it.skip("PENDING Patch 2: effect oracle admits a declaration-file bool call under admitForeignBoolPredicates", () => {
+    const sf = createSourceFile(
+      resolve(
+        import.meta.dirname,
+        "fixtures/constructs/expressions-foreign-call-predicate.ts",
+      ),
+    );
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(
+      sf.compilerNode,
+      "foreignCallEarlyReturn",
+    );
+
+    assert.equal(
+      isEffectFree(call, checker, { admitForeignBoolPredicates: true }),
+      true,
+    );
+  });
+
+  it.skip("PENDING Patch 2: effect oracle keeps a declaration-file bool call effectful by default", () => {
+    const sf = createSourceFile(
+      resolve(
+        import.meta.dirname,
+        "fixtures/constructs/expressions-foreign-call-predicate.ts",
+      ),
+    );
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(
+      sf.compilerNode,
+      "foreignCallEarlyReturn",
+    );
+
+    assert.equal(isEffectFree(call, checker), false);
+  });
+
   it("treats known-pure builtin calls as effect-free", () => {
     assert.equal(
       checkEffectFree(`

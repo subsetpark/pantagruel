@@ -2,10 +2,14 @@
 // @archlint.domain ts2pant.translate-body
 
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import * as fc from "fast-check";
 import ts from "typescript";
-import { createSourceFileFromSource } from "../src/extract.js";
+import {
+  createSourceFile,
+  createSourceFileFromSource,
+} from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import * as Supply from "../src/supply.js";
 import * as TB from "../src/translate-body.js";
@@ -651,6 +655,28 @@ describe("unsupported patterns", () => {
 });
 
 describe("if-early-return prelude arms", () => {
+  it.skip("PENDING Patch 3: foreign bool call in early-return predicate lowers to its EUF rule", () => {
+    const sourceFile = createSourceFile(
+      resolve(
+        import.meta.dirname,
+        "fixtures/constructs/expressions-foreign-call-predicate.ts",
+      ),
+    );
+
+    const admitted = translateBodyWithSynth(sourceFile, "foreignCallEarlyReturn");
+    assert.equal(
+      getAst().strExpr(finalEquation(admitted).rhs),
+      "cond is-labeled item => 1, true => 0",
+    );
+
+    const rejected = translateBodyWithSynth(sourceFile, "foreignCallMutatingIf");
+    assertUnsupportedReason(
+      rejected,
+      /impure if-condition in mutating body/u,
+      "foreign bool mutating if-condition",
+    );
+  });
+
   it("translates a single early-return arm followed by a return", () => {
     const source = `
       export function f(n: number): number {

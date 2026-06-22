@@ -458,6 +458,26 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 "module TYPEOF_UNDEFINED_NEQ.\\n\\ntypeof-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-neq x = (~(#x = 0)).\\n"
 `;
 
+exports[`expressions-foreign-call-predicate.ts > foreignCallCompoundPredicate 1`] = `
+"module FOREIGN_CALL_COMPOUND_PREDICATE.\\n\\nForeignDependencyItem.\\nforeign-call-compound-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-compound-predicate — early-return predicate has side effects.\\n\\ncheck\\n\\nforeign-call-compound-predicate item = (cond is-labeled item or has-ready-flag item => 1, true => 0).\\n"
+`;
+
+exports[`expressions-foreign-call-predicate.ts > foreignCallEarlyReturn 1`] = `
+"module FOREIGN_CALL_EARLY_RETURN.\\n\\nForeignDependencyItem.\\nforeign-call-early-return item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-early-return — early-return predicate has side effects.\\n\\ncheck\\n\\nforeign-call-early-return item = (cond is-labeled item => 1, true => 0).\\n"
+`;
+
+exports[`expressions-foreign-call-predicate.ts > foreignCallMutatingIf 1`] = `
+"module FOREIGN_CALL_MUTATING_IF.\\n\\nAccount.\\naccount--balance a: Account => Int.\\nForeignDependencyItem.\\n~> Foreign-call-mutating-if @ account: Account, item: ForeignDependencyItem.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
+`;
+
+exports[`expressions-foreign-call-predicate.ts > foreignCallWhilePredicate 1`] = `
+"module FOREIGN_CALL_WHILE_PREDICATE.\\n\\nForeignDependencyItem.\\nforeign-call-while-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-while-predicate — while-loop predicate has side effects.\\n"
+`;
+
+exports[`expressions-foreign-call-predicate.ts > foreignNonBoolCallPredicate 1`] = `
+"module FOREIGN_NON_BOOL_CALL_PREDICATE.\\n\\nForeignDependencyItem.\\nforeign-non-bool-call-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-non-bool-call-predicate — early-return predicate has side effects.\\n"
+`;
+
 exports[`expressions-free-call-typed.ts > ambientAnyParam 1`] = `
 "module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\nopaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037_003a_0032_0031  => Opaque.\\n\\n---\\n\\nambient-any-param = consume-any opaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037_003a_0032_0031.\\n"
 `;
