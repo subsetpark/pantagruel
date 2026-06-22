@@ -118,8 +118,8 @@ import {
   symbolicKey,
 } from "./translate-body.js";
 import {
-  cellRegisterMap,
   cellRegisterForeignAccessor,
+  cellRegisterMap,
   cellRegisterName,
   cellRegisterSynthesizedValue,
   type DiscriminantLiteral,
@@ -130,8 +130,8 @@ import {
   isSetType,
   lookupMapKV,
   mapTsType,
-  resolveFieldOwner,
   type NumericStrategy,
+  resolveFieldOwner,
   toPantTermName,
   UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
 } from "./translate-types.js";
