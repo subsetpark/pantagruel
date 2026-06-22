@@ -2215,6 +2215,35 @@ function foreignSymbolKey(
   };
 }
 
+export function foreignDomainForType(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
+): MapTsTypeResult | null {
+  if (synthCell === undefined) {
+    return null;
+  }
+  const symbol = type.aliasSymbol ?? type.symbol;
+  if (symbol === undefined) {
+    return null;
+  }
+  const canonical = canonicalSymbol(symbol, checker);
+  if (
+    canonical.declarations?.every((decl) =>
+      /\/typescript\/lib\/lib\..*\.d\.ts$/u.test(
+        decl.getSourceFile().fileName.replace(/\\/gu, "/"),
+      ),
+    )
+  ) {
+    return null;
+  }
+  if (foreignSymbolKey(symbol, checker) === null) {
+    return null;
+  }
+  return mapTsType(type, checker, strategy, synthCell);
+}
+
 export const RealStrategy: NumericStrategy = {
   mapNumber() {
     return "Real";

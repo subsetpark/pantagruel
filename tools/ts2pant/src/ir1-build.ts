@@ -119,15 +119,18 @@ import {
 } from "./translate-body.js";
 import {
   cellRegisterMap,
+  cellRegisterForeignAccessor,
   cellRegisterName,
   cellRegisterSynthesizedValue,
   type DiscriminantLiteral,
   detectDiscriminatedUnion,
   fieldRuleName,
+  foreignDomainForType,
   isMapType,
   isSetType,
   lookupMapKV,
   mapTsType,
+  resolveFieldOwner,
   type NumericStrategy,
   toPantTermName,
   UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
@@ -1790,7 +1793,7 @@ export function buildL1MemberAccess(
     fieldName,
     ctx,
   );
-  const qualifiedStrict = qualifyFieldAccess(
+  const owner = resolveFieldOwner(
     receiverType,
     fieldName,
     ctx.checker,
@@ -1798,21 +1801,35 @@ export function buildL1MemberAccess(
     ctx.supply.synthCell,
   );
   let qualified: string;
-  if (qualifiedStrict !== null) {
-    qualified = qualifiedStrict;
-  } else if (ambiguousMode === "bare-kebab") {
+  if (owner.kind === "resolved") {
+    qualified = fieldRuleName(owner.owner, fieldName);
+  } else if (owner.kind === "ambiguous" && ambiguousMode === "bare-kebab") {
     // Signature-side best-effort: ambiguous union/intersection
     // owners fall back to the bare kebab'd field name so optional
     // analyses (guard extraction, call-following) can continue past
     // an inherently-ambiguous accessor instead of bailing the whole
     // analysis on a single ambiguous read.
     qualified = toPantTermName(fieldName);
-  } else {
+  } else if (owner.kind === "ambiguous") {
     return {
       unsupported:
         `property access .${fieldName}: ` +
         UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON,
     };
+  } else {
+    const foreignAccessor = tryRegisterForeignAccessorForMember(
+      stripped,
+      receiverType,
+      fieldName,
+      ctx,
+    );
+    if (foreignAccessor.kind === "registered") {
+      qualified = foreignAccessor.ruleName;
+    } else if (foreignAccessor.kind === "unsupported") {
+      return { unsupported: foreignAccessor.reason };
+    } else {
+      qualified = toPantTermName(fieldName);
+    }
   }
 
   let receiverL1: IR1Expr;
@@ -1889,6 +1906,87 @@ export function buildL1MemberAccess(
     discriminantDischarge ??
       queryTypePredicateFieldDischarge(ctx, receiverNode as ts.Expression),
   );
+}
+
+type ForeignAccessorBuild =
+  | { kind: "registered"; ruleName: string }
+  | { kind: "unsupported"; reason: string }
+  | { kind: "none" };
+
+function tryRegisterForeignAccessorForMember(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  receiverType: ts.Type,
+  fieldName: string,
+  ctx: L1BuildContext,
+): ForeignAccessorBuild {
+  const cell = ctx.supply.synthCell;
+  const ownerDomain = foreignDomainForType(
+    receiverType,
+    ctx.checker,
+    ctx.strategy,
+    cell,
+  );
+  if (ownerDomain === null) {
+    return { kind: "none" };
+  }
+  if (!ownerDomain.ok) {
+    return {
+      kind: "unsupported",
+      reason: `foreign accessor .${fieldName}: ${ownerDomain.reason}`,
+    };
+  }
+  const prop = propertySymbolForMember(node, receiverType, fieldName, ctx);
+  if (prop === undefined) {
+    return { kind: "none" };
+  }
+  const propertyType = ctx.checker.getTypeAtLocation(node);
+  if (
+    propertyType.getCallSignatures().length > 0 ||
+    propertyType.getConstructSignatures().length > 0
+  ) {
+    return {
+      kind: "unsupported",
+      reason: `foreign accessor .${fieldName}: unsupported property type ${ctx.checker.typeToString(propertyType)}`,
+    };
+  }
+  const returnSort = mapTsType(propertyType, ctx.checker, ctx.strategy, cell);
+  if (!returnSort.ok) {
+    return {
+      kind: "unsupported",
+      reason: `foreign accessor .${fieldName}: unsupported property type (${returnSort.reason})`,
+    };
+  }
+  if (cell === undefined) {
+    return {
+      kind: "unsupported",
+      reason: `foreign accessor .${fieldName}: missing synth cell for accessor declaration`,
+    };
+  }
+  const entry = cellRegisterForeignAccessor(
+    cell,
+    ownerDomain.sort,
+    fieldName,
+    returnSort.sort,
+  );
+  if (entry === null) {
+    return {
+      kind: "unsupported",
+      reason: `foreign accessor .${fieldName}: unsupported property type ${ctx.checker.typeToString(propertyType)}`,
+    };
+  }
+  return { kind: "registered", ruleName: entry.ruleName };
+}
+
+function propertySymbolForMember(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  receiverType: ts.Type,
+  fieldName: string,
+  ctx: L1BuildContext,
+): ts.Symbol | undefined {
+  if (ts.isPropertyAccessExpression(node)) {
+    return ctx.checker.getSymbolAtLocation(node.name);
+  }
+  return ctx.checker.getPropertyOfType(receiverType, fieldName);
 }
 
 function discriminantLiteralToFactLiteral(
