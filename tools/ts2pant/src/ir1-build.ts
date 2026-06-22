@@ -175,6 +175,7 @@ function sourceRefForNode(node: ts.Node, supply: UniqueSupply): SourceRef {
   return {
     file: sf.fileName.split(/[\\/]/u).pop() ?? sf.fileName,
     line: pos.line + 1,
+    column: pos.character + 1,
   };
 }
 

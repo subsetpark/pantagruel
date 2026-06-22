@@ -109,4 +109,26 @@ describe("opaque narrowing", () => {
       assert.doesNotMatch(output, /^per-use-site value: String/mu);
     },
   );
+
+  it("same-line narrowed use sites keep distinct origins", async () => {
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "narrowing.ts"),
+    );
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "sameLineUseSites"),
+    );
+
+    assert.match(
+      output,
+      /^same-line-use-sites first: Opaque, second: Opaque, fallback: TokenBox => TokenBox\.$/mu,
+    );
+    assert.equal(
+      [...output.matchAll(/^opaque_value_.* => String\.$/gmu)].length,
+      1,
+    );
+    assert.equal(
+      [...output.matchAll(/^opaque_value_.* => TokenBox\.$/gmu)].length,
+      1,
+    );
+  });
 });

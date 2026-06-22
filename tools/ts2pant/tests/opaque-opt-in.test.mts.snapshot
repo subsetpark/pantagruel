@@ -3,27 +3,27 @@ exports[`opaque opt-in policy > body operation with an opaque operand propagates
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 2`] = `
-"module ARITHMETIC_CONTAGION.\\n\\nOpaque.\\narithmetic-contagion value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031  => Opaque.\\n\\n---\\n\\narithmetic-contagion value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031.\\n\\ncheck\\n\\ntrue.\\n"
+"module ARITHMETIC_CONTAGION.\\n\\nOpaque.\\narithmetic-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031_003a_0031_0030  => Opaque.\\n\\n---\\n\\narithmetic-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 3`] = `
-"module LOGICAL_CONTAGION.\\n\\nOpaque.\\nlogical-contagion value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038  => Opaque.\\n\\n---\\n\\nlogical-contagion value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038.\\n\\ncheck\\n\\ntrue.\\n"
+"module LOGICAL_CONTAGION.\\n\\nOpaque.\\nlogical-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038_003a_0031_0030  => Opaque.\\n\\n---\\n\\nlogical-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 4`] = `
-"module CALL_CONTAGION.\\n\\nOpaque.\\nconsume-any value1: Opaque => Opaque.\\ncall-contagion value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035  => Opaque.\\n\\n---\\n\\ncall-contagion value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035.\\n\\ncheck\\n\\ntrue.\\n"
+"module CALL_CONTAGION.\\n\\nOpaque.\\nconsume-any value1: Opaque => Opaque.\\ncall-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035_003a_0031_0030  => Opaque.\\n\\n---\\n\\ncall-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 5`] = `
-"module MEMBER_CONTAGION.\\n\\nOpaque.\\nmember-contagion value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032  => Opaque.\\n\\n---\\n\\nmember-contagion value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032.\\n\\ncheck\\n\\ntrue.\\n"
+"module MEMBER_CONTAGION.\\n\\nOpaque.\\nmember-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032_003a_0031_0030  => Opaque.\\n\\n---\\n\\nmember-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 6`] = `
-"module CONDITIONAL_CONTAGION.\\n\\nOpaque.\\nconditional-contagion flag: Bool, value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039  => Opaque.\\n\\n---\\n\\nconditional-contagion flag value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039.\\n\\ncheck\\n\\ntrue.\\n"
+"module CONDITIONAL_CONTAGION.\\n\\nOpaque.\\nconditional-contagion flag: Bool, value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039_003a_0031_0030  => Opaque.\\n\\n---\\n\\nconditional-contagion flag value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 7`] = `
-"module MUTATING_RETURN_CONTAGION.\\n\\nBox.\\nbox--total b: Box => Int.\\nOpaque.\\nmutating-return-contagion box: Box, value: Opaque => Opaque.\\nopaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037  => Opaque.\\n~> Mutating-return-contagion @ box: Box, value: Opaque.\\n\\n---\\n\\nbox--total' box = 1.\\nmutating-return-contagion' box value = opaque_value_12_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037.\\n\\ncheck\\n\\ntrue.\\n"
+"module MUTATING_RETURN_CONTAGION.\\n\\nBox.\\nbox--total b: Box => Int.\\nOpaque.\\nmutating-return-contagion box: Box, value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037_003a_0031_0030  => Opaque.\\n~> Mutating-return-contagion @ box: Box, value: Opaque.\\n\\n---\\n\\nbox--total' box = 1.\\nmutating-return-contagion' box value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
 exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 1`] = `

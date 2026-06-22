@@ -30,6 +30,10 @@ function isAnyArrayByArrayIsArray(value: unknown): value is any[] {
   return true;
 }
 
+function takeStringAndBox(value: string, box: TokenBox): TokenBox {
+  return box;
+}
+
 /**
  * @pant true.
  */
@@ -101,4 +105,18 @@ export function perUseSite(
     return value.toUpperCase();
   }
   return flag ? "" : "";
+}
+
+/**
+ * @pant true.
+ */
+export function sameLineUseSites(
+  first: unknown,
+  second: unknown,
+  fallback: TokenBox,
+): TokenBox {
+  if (isStringByTypeof(first) && isTokenBoxByInstanceof(second)) {
+    return takeStringAndBox(first, second);
+  }
+  return fallback;
 }

@@ -459,7 +459,7 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientAnyParam 1`] = `
-"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037  => Opaque.\\n\\n---\\n\\nambient-any-param = consume-any opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037.\\n"
+"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\nopaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037_003a_0032_0031  => Opaque.\\n\\n---\\n\\nambient-any-param = consume-any opaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0032_0037_003a_0032_0031.\\n"
 `;
 
 exports[`expressions-free-call-typed.ts > ambientConcrete 1`] = `
@@ -471,7 +471,7 @@ exports[`expressions-free-call-typed.ts > ambientReturnsInterface 1`] = `
 `;
 
 exports[`expressions-free-call-typed.ts > ambientUnknownReturn 1`] = `
-"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\nopaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031  => Opaque.\\n\\n---\\n\\nambient-unknown-return = consume-unknown opaque_value_33_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031.\\n"
+"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\nopaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031_003a_0032_0035  => Opaque.\\n\\n---\\n\\nambient-unknown-return = consume-unknown opaque_value_36_0065_0078_0070_0072_0065_0073_0073_0069_006f_006e_0073_002d_0066_0072_0065_0065_002d_0063_0061_006c_006c_002d_0074_0079_0070_0065_0064_002e_0074_0073_003a_0033_0031_003a_0032_0035.\\n"
 `;
 
 exports[`expressions-functor-lift-property.ts > userName 1`] = `
