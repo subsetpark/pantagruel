@@ -1172,6 +1172,10 @@ export interface ForeignDomainSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+/**
+ * @pant all k: String | ~(foreign-domain-synth--by-key-key emptyForeignDomainSynth k).
+ * @pant all k: String | ~(k in foreign-domain-synth--emitted emptyForeignDomainSynth).
+ */
 export function emptyForeignDomainSynth(): ForeignDomainSynth {
   return { byKey: new Map(), emitted: new Set() };
 }

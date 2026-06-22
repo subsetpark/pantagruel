@@ -138,6 +138,24 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("emptyForeignDomainSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(
+      filePath,
+      "emptyForeignDomainSynth",
+    );
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    t.assert.match(
+      output,
+      /all k\d*: String \| ~\(foreign-domain-synth--by-key-key empty-foreign-domain-synth k\d*\)\./u,
+    );
+    t.assert.match(
+      output,
+      /all k\d*: String \| ~\(k\d* in foreign-domain-synth--emitted empty-foreign-domain-synth\)\./u,
+    );
+  });
+
   it("lookupMapKV — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "lookupMapKV");
     const output = await emitAndCheck(doc);
@@ -398,6 +416,7 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyOpaqueSynth", minChecks: 3 },
+    { file: "translate-types.ts", fn: "emptyForeignDomainSynth", minChecks: 2 },
     { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
     { file: "translate-types.ts", fn: "mapSynthKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "fieldRuleName", minChecks: 1 },
