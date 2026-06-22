@@ -90,6 +90,8 @@ describe("dogfood: foreign dependency type surfaces", () => {
 });
 
 describe("foreign dependency fixture", () => {
+  const hasSolver = solverAvailable();
+
   it("non-typescript imported dependency property reads lower through foreign accessors", async () => {
     const doc = await buildDocumentFromPath(
       resolve(FIXTURES, "foreign-accessor-dependency.ts"),
@@ -113,7 +115,9 @@ describe("foreign dependency fixture", () => {
     assert.doesNotMatch(output, /typescript|VariableDeclaration|Identifier/u);
   });
 
-  it("foreign-call-predicate fixture @pant annotation is entailed", async () => {
+  it("foreign-call-predicate fixture @pant annotation is entailed", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
     const doc = await buildDocumentFromPath(
       resolve(FIXTURES, "expressions-foreign-call-predicate.ts"),
       "foreignCallEarlyReturn",
