@@ -28,17 +28,29 @@ describe("recursive discriminated union", () => {
     const output = await emitAndCheck(await buildDocument(FIXTURE, "treeKind"));
     assert.doesNotMatch(output, /UNSUPPORTED/u);
     assert.match(output, /^Tree\.$/mu);
-    assert.match(
-      output,
-      /tree--left s: Tree, tree--kind s = "node" => Tree\./u,
-    );
-    assert.match(
-      output,
-      /tree--value s: Tree, tree--kind s = "leaf" => Int\./u,
-    );
+    assert.match(output, /tree--left s: Tree, tree--kind s = "node" => Tree\./u);
+    assert.match(output, /tree--value s: Tree, tree--kind s = "leaf" => Int\./u);
     // The body resolves against the same `Tree` domain, not a duplicate.
     assert.match(output, /tree-kind t = tree--kind t\./u);
     assert.doesNotMatch(output, /Tree1|Tree2/u);
+  });
+
+  // `treeKind` reads the discriminant; `leafValue` reads a leaf field under
+  // `kind === "leaf"` narrowing; `leftChildKind` reads the *self-referential*
+  // `node.left: Tree` field under `kind === "node"` narrowing, then its
+  // discriminant — exercising the recursive accessor `tree--left … => Tree`.
+  for (const fn of ["treeKind", "leafValue", "leftChildKind"]) {
+    it(`emits and type-checks @pant on \`${fn}\` (recursive union)`, async () => {
+      await emitAndCheck(await buildDocument(FIXTURE, fn));
+    });
+  }
+
+  it("reads a self-referential field under narrowing", async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "leftChildKind"),
+    );
+    // The `node.left` read resolves through the recursive accessor.
+    assert.match(output, /tree--kind \(tree--left t\)/u);
   });
 
   it("a non-recursive discriminated union still registers (control)", async () => {

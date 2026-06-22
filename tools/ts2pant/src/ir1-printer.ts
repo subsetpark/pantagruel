@@ -846,14 +846,23 @@ function formatVersionedAsTightPrefixArg(
     : formatVersionedAsAppArg(expr, readLabels);
 }
 
+/**
+ * @pant needsCalleeParens expr <-> ir1-expr--kind expr = "binop" or ir1-expr--kind expr = "cond".
+ */
 function needsCalleeParens(expr: IR1Expr): boolean {
   return expr.kind === "binop" || expr.kind === "cond";
 }
 
+/**
+ * @pant needsAppArgParens expr <-> ir1-expr--kind expr = "app" or ir1-expr--kind expr = "cond".
+ */
 function needsAppArgParens(expr: IR1Expr): boolean {
   return expr.kind === "app" || expr.kind === "cond";
 }
 
+/**
+ * @pant needsMemberReceiverParens expr <-> ir1-expr--kind expr = "binop" or ir1-expr--kind expr = "member".
+ */
 function needsMemberReceiverParens(expr: IR1Expr): boolean {
   return expr.kind === "binop" || expr.kind === "member";
 }
