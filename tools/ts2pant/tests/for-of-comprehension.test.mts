@@ -11,14 +11,17 @@ import { formatIR1Expr } from "../src/ir1-printer.js";
 import { makeUniqueSupply } from "../src/supply.js";
 import { recognizeForOfPush } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
-import { buildDocument, emitAndCheck, solverAvailable } from "./helpers.mjs";
+import {
+  buildDocument,
+  emitAndCheck,
+  runCheck,
+  solverAvailable,
+} from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
   "fixtures/constructs/expressions-for-of-comprehension.ts",
 );
-
-const PATCH_3_SKIP = "PENDING: Patch 3";
 
 describe("for-of comprehension recognizer", () => {
   it("matches map/filter build-list and rejects out-of-scope shapes", () => {
@@ -232,52 +235,87 @@ function assertRecognized(
 
 describe("for-of comprehension integration", () => {
   const hasSolver = solverAvailable();
-  const patch3Skip = hasSolver
-    ? PATCH_3_SKIP
-    : `${PATCH_3_SKIP} (z3 unavailable)`;
 
-  it("translates a build-list to an each comprehension", {
-    skip: patch3Skip,
-  }, async () => {
+  it("translates a build-list to an each comprehension", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "mapLabels"),
     );
-    void output;
+    assert.match(output, /map-labels xs = \(each x in xs \| item--label x\)\./);
+    assert.doesNotMatch(output, /UNSUPPORTED/);
   });
 
-  it("filtered build-list emits a guarded each", {
-    skip: patch3Skip,
-  }, async () => {
+  it("filtered build-list emits a guarded each", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "filterIfActive"),
     );
-    void output;
+    assert.match(
+      output,
+      /filter-if-active xs = \(each x in xs, item--active x \| x\)\./,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/);
   });
 
-  it("existing snapshots are unchanged (additive)", {
-    skip: patch3Skip,
-  }, async () => {
+  it("build-list projection can reference a preceding const binding", async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "mapWithPreludeConst"),
+    );
+    assert.match(output, /offset\s+=> Int\./);
+    assert.match(output, /offset = 1\./);
+    assert.match(
+      output,
+      /map-with-prelude-const xs = \(each x in xs \| item--value x \+ offset\)\./,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/);
+  });
+
+  it(
+    "@pant on a build-list entails",
+    { skip: hasSolver ? false : "z3 unavailable" },
+    async () => {
+      const output = await emitAndCheck(
+        await buildDocument(FIXTURE, "filterIfActive"),
+      );
+      const result = runCheck(output);
+      assert.match(result.output, /OK: Entailed:/);
+    },
+  );
+
+  it("continue-filter build-list emits the same guarded each", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "filterContinueActive"),
     );
-    void output;
+    assert.match(
+      output,
+      /filter-continue-active xs = \(each x in xs, item--active x \| x\)\./,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/);
   });
 
-  it("out-of-scope scalar fold still refuses with a precise reason", {
-    skip: patch3Skip,
-  }, async () => {
+  it("Set source build-list emits an each comprehension", async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "collectSet"),
+    );
+    assert.match(output, /collect-set xs = \(each x in xs \| x\)\./);
+    assert.doesNotMatch(output, /UNSUPPORTED/);
+  });
+
+  it("out-of-scope scalar fold still refuses with a precise reason", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "sumLengths"),
     );
-    void output;
+    assert.match(
+      output,
+      /UNSUPPORTED: sum-lengths .* for-of loop is not a recognized build-list comprehension/,
+    );
   });
 
-  it("Map-entry destructuring still refuses with a precise reason", {
-    skip: patch3Skip,
-  }, async () => {
+  it("Map-entry destructuring still refuses with a precise reason", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "mapEntryCopy"),
     );
-    void output;
+    assert.match(
+      output,
+      /UNSUPPORTED: map-entry-copy .* for-of loop is not a recognized build-list comprehension/,
+    );
   });
 });

@@ -27,9 +27,26 @@ function mapLabels(xs: Item[]): string[] {
 }
 
 /**
+ * Imperative map shape with a preceding pure local binding:
+ *   `const k = ...; const acc = []; for (const x of xs) acc.push(f(k, x)); return acc;`
+ * Target Pantagruel encoding keeps the local equation and uses it in `each`.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function mapWithPreludeConst(xs: Item[]): number[] {
+  const offset = 1;
+  const acc: number[] = [];
+  for (const x of xs) {
+    acc.push(x.value + offset);
+  }
+  return acc;
+}
+
+/**
  * Imperative filter shape with a leading guard:
  *   `const acc = []; for (const x of xs) { if (P) acc.push(x); } return acc;`
  * Target Pantagruel encoding: `each x in xs | x, P`.
+ *
+ * @pant filter-if-active xs = (each x in xs, item--active x | x)
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function filterIfActive(xs: Item[]): Item[] {
@@ -62,8 +79,6 @@ function filterContinueActive(xs: Item[]): Item[] {
 /**
  * Non-array iterable build-list source (`Set<T>`).
  * Target Pantagruel encoding: `each x in xs | x`.
- *
- * @pant collectSet xs = (each x in xs | x)
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function collectSet(xs: Set<string>): string[] {
