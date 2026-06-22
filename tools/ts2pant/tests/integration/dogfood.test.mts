@@ -121,6 +121,24 @@ describe("foreign dependency fixture", () => {
     );
     assert.doesNotMatch(output, /typescript|VariableDeclaration|Identifier/u);
   });
+
+  it.skip("PENDING Patch 3: foreign-call-predicate fixture @pant annotation is entailed", async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-foreign-call-predicate.ts"),
+      "foreignCallEarlyReturn",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    const entailments = result.checks.filter((c) =>
+      c.message.startsWith("OK: Entailed:"),
+    );
+
+    assert.ok(entailments.length >= 1);
+    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+  });
 });
 
 describe("dogfood: src/translate-types.ts", () => {
