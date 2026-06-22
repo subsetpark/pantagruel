@@ -953,6 +953,7 @@ export function emitDiscriminatedUnionSynthDecls(
 export interface OpaqueSynthEntry {
   readonly id: string;
   readonly rule: string;
+  readonly sort: string;
 }
 
 /**
@@ -995,16 +996,32 @@ export function registerOpaqueValue(
   synth: OpaqueSynth,
   id: string,
 ): { entry: OpaqueSynthEntry; synth: OpaqueSynth } {
+  return registerSynthesizedValue(synth, id, OPAQUE_DOMAIN);
+}
+
+export function registerSynthesizedValue(
+  synth: OpaqueSynth,
+  id: string,
+  sort: string,
+): { entry: OpaqueSynthEntry; synth: OpaqueSynth } {
   const cached = synth.byId.get(id);
   if (cached) {
     return { entry: cached, synth };
   }
-  const entry: OpaqueSynthEntry = { id, rule: opaqueValueRuleName(id) };
+  const entry: OpaqueSynthEntry = {
+    id,
+    rule: opaqueValueRuleName(id),
+    sort,
+  };
   const newById = new Map(synth.byId);
   newById.set(id, entry);
   return {
     entry,
-    synth: { ...synth, byId: newById, needsDomain: true },
+    synth: {
+      ...synth,
+      byId: newById,
+      needsDomain: synth.needsDomain || sort === OPAQUE_DOMAIN,
+    },
   };
 }
 
@@ -1019,10 +1036,11 @@ export function lookupOpaqueValue(
 }
 
 /**
- * Materialize accumulated opaque decls in registration order. The `Opaque`
- * domain is emitted only when at least one id has been registered, and only
- * on the first non-empty drain. Each registered id emits one nullary
- * constant `opaqueValueRuleName(id) => Opaque.`.
+ * Materialize accumulated synthesized-value decls in registration order.
+ * The `Opaque` domain is emitted only when at least one registered value
+ * carries the `Opaque` sort, and only on the first drain that needs it.
+ * Each registered id emits one nullary constant
+ * `opaqueValueRuleName(id) => <sort>.`.
  */
 export function emitOpaqueSynthDecls(
   synth: OpaqueSynth,
@@ -1030,11 +1048,11 @@ export function emitOpaqueSynthDecls(
 ): { decls: PantDeclaration[]; synth: OpaqueSynth; registry: NameRegistry } {
   const decls: PantDeclaration[] = [];
   const newEmitted = new Set(synth.emitted);
-  const hasUnemittedValue = [...synth.byId.keys()].some(
-    (id) => !newEmitted.has(id),
+  const hasUnemittedOpaqueValue = [...synth.byId.entries()].some(
+    ([id, entry]) => !newEmitted.has(id) && entry.sort === OPAQUE_DOMAIN,
   );
   let domainEmitted = synth.domainEmitted;
-  if (!domainEmitted && (synth.needsDomain || hasUnemittedValue)) {
+  if (!domainEmitted && (synth.needsDomain || hasUnemittedOpaqueValue)) {
     decls.push({ kind: "domain", name: OPAQUE_DOMAIN });
     domainEmitted = true;
   }
@@ -1047,7 +1065,7 @@ export function emitOpaqueSynthDecls(
       kind: "rule",
       name: entry.rule,
       params: [],
-      returnType: OPAQUE_DOMAIN,
+      returnType: entry.sort,
     });
   }
   return {
@@ -1595,7 +1613,16 @@ export function cellRegisterOpaqueValue(
   cell: SynthCell,
   id: string,
 ): OpaqueSynthEntry {
-  const r = registerOpaqueValue(cell.opaqueSynth, id);
+  return cellRegisterSynthesizedValue(cell, id, OPAQUE_DOMAIN);
+}
+
+/** Cell-mutating wrapper around `registerSynthesizedValue`. */
+export function cellRegisterSynthesizedValue(
+  cell: SynthCell,
+  id: string,
+  sort: string,
+): OpaqueSynthEntry {
+  const r = registerSynthesizedValue(cell.opaqueSynth, id, sort);
   cell.opaqueSynth = r.synth;
   return r.entry;
 }

@@ -21,6 +21,7 @@ import {
   cellLookupOpaqueValue,
   cellRegisterDiscriminatedUnion,
   cellRegisterOpaqueValue,
+  cellRegisterSynthesizedValue,
   cellRegisterTupleConstructor,
   cellTupleShapes,
   depModuleNameForFile,
@@ -1116,6 +1117,37 @@ describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
       {
         kind: "rule",
         name: opaqueValueRuleName("foo.ts:3"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
+  });
+
+  it("emits synthesized values at their registered sort and declares Opaque only when needed", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+
+    const narrowed = cellRegisterSynthesizedValue(cell, "foo.ts:1", "String");
+    assert.equal(narrowed.rule, opaqueValueRuleName("foo.ts:1"));
+    assert.equal(narrowed.sort, "String");
+
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:1"),
+        params: [],
+        returnType: "String",
+      },
+    ]);
+
+    const opaque = cellRegisterOpaqueValue(cell, "foo.ts:2");
+    assert.equal(opaque.sort, OPAQUE_DOMAIN);
+
+    assert.deepEqual(emitSynthDeclsOnly(cell), [
+      { kind: "domain", name: OPAQUE_DOMAIN },
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:2"),
         params: [],
         returnType: OPAQUE_DOMAIN,
       },
