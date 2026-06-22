@@ -101,7 +101,7 @@ union, `yield* new ErrorClass()`) is unimplemented.
 
 ## Milestones
 
-### Milestone 1: guard-purity-user-calls — planned (`gameplans/ts2pant-guard-purity-user-calls.json`)
+### Milestone 1: guard-purity-user-calls — ✅ COMPLETE (PRs #284–#287)
 
 **Definition of Done**:
 - **Purity-oracle consolidation (sequenced first within M1):** the two purity
@@ -206,7 +206,7 @@ interface the DU workstream can commit to.
 > consults it to discharge guards; pop on exit), intra-function only, no field-name
 > special-casing, facts rendered as z3 path conditions.
 
-### Milestone 3a: du-discriminant-narrowing-layer — planned (`gameplans/ts2pant-du-discriminant-narrowing-layer.json`)
+### Milestone 3a: du-discriminant-narrowing-layer — ✅ COMPLETE (PRs #292, #294–#297)
 
 > **Planning decision (2026-05-28):** M3a absorbs the variant-field-rule discharge
 > wiring (Patch 5 in the gameplan) rather than deferring it to DU M3. Reason: the
@@ -260,7 +260,7 @@ and path-condition precedents are consumed here directly.
 
 ---
 
-### Milestone 3b: nullish-and-predicate-narrowing
+### Milestone 3b: nullish-and-predicate-narrowing — ✅ COMPLETE (PRs #312, #315, #320, #322)
 
 **Definition of Done**:
 - Extends the M3a assumption environment with **nullish** narrowing (`x != null` /
@@ -285,7 +285,7 @@ corpus (165 nullish sites + the type-guard tail).
 
 ---
 
-### Milestone 4: guard-effect-error-channel
+### Milestone 4: guard-effect-error-channel — ✅ COMPLETE (PRs #313, #314, #318, #319)
 
 **Definition of Done**:
 - Extract the error channel `E` from `Effect<A, E, R>` signatures to enumerate

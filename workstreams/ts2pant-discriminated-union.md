@@ -101,7 +101,7 @@ the shape this workstream generalizes.
 
 ## Milestones
 
-### Milestone 1: du-tagged-encoding — planned (`gameplans/ts2pant-du-tagged-encoding.json`)
+### Milestone 1: du-tagged-encoding — ✅ COMPLETE (PRs #290–#291)
 
 > **Being executed now**, ahead of further guard-analysis work: M1 is independent
 > of guard-analysis (it is the encoding, not narrowing) and unblocks M2 and — with
@@ -220,7 +220,7 @@ invariants to add first).
 
 ---
 
-### Milestone 3: du-discriminant-narrowing
+### Milestone 3: du-discriminant-narrowing — ✅ COMPLETE (PRs #299–#301, #303–#304)
 
 > **Update (2026-05-28):** the guard-analysis M3a gameplan
 > (`gameplans/ts2pant-du-discriminant-narrowing-layer.json`) ships the
@@ -278,7 +278,7 @@ has no remaining advantage for discriminated unions and can be retired.
 
 ---
 
-### Milestone 4: du-cutover — planned (`gameplans/ts2pant-du-cutover.json`)
+### Milestone 4: du-cutover — ✅ COMPLETE (PRs #307–#311)
 
 > **Planned (2026-05-29).** Two "handled-or-refused" choices in the original
 > DoD were resolved while planning: nested DUs are **handled** by recursive

@@ -82,7 +82,7 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 
 ### Milestone 3: ts2pant-opaque-default
 
-*(Planned 2026-06-21 — `gameplans/ts2pant-opaque-default.json`. The M2→M3 observation-window blocker — an opaque-contagion crash on synthetic SSA loop-body nodes — was fixed in PR #329; the corpus runs 111/111 under opaque.)*
+*(✅ COMPLETE — PRs #330–#332. The M2→M3 observation-window blocker — an opaque-contagion crash on synthetic SSA loop-body nodes — was fixed first in PR #329; the corpus runs 111/111 under opaque.)*
 
 **Definition of Done**:
 - Default value of `mapTsType`'s `policy` parameter flips from `"reject"` to `"opaque"`.
@@ -102,7 +102,7 @@ Give ts2pant a principled, two-layer mechanism for handling TypeScript `any` and
 
 ### Milestone 4: ts2pant-opaque-narrowing
 
-*(Planned 2026-06-21 — `gameplans/ts2pant-opaque-narrowing.json`; built atop the landed opaque-default flip.)*
+*(✅ COMPLETE — PRs #333–#335; built atop the landed opaque-default flip.)*
 
 **Definition of Done**:
 - At use sites of `any` / `unknown` values, `checker.getTypeAtLocation(useNode)` is consulted. If the narrowed type is concrete (not `any` / `unknown`), the use lowers to that concrete sort instead of `OpaqueValue`.

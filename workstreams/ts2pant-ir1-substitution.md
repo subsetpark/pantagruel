@@ -128,7 +128,7 @@ operand rewrites land in the same place.
 
 ## Milestones
 
-### Milestone 1: ir1-substitution
+### Milestone 1: ir1-substitution — ✅ COMPLETE (PRs #231–#235)
 
 **Definition of Done**:
 
