@@ -1,59 +1,59 @@
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 1`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 1`] = `
 "module READ_UNKNOWN.\\n\\nOpaque.\\nread-unknown value: Opaque => Opaque.\\n\\n---\\n\\nread-unknown value = value.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 2`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 2`] = `
 "module ARITHMETIC_CONTAGION.\\n\\nOpaque.\\narithmetic-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031_003a_0031_0030  => Opaque.\\n\\n---\\n\\narithmetic-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0031_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 3`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 3`] = `
 "module LOGICAL_CONTAGION.\\n\\nOpaque.\\nlogical-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038_003a_0031_0030  => Opaque.\\n\\n---\\n\\nlogical-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0032_0038_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 4`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 4`] = `
 "module CALL_CONTAGION.\\n\\nOpaque.\\nconsume-any value1: Opaque => Opaque.\\ncall-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035_003a_0031_0030  => Opaque.\\n\\n---\\n\\ncall-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0033_0035_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 5`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 5`] = `
 "module MEMBER_CONTAGION.\\n\\nOpaque.\\nmember-contagion value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032_003a_0031_0030  => Opaque.\\n\\n---\\n\\nmember-contagion value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0032_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 6`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 6`] = `
 "module CONDITIONAL_CONTAGION.\\n\\nOpaque.\\nconditional-contagion flag: Bool, value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039_003a_0031_0030  => Opaque.\\n\\n---\\n\\nconditional-contagion flag value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0034_0039_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > body operation with an opaque operand propagates opacity (contagion; @pant checks) 7`] = `
+exports[`opaque lowering > body operation with an opaque operand propagates opacity (contagion; @pant checks) 7`] = `
 "module MUTATING_RETURN_CONTAGION.\\n\\nBox.\\nbox--total b: Box => Int.\\nOpaque.\\nmutating-return-contagion box: Box, value: Opaque => Opaque.\\nopaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037_003a_0031_0030  => Opaque.\\n~> Mutating-return-contagion @ box: Box, value: Opaque.\\n\\n---\\n\\nbox--total' box = 1.\\nmutating-return-contagion' box value = opaque_value_15_0062_006f_0064_0069_0065_0073_002e_0074_0073_003a_0035_0037_003a_0031_0030.\\n\\ncheck\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 1`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 1`] = `
 "module SCALAR_UNKNOWN.\\n\\nOpaque.\\nscalar-unknown value: Opaque => Opaque.\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 2`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 2`] = `
 "module SCALAR_ANY.\\n\\nOpaque.\\nscalar-any value: Opaque => Opaque.\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 3`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 3`] = `
 "module UNKNOWN_ARRAY.\\n\\nOpaque.\\nunknown-array value: [Opaque] => [Opaque].\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 4`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 4`] = `
 "module NUMBER_UNKNOWN_TUPLE.\\n\\nOpaque.\\nnumber-unknown-tuple value: Int * Opaque => Int * Opaque.\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 5`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 5`] = `
 "module STRING_UNKNOWN_MAP.\\n\\nOpaque.\\nStringToOpaqueMap.\\nstring-to-opaque-map-key m: StringToOpaqueMap, k: String => Bool.\\nstring-to-opaque-map m: StringToOpaqueMap, k: String, string-to-opaque-map-key m k => Opaque.\\nstring-unknown-map value: StringToOpaqueMap => StringToOpaqueMap.\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 6`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 6`] = `
 "module NUMBER_UNKNOWN_UNION.\\n\\nOpaque.\\nnumber-unknown-union value: Int + Opaque => Int + Opaque.\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 7`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 7`] = `
 "module NULLABLE_UNKNOWN.\\n\\nOpaque.\\nnullable-unknown value: [Opaque] => [Opaque].\\n\\n---\\n\\ntrue.\\n"
 `;
 
-exports[`opaque opt-in policy > signature composite opacity is precision-preserving under policy opaque (@pant checks) 8`] = `
+exports[`opaque lowering > signature composite opacity is precision-preserving (@pant checks) 8`] = `
 "module ANONYMOUS_RECORD.\\n\\nOpaque.\\nKnownMysteryRec.\\nknown-mystery-rec--known r: KnownMysteryRec => Int.\\nknown-mystery-rec--mystery r: KnownMysteryRec => Opaque.\\nanonymous-record value: KnownMysteryRec => KnownMysteryRec.\\n\\n---\\n\\ntrue.\\n"
 `;

@@ -213,8 +213,12 @@ describe("formatIR1SsaProgram", () => {
   it("emits initial lines for join-referenced initials without reads", (t) => {
     const status = ir1Member(ir1Var("a"), "Account_status");
     const stmt = ir1CondStmt(
-      [[ir1Binop("gt", ir1Var("amount"), ir1LitNat(0)),
-        ir1Assign(status, ir1LitNat(1))]],
+      [
+        [
+          ir1Binop("gt", ir1Var("amount"), ir1LitNat(0)),
+          ir1Assign(status, ir1LitNat(1)),
+        ],
+      ],
       null,
     );
     const program = buildScalarSsaProgram(stmt);
@@ -240,7 +244,9 @@ describe("formatIR1SsaProgram", () => {
       if (lhsMatch) {
         const lhs = lhsMatch[1]!;
         for (const ref of rhsMatches) {
-          if (ref === lhs) continue;
+          if (ref === lhs) {
+            continue;
+          }
           assert.ok(
             defined.has(ref),
             `${ref} referenced before definition in line: ${line}`,

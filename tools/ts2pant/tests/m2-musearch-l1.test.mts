@@ -22,6 +22,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
+import ts from "typescript";
 import { emitDocument } from "../src/emit.js";
 import {
   createSourceFile,
@@ -37,7 +38,6 @@ import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
-import ts from "typescript";
 
 before(async () => {
   await loadAst();
@@ -219,9 +219,11 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
         output,
         funcName
           .replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`)
-          .replace(/^-/, ""),
+          .replace(/^-/u, ""),
       );
-      return functionRhs === "i." ? extractEquationRhs(output, "i") : functionRhs;
+      return functionRhs === "i."
+        ? extractEquationRhs(output, "i")
+        : functionRhs;
     });
     for (const rhs of rhsOutputs) {
       assert.match(rhs, /min over each j\d*: Int/u);

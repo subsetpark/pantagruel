@@ -1,5 +1,6 @@
 // @archlint.module test
 // @archlint.domain ts2pant.dogfood
+// biome-ignore-all lint/security/noSecrets: dogfood tests contain generated function names that trigger entropy false positives
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -41,6 +42,23 @@ describe("dogfood: src/name-registry.ts", () => {
     const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+  });
+});
+
+describe("dogfood: foreign dependency type surfaces", () => {
+  it("TypeScript compiler API types emit uninterpreted domains in skeletons", async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(SRC, "translate-body.ts"),
+      "bindingNamesFromDeclarationList",
+      { noBody: true },
+    );
+    const output = emitDocument(doc);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    assert.match(output, /^ForeignVariableDeclarationList\.$/mu);
+    assert.match(
+      output,
+      /binding-names-from-declaration-list decl-list: ForeignVariableDeclarationList => \[String\]\./u,
+    );
   });
 });
 
@@ -120,6 +138,24 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("emptyForeignDomainSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(
+      filePath,
+      "emptyForeignDomainSynth",
+    );
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    t.assert.match(
+      output,
+      /all k\d*: String \| ~\(foreign-domain-synth--by-key-key empty-foreign-domain-synth k\d*\)\./u,
+    );
+    t.assert.match(
+      output,
+      /all k\d*: String \| ~\(k\d* in foreign-domain-synth--emitted empty-foreign-domain-synth\)\./u,
+    );
+  });
+
   it("lookupMapKV — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "lookupMapKV");
     const output = await emitAndCheck(doc);
@@ -165,7 +201,10 @@ describe("dogfood: src/translate-types.ts", () => {
   });
 
   it("manglePantTypeToFragment — translates and type-checks", async (t) => {
-    const doc = await buildDocumentFromPath(filePath, "manglePantTypeToFragment");
+    const doc = await buildDocumentFromPath(
+      filePath,
+      "manglePantTypeToFragment",
+    );
     const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
@@ -180,10 +219,7 @@ describe("dogfood: src/translate-types.ts", () => {
     // file) twice, with `+` between String operands. The cross-file
     // function extractor pulls in the `to-pant-term-name` rule head;
     // without it the consumer's body would dangle on the call.
-    t.assert.match(
-      output,
-      /to-pant-term-name [a-z]+\d*: String => String\./u,
-    );
+    t.assert.match(output, /to-pant-term-name [a-z]+\d*: String => String\./u);
   });
 
   it("lookupRecordShape — translates and type-checks", async (t) => {
@@ -242,10 +278,7 @@ describe("dogfood: src/translate-types.ts", () => {
     // extraction (`toPantTermName`). The body is a single Set
     // membership test against the kebab'd term name.
     t.assert.match(output, /^NameRegistry\.$/mu);
-    t.assert.match(
-      output,
-      /to-pant-term-name [a-z]+\d*: String => String\./u,
-    );
+    t.assert.match(output, /to-pant-term-name [a-z]+\d*: String => String\./u);
     t.assert.match(
       output,
       /cell-is-used cell name = \(to-pant-term-name name in name-registry--used \(synth-cell--registry cell\)\)\./u,
@@ -303,10 +336,7 @@ describe("dogfood: src/translate-types.ts", () => {
     // let-backed helper, so the emitted equation preserves the stable
     // "F_" prefix as a versioned local binding.
     t.assert.match(output, /^prefix = "F_"\.$/mu);
-    t.assert.match(
-      output,
-      /prefixed-digit-stem stem = prefix \+ stem\./u,
-    );
+    t.assert.match(output, /prefixed-digit-stem stem = prefix \+ stem\./u);
   });
 
   it("tupleDepModuleName — translates and type-checks", async (t) => {
@@ -333,10 +363,7 @@ describe("dogfood: src/translate-types.ts", () => {
     // Symbol resolution follows the import alias to the actual
     // declaration. Body is an object-literal record return whose
     // `ctorRegistry` field is the call.
-    t.assert.match(
-      output,
-      /empty-name-registry\s+=> NameRegistry\./u,
-    );
+    t.assert.match(output, /empty-name-registry\s+=> NameRegistry\./u);
     t.assert.match(
       output,
       /tuple-synth--ctor-registry empty-tuple-synth = empty-name-registry\./u,
@@ -347,27 +374,25 @@ describe("dogfood: src/translate-types.ts", () => {
 describe("dogfood: DU totality", () => {
   const hasSolver = solverAvailable();
 
-  it(
-    "emitted DU document contains its totality body proposition",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocumentFromPath(
-        resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
-        "getRadius",
-      );
-      const output = await emitAndCheck(doc);
-      assert.match(
-        output,
-        /^all (s\d*): Shape \| shape--kind \1 = "circle" or shape--kind \1 = "square"\.$/mu,
-      );
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      assert.match(result.output, /Invariants are jointly satisfiable/u);
-      assert.ok(result.passed, `pant --check failed:\n${result.output}`);
-    },
-  );
+  it("emitted DU document contains its totality body proposition", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-discriminant-narrowing.ts"),
+      "getRadius",
+    );
+    const output = await emitAndCheck(doc);
+    assert.match(
+      output,
+      /^all (s\d*): Shape \| shape--kind \1 = "circle" or shape--kind \1 = "square"\.$/mu,
+    );
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    assert.match(result.output, /Invariants are jointly satisfiable/u);
+    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+  });
 });
 
 // `@pant <proposition>` JSDoc annotations on dogfood functions become
@@ -383,10 +408,15 @@ describe("dogfood: @pant annotations entail", () => {
   const annotated: Array<{ file: string; fn: string; minChecks: number }> = [
     { file: "name-registry.ts", fn: "isUsed", minChecks: 2 },
     { file: "name-registry.ts", fn: "emptyNameRegistry", minChecks: 1 },
-    { file: "translate-types.ts", fn: "manglePantTypeToFragment", minChecks: 2 },
+    {
+      file: "translate-types.ts",
+      fn: "manglePantTypeToFragment",
+      minChecks: 2,
+    },
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyOpaqueSynth", minChecks: 3 },
+    { file: "translate-types.ts", fn: "emptyForeignDomainSynth", minChecks: 2 },
     { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
     { file: "translate-types.ts", fn: "mapSynthKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "fieldRuleName", minChecks: 1 },
@@ -512,35 +542,31 @@ describe("dogfood: @pant annotations entail", () => {
   ];
 
   for (const { file, fn, minChecks } of annotated) {
-    it(
-      `${fn} — annotations are entailed by the body`,
-      { skip: !hasSolver ? "z3 not available" : undefined },
-      async () => {
-        const doc = await buildDocumentFromPath(resolve(SRC, file), fn);
-        const output = await emitAndCheck(doc);
-        const result = runCheck(output, {
-          projectRoot: PROJECT_ROOT,
-          pantBin: getPantBin(),
-        });
-        // `OK: Invariants are jointly satisfiable` always lands as the
-        // first OK; entailment results follow as one OK per check
-        // proposition. Filter out the satisfiability gate so the
-        // count reflects user-written annotations.
-        const entailments = result.checks.filter((c) =>
+    it(`${fn} — annotations are entailed by the body`, {
+      skip: !hasSolver ? "z3 not available" : undefined,
+    }, async () => {
+      const doc = await buildDocumentFromPath(resolve(SRC, file), fn);
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      // `OK: Invariants are jointly satisfiable` always lands as the
+      // first OK; entailment results follow as one OK per check
+      // proposition. Filter out the satisfiability gate so the
+      // count reflects user-written annotations.
+      const entailments = result.checks.filter(
+        (c) =>
           c.message.startsWith("OK: Entailed:") ||
           c.message.startsWith("FAIL: Not entailed:"),
-        );
-        assert.ok(
-          entailments.length >= minChecks,
-          `expected ≥ ${minChecks} entailment results, got ${entailments.length}`,
-        );
-        assert.ok(
-          result.passed,
-          `pant --check failed:\n${result.output}`,
-        );
-        assert.ok(entailments.every((c) => c.passed));
-      },
-    );
+      );
+      assert.ok(
+        entailments.length >= minChecks,
+        `expected ≥ ${minChecks} entailment results, got ${entailments.length}`,
+      );
+      assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+      assert.ok(entailments.every((c) => c.passed));
+    });
   }
 });
 
@@ -584,7 +610,7 @@ describe("dogfood: branded-parameter preconditions", () => {
     const output = emitDocument(doc);
     assert.match(
       output,
-      /brand-and-effect x: Int, ~\(x < 10\) and x > 0 => Effect\./u,
+      /brand-and-effect x: Int, ~\(x < 10\) and x > 0 => ForeignEffect\./u,
     );
     const result = runCheck(withOpaqueEffectDomain(output), {
       projectRoot: PROJECT_ROOT,
@@ -622,52 +648,48 @@ describe("dogfood: branded-parameter preconditions", () => {
 describe("dogfood: Effect error-channel preconditions", () => {
   const hasSolver = solverAvailable();
 
-  it(
-    "fully recovered Effect-generator preconditions are checkable",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      for (const fn of ["singleError", "multiError", "combinedWithThrow"]) {
-        const doc = await buildDocumentFromPath(
-          resolve(FIXTURES, "effect-gen-error-guards.ts"),
-          fn,
-          { noBody: true },
-        );
-        const output = emitDocument(doc);
-        assert.doesNotMatch(output, /> UNSUPPORTED:/u);
-        const result = runCheck(withOpaqueEffectDomain(output), {
-          projectRoot: PROJECT_ROOT,
-          pantBin: getPantBin(),
-        });
-        assert.ok(
-          result.passed,
-          `pant --check failed for ${fn}:\n${result.output}`,
-        );
-      }
-    },
-  );
+  it("fully recovered Effect-generator preconditions are checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    for (const fn of ["singleError", "multiError", "combinedWithThrow"]) {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "effect-gen-error-guards.ts"),
+        fn,
+        { noBody: true },
+      );
+      const output = emitDocument(doc);
+      assert.doesNotMatch(output, /> UNSUPPORTED:/u);
+      const result = runCheck(withOpaqueEffectDomain(output), {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+      assert.ok(
+        result.passed,
+        `pant --check failed for ${fn}:\n${result.output}`,
+      );
+    }
+  });
 
-  it(
-    "partial and impure Effect-generator recovery bail without a guard",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      for (const fn of ["partialRecovery", "impureCond", "unmatchedShape"]) {
-        const doc = await buildDocumentFromPath(
-          resolve(FIXTURES, "effect-gen-error-guards.ts"),
-          fn,
-          { noBody: true },
-        );
-        const output = emitDocument(doc);
-        const decl = output
-          .split("\n")
-          .find((line) => line.startsWith(toPantFixtureName(fn)));
-        assert.ok(decl, `missing declaration for ${fn}`);
-        assert.equal(
-          decl.split("=>", 1)[0]!.trim(),
-          `${toPantFixtureName(fn)} x: Int`,
-        );
-      }
-    },
-  );
+  it("partial and impure Effect-generator recovery bail without a guard", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    for (const fn of ["partialRecovery", "impureCond", "unmatchedShape"]) {
+      const doc = await buildDocumentFromPath(
+        resolve(FIXTURES, "effect-gen-error-guards.ts"),
+        fn,
+        { noBody: true },
+      );
+      const output = emitDocument(doc);
+      const decl = output
+        .split("\n")
+        .find((line) => line.startsWith(toPantFixtureName(fn)));
+      assert.ok(decl, `missing declaration for ${fn}`);
+      assert.equal(
+        decl.split("=>", 1)[0]!.trim(),
+        `${toPantFixtureName(fn)} x: Int`,
+      );
+    }
+  });
 });
 
 function toPantFixtureName(name: string): string {
@@ -681,120 +703,125 @@ function withOpaqueEffectDomain(output: string): string {
 describe("dogfood: DU definedness", () => {
   const hasSolver = solverAvailable();
 
-  it(
-    "un-narrowed read is not entailed",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocumentFromPath(
-        resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
-        "readUnchecked",
-      );
-      const output = await emitAndCheck(doc);
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      const entailments = result.checks.filter((c) =>
+  it("un-narrowed read is not entailed", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-discriminant-definedness.ts"),
+      "readUnchecked",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    const entailments = result.checks.filter(
+      (c) =>
         c.message.startsWith("OK: Entailed:") ||
         c.message.startsWith("FAIL: Not entailed:"),
-      );
-      assert.ok(
-        entailments.length >= 1,
-        `expected at least one entailment result, got ${entailments.length}`,
-      );
-      assert.equal(result.passed, false, result.output);
-      assert.ok(entailments.some((c) => !c.passed), result.output);
-    },
-  );
+    );
+    assert.ok(
+      entailments.length >= 1,
+      `expected at least one entailment result, got ${entailments.length}`,
+    );
+    assert.equal(result.passed, false, result.output);
+    assert.ok(
+      entailments.some((c) => !c.passed),
+      result.output,
+    );
+  });
 
-  it(
-    "nested DU un-narrowed read is not entailed",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocumentFromPath(
-        resolve(FIXTURES, "expressions-discriminated-union-nested.ts"),
-        "recordFieldUnchecked",
-      );
-      const output = await emitAndCheck(doc);
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      const entailments = result.checks.filter((c) =>
+  it("nested DU un-narrowed read is not entailed", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-discriminated-union-nested.ts"),
+      "recordFieldUnchecked",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    const entailments = result.checks.filter(
+      (c) =>
         c.message.startsWith("OK: Entailed:") ||
         c.message.startsWith("FAIL: Not entailed:"),
-      );
-      assert.ok(
-        entailments.length >= 1,
-        `expected at least one entailment result, got ${entailments.length}`,
-      );
-      assert.equal(result.passed, false, result.output);
-      assert.ok(entailments.some((c) => !c.passed), result.output);
-    },
-  );
+    );
+    assert.ok(
+      entailments.length >= 1,
+      `expected at least one entailment result, got ${entailments.length}`,
+    );
+    assert.equal(result.passed, false, result.output);
+    assert.ok(
+      entailments.some((c) => !c.passed),
+      result.output,
+    );
+  });
 });
 
 describe("dogfood: nullish definedness", () => {
   const hasSolver = solverAvailable();
 
-  it(
-    "optional read in null branch is not entailed",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocumentFromPath(
-        resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
-        "nullBranchControl",
-      );
-      const output = await emitAndCheck(doc);
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      const entailments = result.checks.filter((c) =>
+  it("optional read in null branch is not entailed", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-nullish-narrowing.ts"),
+      "nullBranchControl",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    const entailments = result.checks.filter(
+      (c) =>
         c.message.startsWith("OK: Entailed:") ||
         c.message.startsWith("FAIL: Not entailed:") ||
         c.message.startsWith("UNKNOWN: Entailed:"),
-      );
-      assert.ok(
-        entailments.length >= 1 || /UNKNOWN: Entailed:/u.test(result.output),
-        `expected at least one entailment result, got ${entailments.length}`,
-      );
-      assert.ok(
-        entailments.some((c) => !c.passed) ||
-          result.checks.some((c) => c.message.startsWith("UNKNOWN: Entailed:")) ||
-          /UNKNOWN: Entailed:/u.test(result.output),
-        result.output,
-      );
-    },
-  );
+    );
+    assert.ok(
+      entailments.length >= 1 || /UNKNOWN: Entailed:/u.test(result.output),
+      `expected at least one entailment result, got ${entailments.length}`,
+    );
+    assert.ok(
+      entailments.some((c) => !c.passed) ||
+        result.checks.some((c) => c.message.startsWith("UNKNOWN: Entailed:")) ||
+        /UNKNOWN: Entailed:/u.test(result.output),
+      result.output,
+    );
+  });
 });
 
 describe("dogfood: predicate definedness", () => {
   const hasSolver = solverAvailable();
 
-  it(
-    "intractable type-predicate read is not discharged",
-    { skip: !hasSolver ? "z3 not available" : undefined },
-    async () => {
-      const doc = await buildDocumentFromPath(
-        resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
-        "predicateCircleRadius",
-      );
-      const output = await emitAndCheck(doc);
-      const result = runCheck(output, {
-        projectRoot: PROJECT_ROOT,
-        pantBin: getPantBin(),
-      });
-      const entailments = result.checks.filter((c) =>
+  it("intractable type-predicate read is not discharged", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocumentFromPath(
+      resolve(FIXTURES, "expressions-predicate-narrowing.ts"),
+      "predicateCircleRadius",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+    const entailments = result.checks.filter(
+      (c) =>
         c.message.startsWith("OK: Entailed:") ||
         c.message.startsWith("FAIL: Not entailed:"),
-      );
-      assert.ok(
-        entailments.length >= 1,
-        `expected at least one entailment result, got ${entailments.length}`,
-      );
-      assert.equal(result.passed, false, result.output);
-      assert.ok(entailments.some((c) => !c.passed), result.output);
-    },
-  );
+    );
+    assert.ok(
+      entailments.length >= 1,
+      `expected at least one entailment result, got ${entailments.length}`,
+    );
+    assert.equal(result.passed, false, result.output);
+    assert.ok(
+      entailments.some((c) => !c.passed),
+      result.output,
+    );
+  });
 });

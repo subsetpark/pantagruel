@@ -1,8 +1,8 @@
 // @archlint.module test
 // @archlint.domain ts2pant.annotations
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import * as fc from "fast-check";
 import ts from "typescript";
 import {
@@ -29,15 +29,15 @@ function firstFunction(source: string): ts.FunctionDeclaration {
       fn = child;
     }
   });
-  if (!fn) throw new Error("No function declaration found in source");
+  if (!fn) {
+    throw new Error("No function declaration found in source");
+  }
   return fn;
 }
 
 /** Wrap a JSDoc body in `/** ... *\/` + a dummy function declaration. */
 function functionWithJsDoc(body: string): ts.FunctionDeclaration {
-  return firstFunction(
-    `/**\n${body}\n */\nfunction subject(): void {}\n`,
-  );
+  return firstFunction(`/**\n${body}\n */\nfunction subject(): void {}\n`);
 }
 
 describe("extractAnnotations", () => {
@@ -163,7 +163,7 @@ describe("extractAnnotations", () => {
     fc.assert(
       fc.property(
         fc.constantFrom("x", "value", "amount", "count"),
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
         fc.constantFrom("Nat", "Nat0", "Int", "Real"),
         (param, rule, pantType) => {
           const proposition = `${rule} ${param} = ${param}`;

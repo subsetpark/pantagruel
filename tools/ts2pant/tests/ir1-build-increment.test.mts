@@ -17,21 +17,13 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
-import {
-  buildL1IncrementStep,
-  isL1StmtUnsupported,
-} from "../src/ir1-build.js";
-import {
-  ir1Assign,
-  ir1Binop,
-  ir1LitNat,
-  ir1Var,
-} from "../src/ir1.js";
+import { ir1Assign, ir1Binop, ir1LitNat, ir1Var } from "../src/ir1.js";
+import { buildL1IncrementStep, isL1StmtUnsupported } from "../src/ir1-build.js";
 import { loadAst } from "../src/pant-wasm.js";
 import { freshHygienicBinder, type UniqueSupply } from "../src/supply.js";
 import { IntStrategy } from "../src/translate-types.js";
-import ts from "typescript";
 
 before(async () => {
   await loadAst();
@@ -178,7 +170,7 @@ describe("buildL1IncrementStep: rejection cases", () => {
     if (!isL1StmtUnsupported(result)) {
       assert.fail("expected unsupported, got an L1 statement");
     }
-    assert.match(result.unsupported, /not the counter/);
+    assert.match(result.unsupported, /not the counter/u);
   });
 
   it("rejects compound-assignment to a non-counter variable", () => {
@@ -203,7 +195,7 @@ describe("buildL1IncrementStep: rejection cases", () => {
     if (!isL1StmtUnsupported(result)) {
       assert.fail("expected unsupported, got an L1 statement");
     }
-    assert.match(result.unsupported, /not a binary expression/);
+    assert.match(result.unsupported, /not a binary expression/u);
   });
 
   it("rejects `i = k - i` (counter on right of non-commutative op)", () => {
@@ -212,7 +204,7 @@ describe("buildL1IncrementStep: rejection cases", () => {
     if (!isL1StmtUnsupported(result)) {
       assert.fail("expected unsupported, got an L1 statement");
     }
-    assert.match(result.unsupported, /non-commutative/);
+    assert.match(result.unsupported, /non-commutative/u);
   });
 
   it("rejects RHS without counter (`i = j + 1`)", () => {
@@ -221,7 +213,7 @@ describe("buildL1IncrementStep: rejection cases", () => {
     if (!isL1StmtUnsupported(result)) {
       assert.fail("expected unsupported, got an L1 statement");
     }
-    assert.match(result.unsupported, /reference counter/);
+    assert.match(result.unsupported, /reference counter/u);
   });
 
   it("rejects bare expression that's not an assignment or increment", () => {

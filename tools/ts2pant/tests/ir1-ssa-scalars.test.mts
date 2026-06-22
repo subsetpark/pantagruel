@@ -2,7 +2,6 @@
 // @archlint.domain ts2pant.ir1-ssa-scalars
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
@@ -13,9 +12,9 @@ import {
   ir1Binop,
   ir1Block,
   ir1CondStmt,
+  ir1Let,
   ir1LitBool,
   ir1LitNat,
-  ir1Let,
   ir1Member,
   ir1Var,
 } from "../src/ir1.js";
@@ -254,10 +253,7 @@ describe("ir1-ssa-scalars", () => {
     const balance = ir1Member(ir1Var("a"), "Account_balance");
     const stmt = ir1Block([
       ir1Let("x", ir1LitNat(0)),
-      ir1CondStmt(
-        [[ir1Var("g"), ir1Assign(ir1Var("x"), ir1LitNat(1))]],
-        null,
-      ),
+      ir1CondStmt([[ir1Var("g"), ir1Assign(ir1Var("x"), ir1LitNat(1))]], null),
       ir1Assign(balance, ir1Var("x")),
     ]);
 

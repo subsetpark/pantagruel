@@ -4,19 +4,19 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import * as fc from "fast-check";
-import type { OpaqueExpr } from "../src/pant-ast.js";
 import {
   createAssumptionEnv,
   discriminantFactsInScope,
   enterFrame,
   envDepth,
   exitFrame,
+  type Fact,
   nonNullFactInScope,
   pushFact,
   queryFact,
-  type Fact,
   typePredicateFactsInScope,
 } from "../src/assumption-env.js";
+import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
 const circleFact: Fact = {
@@ -150,8 +150,8 @@ describe("AssumptionEnv", () => {
   it("generated facts respect frame push/query/pop semantics", () => {
     fc.assert(
       fc.property(
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
         fc.boolean(),
         (receiver, literal, negated) => {
           const env = createAssumptionEnv();

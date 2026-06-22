@@ -16,17 +16,14 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import type { IR1Expr } from "../src/ir1.js";
 import {
   type L1BuildContext,
   tryBuildL1PureSubExpression,
 } from "../src/ir1-build.js";
-import type { IR1Expr } from "../src/ir1.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
-import {
-  makeSymbolicState,
-  translateBody,
-} from "../src/translate-body.js";
+import { makeSymbolicState, translateBody } from "../src/translate-body.js";
 import { translateSignature } from "../src/translate-signature.js";
 import {
   cellRegisterName,
@@ -50,7 +47,7 @@ function setupReturn(source: string, withState: boolean): ExprSetup {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn || !fn.body) {
+  if (!fn?.body) {
     throw new Error("setup: expected a function declaration with a body");
   }
   const synthCell = newSynthCell();
@@ -102,7 +99,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
         "set-read",
         `expected set-read, got ${built.kind}`,
       );
-      if (built.kind !== "set-read") return;
+      if (built.kind !== "set-read") {
+        return;
+      }
       assert.equal(built.ruleName, "tagged--tags");
       assert.equal(built.ownerType, "Tagged");
       assert.equal(built.elemType, "String");
@@ -122,7 +121,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
         "binop",
         `expected binop (bare path), got ${built.kind}`,
       );
-      if (built.kind !== "binop") return;
+      if (built.kind !== "binop") {
+        return;
+      }
       assert.equal(built.op, "in");
     });
 
@@ -153,7 +154,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
       );
       const built = expectIR(tryBuildL1PureSubExpression(expr, ctx));
       assert.equal(built.kind, "map-read");
-      if (built.kind !== "map-read") return;
+      if (built.kind !== "map-read") {
+        return;
+      }
       assert.equal(built.op, "has");
       assert.equal(built.ruleName, "cache--entries");
       assert.equal(built.keyPredName, "cache--entries-key");
@@ -171,7 +174,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
       );
       const built = expectIR(tryBuildL1PureSubExpression(expr, ctx));
       assert.equal(built.kind, "map-read");
-      if (built.kind !== "map-read") return;
+      if (built.kind !== "map-read") {
+        return;
+      }
       assert.equal(built.op, "get");
     });
 
@@ -184,7 +189,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
       );
       const built = expectIR(tryBuildL1PureSubExpression(expr, ctx));
       assert.equal(built.kind, "map-read");
-      if (built.kind !== "map-read") return;
+      if (built.kind !== "map-read") {
+        return;
+      }
       assert.equal(built.op, "get");
       // Synth names: `domain` is CamelCase (`StringToIntMap`); `rule`
       // is the kebab-cased term form (`string-to-int-map`); `keyPred`
@@ -203,7 +210,9 @@ describe("ir1-build state-aware Map/Set reads", () => {
       );
       const built = expectIR(tryBuildL1PureSubExpression(expr, ctx));
       assert.equal(built.kind, "map-read");
-      if (built.kind !== "map-read") return;
+      if (built.kind !== "map-read") {
+        return;
+      }
       assert.equal(built.op, "has");
       assert.equal(built.ruleName, "string-to-int-map");
       assert.equal(built.keyPredName, "string-to-int-map-key");
@@ -230,7 +239,10 @@ describe("ir1-build state-aware Map/Set reads", () => {
  * (which allocate domains and binders against the document-wide
  * `NameRegistry`) and for emit-time binder allocation.
  */
-function translateBodyWithSynth(source: string, functionName: string): PropResult[] {
+function translateBodyWithSynth(
+  source: string,
+  functionName: string,
+): PropResult[] {
   const sf = createSourceFileFromSource(source);
   const synthCell = newSynthCell();
   const { paramNameMap } = translateSignature(
@@ -275,7 +287,9 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
     // instead carried `cond x in (tagged--tags c) => true, ...`.
     const ast = getAst();
     const flagEq = props.find((p) => {
-      if (p.kind !== "equation") return false;
+      if (p.kind !== "equation") {
+        return false;
+      }
       const lhsStr = ast.strExpr(
         (p as { lhs: import("../src/pant-ast.js").OpaqueExpr }).lhs,
       );
@@ -334,7 +348,9 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
     // pre-state rule.
     const ast = getAst();
     const valueEq = props.find((p) => {
-      if (p.kind !== "equation") return false;
+      if (p.kind !== "equation") {
+        return false;
+      }
       const lhsStr = ast.strExpr(
         (p as { lhs: import("../src/pant-ast.js").OpaqueExpr }).lhs,
       );
@@ -342,10 +358,7 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
       // CamelCase to avoid coupling to current name format.
       return /(?:string-to-int-map|StringToIntMap)'/u.test(lhsStr);
     });
-    assert.ok(
-      valueEq,
-      "expected a primed Stage B Map value-rule equation",
-    );
+    assert.ok(valueEq, "expected a primed Stage B Map value-rule equation");
     if (valueEq && valueEq.kind === "equation") {
       const rhsStr = ast.strExpr(
         (valueEq as { rhs: import("../src/pant-ast.js").OpaqueExpr }).rhs,

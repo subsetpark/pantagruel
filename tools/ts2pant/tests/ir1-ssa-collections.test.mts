@@ -2,8 +2,8 @@
 // @archlint.domain ts2pant.ir1-ssa-collections
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import {
   type IR1SsaProgram,
   ir1Assign,
@@ -66,7 +66,15 @@ describe("ir1-ssa-collections", () => {
           receiver: ir1Var("cache"),
           key: ir1Var("key"),
         };
-        const stmt = ir1MapSet(ruleName, "Cache_hasKey", "Owner", "Key", ir1Var("cache"), ir1Var("key"), ir1LitNat(1));
+        const stmt = ir1MapSet(
+          ruleName,
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+          ir1LitNat(1),
+        );
         assert.equal(isCollectionSsaL1Body(stmt), true);
         assert.ok(!("unsupported" in buildCollectionSsaProgram(stmt)));
         assert.equal(lowerCollectionSsaToProps(stmt).diagnostics.length, 0);
@@ -91,7 +99,18 @@ describe("ir1-ssa-collections", () => {
           ).location.kind,
           "set-membership",
         );
-        collectionSsaReadExpr(ir1MapRead("has", ruleName, "Cache_hasKey", "Owner", "Key", ir1Var("cache"), ir1Var("key")), state);
+        collectionSsaReadExpr(
+          ir1MapRead(
+            "has",
+            ruleName,
+            "Cache_hasKey",
+            "Owner",
+            "Key",
+            ir1Var("cache"),
+            ir1Var("key"),
+          ),
+          state,
+        );
         lowerCollectionSsaL1Body(stmt, state);
         assert.equal(collectionSsaFinalEntries(state).length > 0, true);
       }),

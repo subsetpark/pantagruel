@@ -25,11 +25,11 @@ import {
   ir1CombTyped,
   ir1Cond,
   ir1CondStmt,
-  ir1ExprStmt,
   ir1Exists,
+  ir1ExprStmt,
   ir1For,
-  ir1Foreach,
   ir1Forall,
+  ir1Foreach,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -84,7 +84,7 @@ describe("lowerL1Expr — atoms", () => {
   it("generated variables and literals lower structurally", () => {
     fc.assert(
       fc.property(
-        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u),
         fc.integer({ min: 0, max: 1000 }),
         (name, value) => {
           assert.deepEqual(lowerL1Expr(ir1Var(name)), irVar(name, false));
@@ -143,10 +143,9 @@ describe("lowerL1Expr — applications", () => {
 
   it("non-var-headed app lowers via L2 expr-headed application", () => {
     // (cond ? f : g)(x) — pathological but syntactically valid
-    const l1 = ir1App(
-      ir1Cond([[ir1Var("c"), ir1Var("f")]], ir1Var("g")),
-      [ir1Var("x")],
-    );
+    const l1 = ir1App(ir1Cond([[ir1Var("c"), ir1Var("f")]], ir1Var("g")), [
+      ir1Var("x"),
+    ]);
     const l2 = lowerL1Expr(l1);
     // Just check the shape: head is expression-kind, args has one var.
     assert.equal(l2.kind, "app");
@@ -188,11 +187,14 @@ describe("lowerL1Expr — cond (byte-equality with legacy ast.cond)", () => {
     const l2 = lowerL1Expr(l1);
     assert.deepEqual(
       l2,
-      irCond([
-        [irVar("g1", false), irVar("v1", false)],
-        [irVar("g2", false), irVar("v2", false)],
-        [irVar("g3", false), irVar("v3", false)],
-      ], irVar("d", false)),
+      irCond(
+        [
+          [irVar("g1", false), irVar("v1", false)],
+          [irVar("g2", false), irVar("v2", false)],
+          [irVar("g3", false), irVar("v3", false)],
+        ],
+        irVar("d", false),
+      ),
     );
   });
 
@@ -365,10 +367,7 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 
   it("ir1Assign target may be a Member expression", () => {
-    const stmt = ir1Assign(
-      ir1Member(ir1Var("a"), "balance"),
-      ir1LitNat(0),
-    );
+    const stmt = ir1Assign(ir1Member(ir1Var("a"), "balance"), ir1LitNat(0));
     assert.equal(stmt.kind, "assign");
     if (stmt.kind === "assign") {
       assert.equal(stmt.target.kind, "member");
@@ -376,10 +375,7 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 
   it("ir1While builds a `while` statement with body", () => {
-    const stmt = ir1While(
-      ir1Var("p"),
-      ir1Assign(ir1Var("i"), ir1LitNat(0)),
-    );
+    const stmt = ir1While(ir1Var("p"), ir1Assign(ir1Var("i"), ir1LitNat(0)));
     assert.equal(stmt.kind, "while");
     if (stmt.kind === "while") {
       assert.deepEqual(stmt.cond, ir1Var("p"));
@@ -395,10 +391,7 @@ describe("M3 statement constructors are active", () => {
   // SSA directly into `PropResult[]`; the L2 path is expression-only.
 
   it("ir1CondStmt builds a cond-stmt", () => {
-    const stmt = ir1CondStmt(
-      [[ir1Var("g"), ir1Return(ir1Var("v"))]],
-      null,
-    );
+    const stmt = ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null);
     assert.equal(stmt.kind, "cond-stmt");
   });
 
@@ -436,10 +429,7 @@ describe("M3 statement constructors are active", () => {
 
 describe("active statement constructors (block, let, return)", () => {
   it("ir1Block constructs a block of two statements", () => {
-    const block = ir1Block([
-      ir1Let("x", ir1LitNat(1)),
-      ir1Return(ir1Var("x")),
-    ]);
+    const block = ir1Block([ir1Let("x", ir1LitNat(1)), ir1Return(ir1Var("x"))]);
     assert.equal(block.kind, "block");
   });
 
@@ -509,7 +499,7 @@ describe("lowerL1BodyToSsaProps — branch-local foreach equations", () => {
       result.diagnostics.some(
         (p) =>
           p.kind === "unsupported" &&
-          /not supported by unified SSA body lowering/.test(p.reason),
+          /not supported by unified SSA body lowering/u.test(p.reason),
       ),
     );
   });
@@ -543,7 +533,7 @@ describe("lowerL1BodyToSsaProps — branch-local foreach equations", () => {
       result.diagnostics.some(
         (p) =>
           p.kind === "unsupported" &&
-          /escape the outer iterator scope/.test(p.reason),
+          /escape the outer iterator scope/u.test(p.reason),
       ),
     );
   });
@@ -603,6 +593,6 @@ describe("L2 comb-typed form (typed comprehension)", () => {
     const l2 = irCombTyped("max", "k", "Nat", [], irVar("k"));
     const lowered = lowerExpr(l2);
     // No guards beyond the typed binder.
-    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/);
+    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/u);
   });
 });

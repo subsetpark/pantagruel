@@ -1,11 +1,11 @@
 // @archlint.module test
 // @archlint.domain ts2pant.name-registry
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { describe, it } from "node:test";
+import * as fc from "fast-check";
 import {
   emptyNameRegistry,
   isUsed,
@@ -28,9 +28,9 @@ function lexerReservedKeywords(): string[] {
   );
   const src = readFileSync(lexerPath, "utf8");
   const keywords = Array.from(
-    src.matchAll(/\|\s*"([^"]+)"\s*->\s*Parser\.[A-Z_]+/g),
+    src.matchAll(/\|\s*"([^"]+)"\s*->\s*Parser\.[A-Z_]+/gu),
     (m) => m[1],
-  ).filter((s) => /^[a-z]+$/.test(s));
+  ).filter((s) => /^[a-z]+$/u.test(s));
   return keywords;
 }
 
@@ -90,8 +90,8 @@ describe("name-registry", () => {
   it("registerName always returns a registered fresh name", () => {
     fc.assert(
       fc.property(
-        fc.array(fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/), { maxLength: 20 }),
-        fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/),
+        fc.array(fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/u), { maxLength: 20 }),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,8}$/u),
         (existing, candidate) => {
           let registry = emptyNameRegistry();
           for (const name of existing) {

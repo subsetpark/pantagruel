@@ -22,12 +22,12 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import type { IR1Expr } from "../src/ir1.js";
 import {
   type L1BuildContext,
   tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
 } from "../src/ir1-build.js";
-import type { IR1Expr } from "../src/ir1.js";
 import { loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
 import {
@@ -55,7 +55,7 @@ function setup(source: string): AccessSetup {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn || !fn.body) {
+  if (!fn?.body) {
     throw new Error("setup: expected function declaration with a body");
   }
   const synthCell = newSynthCell();
@@ -93,7 +93,9 @@ function setup(source: string): AccessSetup {
 
 function expectCardUnop(result: IR1Expr | null): void {
   assert.notEqual(result, null, "expected Unop(card, _), got null");
-  if (result === null) return;
+  if (result === null) {
+    return;
+  }
   assert.equal(result.kind, "unop");
   if (result.kind === "unop") {
     assert.equal(result.op, "card");

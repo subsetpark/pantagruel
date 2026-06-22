@@ -2,18 +2,18 @@
 // @archlint.domain ts2pant.opaque
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import { ir1Binop, ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
-import {
-  OPAQUE_DOMAIN,
-  contagiousOpaque,
-  isOpaqueExpr,
-  opaqueValueRuleName,
-} from "../src/opaque.js";
+import * as fc from "fast-check";
 import { emitDocument } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
+import { ir1Binop, ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
+import {
+  contagiousOpaque,
+  isOpaqueExpr,
+  OPAQUE_DOMAIN,
+  opaqueValueRuleName,
+} from "../src/opaque.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const OPAQUE_FIXTURE_DIR = resolve(import.meta.dirname, "fixtures/opaque");
@@ -22,7 +22,7 @@ const CONSTRUCTS_FIXTURE_DIR = resolve(
   "fixtures/constructs",
 );
 
-describe("opaque opt-in policy", () => {
+describe("opaque lowering", () => {
   const origin = { file: "tests/opaque-opt-in.ts", line: 1 };
 
   it("isOpaqueExpr identifies the OpaqueValue L1 form", () => {
@@ -36,7 +36,10 @@ describe("opaque opt-in policy", () => {
     const opaque = ir1Opaque(OPAQUE_DOMAIN, origin);
     const resultOrigin = { file: "tests/opaque-opt-in.ts", line: 2 };
 
-    assert.equal(contagiousOpaque([ir1LitNat(1), concrete], resultOrigin), null);
+    assert.equal(
+      contagiousOpaque([ir1LitNat(1), concrete], resultOrigin),
+      null,
+    );
     assert.deepEqual(contagiousOpaque([ir1LitNat(1), opaque], resultOrigin), {
       kind: "opaque",
       sort: OPAQUE_DOMAIN,
@@ -61,7 +64,10 @@ describe("opaque opt-in policy", () => {
         const resultOrigin = { file: "tests/opaque-opt-in.ts", line: 3 };
         const operands = opaqueFlags.map((flag, index) =>
           flag
-            ? ir1Opaque(OPAQUE_DOMAIN, { file: "tests/opaque-opt-in.ts", line: index })
+            ? ir1Opaque(OPAQUE_DOMAIN, {
+                file: "tests/opaque-opt-in.ts",
+                line: index,
+              })
             : ir1LitNat(index),
         );
 
@@ -81,7 +87,7 @@ describe("opaque opt-in policy", () => {
     );
   });
 
-  it("signature composite opacity is precision-preserving under policy opaque (@pant checks)", async (t) => {
+  it("signature composite opacity is precision-preserving (@pant checks)", async (t) => {
     const sourceFile = createSourceFile(
       resolve(OPAQUE_FIXTURE_DIR, "signatures.ts"),
     );
@@ -99,7 +105,6 @@ describe("opaque opt-in policy", () => {
     for (const target of targets) {
       const doc = await buildDocumentFromSourceFile(sourceFile, target, {
         noBody: true,
-        policy: "opaque",
       });
       const output = await emitAndCheck(doc);
       t.assert.snapshot(output);
@@ -121,17 +126,15 @@ describe("opaque opt-in policy", () => {
     ];
 
     for (const target of targets) {
-      const doc = await buildDocumentFromSourceFile(sourceFile, target, {
-        policy: "opaque",
-      });
+      const doc = await buildDocumentFromSourceFile(sourceFile, target);
       const output = await emitAndCheck(doc);
       t.assert.snapshot(output);
     }
   });
 
-  it("integer mutating-loop bodies build under policy opaque (regression: no synthetic-node crash)", async () => {
+  it("integer mutating-loop bodies build without synthetic-node crashes", async () => {
     // Compound-assignment (`+=`) and `++`/`--` desugaring synthesizes
-    // binary-expression nodes with no source file. Under policy "opaque" the
+    // binary-expression nodes with no source file. The
     // contagion path used to compute an origin for these unconditionally and
     // crash in `sourceRefForNode`. These fixtures contain no `any`/`unknown`,
     // so opacity never triggers — they must simply translate without throwing.
@@ -147,7 +150,7 @@ describe("opaque opt-in policy", () => {
         resolve(CONSTRUCTS_FIXTURE_DIR, file),
       );
       await assert.doesNotReject(
-        buildDocumentFromSourceFile(sourceFile, target, { policy: "opaque" }),
+        buildDocumentFromSourceFile(sourceFile, target),
       );
     }
   });
@@ -155,7 +158,7 @@ describe("opaque opt-in policy", () => {
   it("opaque operand inside a synthetic loop binop builds without crashing (regression)", async () => {
     // `a.total += extra` (extra: any) is lowered by the generic bare-while
     // mutation path, which synthesizes an `a.total + extra` binop with no
-    // source file. Under policy "opaque", `extra` is an OpaqueValue, so the
+    // source file. `extra` is an OpaqueValue, so the
     // synthetic node reaches `sourceRefForNode` with an opaque operand — the
     // case that used to dereference an undefined source file. The build must
     // not crash, and opacity must propagate (an Opaque domain is emitted).
@@ -165,7 +168,6 @@ describe("opaque opt-in policy", () => {
     const doc = await buildDocumentFromSourceFile(
       sourceFile,
       "addDynamicWhile",
-      { policy: "opaque" },
     );
     const output = emitDocument(doc);
 

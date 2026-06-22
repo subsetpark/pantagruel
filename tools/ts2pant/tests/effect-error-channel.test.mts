@@ -2,10 +2,10 @@
 // @archlint.domain ts2pant.effect-error-channel
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
 import {
   type EffectErrorMode,

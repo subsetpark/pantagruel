@@ -2,16 +2,16 @@
 // @archlint.domain ts2pant.narrowing-recognizer
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
 import type { Fact } from "../src/assumption-env.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   negateFact,
-  recognizeNullishNarrowing,
   recognizeNarrowingFromSwitchCase,
   recognizeNarrowingPredicate,
+  recognizeNullishNarrowing,
   recognizeTypePredicateNarrowing,
 } from "../src/narrowing-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";

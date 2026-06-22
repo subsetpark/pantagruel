@@ -3,7 +3,6 @@
 
 import ts from "typescript";
 import { type NameRegistry, registerName } from "./name-registry.js";
-import type { OpaquePolicy } from "./opaque.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { UniqueSupply } from "./supply.js";
@@ -25,7 +24,6 @@ import {
   resolveRecordOwner,
   type SynthCell,
   UNSUPPORTED_ANONYMOUS_RECORD,
-  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PropResult } from "./types.js";
 
@@ -59,7 +57,6 @@ export function translateRecordReturn(
   supply: UniqueSupply,
   synthCell: SynthCell | undefined,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
-  policy?: OpaquePolicy,
 ): PropResult[] {
   const ast = getAst();
 
@@ -142,13 +139,8 @@ export function translateRecordReturn(
     // actually succeeded for this shape. If a field type is unmangleable
     // the synth returns the failure sentinel rather than a domain name,
     // and the body emission below would otherwise reference accessor
-    // rules that were never declared. The `unknown` sentinel
-    // propagates separately (a field typed `unknown` short-circuits
-    // record synthesis with `UNSUPPORTED_UNKNOWN`); surface its
-    // user-facing reason explicitly.
-    const mapped = mapTsType(returnType, checker, strategy, synthCell, {
-      policy,
-    });
+    // rules that were never declared.
+    const mapped = mapTsType(returnType, checker, strategy, synthCell);
     if (!mapped.ok) {
       if (mapped.reason === UNSUPPORTED_ANONYMOUS_RECORD) {
         return [
@@ -288,7 +280,6 @@ export function translateRecordReturn(
     synthCell,
     applyConst,
     allocEmittedBinder,
-    policy,
   );
 }
 
@@ -315,7 +306,6 @@ function emitRecordEquations(
   synthCell: SynthCell | undefined,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
   allocEmittedBinder: (hint: string) => string,
-  policy?: OpaquePolicy,
 ): PropResult[] {
   // Stage A (named interface receiver): Map fields encode as a pair of
   // binary rules — `<field>Key(receiver, k)` membership predicate plus a
@@ -425,13 +415,12 @@ function emitRecordEquations(
         checker,
         strategy,
         synthCell,
-        policy,
       );
       if (!elemType) {
         return [
           {
             kind: "unsupported",
-            reason: `${functionName}.${field.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+            reason: `${functionName}.${field.name}: set element type could not be mapped`,
           },
         ];
       }
@@ -471,20 +460,18 @@ function emitRecordEquations(
         checker,
         strategy,
         synthCell,
-        policy,
       );
       const vType = getMapValueTypeName(
         field.type,
         checker,
         strategy,
         synthCell,
-        policy,
       );
       if (!keyType || !vType) {
         return [
           {
             kind: "unsupported",
-            reason: `${functionName}.${field.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+            reason: `${functionName}.${field.name}: map key/value type could not be mapped`,
           },
         ];
       }
@@ -564,7 +551,6 @@ function emitRecordEquations(
         synthCell,
         applyConst,
         allocEmittedBinder,
-        policy,
       );
       const subUnsupported = subResults.find((p) => p.kind === "unsupported");
       if (subUnsupported) {
@@ -582,7 +568,6 @@ function emitRecordEquations(
       undefined,
       supply,
       undefined,
-      policy,
     );
     if (isBodyUnsupported(body)) {
       return [
@@ -633,14 +618,11 @@ function getSetElementTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
-  policy?: OpaquePolicy,
 ): string | null {
   if (isSetType(fieldType) || checker.isArrayType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
-        policy,
-      });
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       return mapped.ok ? mapped.sort : null;
     }
   }
@@ -667,14 +649,11 @@ function getMapKeyTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
-  policy?: OpaquePolicy,
 ): string | null {
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell, {
-        policy,
-      });
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       return mapped.ok ? mapped.sort : null;
     }
   }
@@ -689,14 +668,11 @@ function getMapValueTypeName(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell | undefined,
-  policy?: OpaquePolicy,
 ): string | null {
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell, {
-        policy,
-      });
+      const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
       return mapped.ok ? mapped.sort : null;
     }
   }

@@ -37,7 +37,6 @@ import {
   cellIsUsed,
   cellRegisterName,
   isMapType,
-  type MapTsTypeOptions,
   mapTsType,
   mapTsTypeFromTypeNode,
   type NumericStrategy,
@@ -84,10 +83,6 @@ export interface TranslatedSignature {
    * Maps in the same table. Present only when a `synthCell` was supplied.
    */
   synthCell?: SynthCell | undefined;
-}
-
-export interface TranslateSignatureOptions {
-  readonly typeMapping?: MapTsTypeOptions;
 }
 
 /**
@@ -1574,7 +1569,6 @@ export function translateSignature(
   strategy: NumericStrategy,
   synthCell?: SynthCell,
   overrides?: Map<string, string>,
-  opts?: TranslateSignatureOptions,
 ): TranslatedSignature {
   const project = sourceFile.getProject();
   const checker = project.getTypeChecker().compilerObject;
@@ -1613,15 +1607,8 @@ export function translateSignature(
             checker,
             strategy,
             synthCell,
-            opts?.typeMapping,
           )
-        : mapTsType(
-            symbolType,
-            checker,
-            strategy,
-            synthCell,
-            opts?.typeMapping,
-          );
+        : mapTsType(symbolType, checker, strategy, synthCell);
     const override = overrides?.get(param.name);
     let paramType: string;
     if (override !== undefined) {
@@ -1696,15 +1683,8 @@ export function translateSignature(
             checker,
             strategy,
             synthCell,
-            opts?.typeMapping,
           )
-        : mapTsType(
-            tsReturnType,
-            checker,
-            strategy,
-            synthCell,
-            opts?.typeMapping,
-          );
+        : mapTsType(tsReturnType, checker, strategy, synthCell);
     if (!returnType.ok) {
       return {
         declaration: {

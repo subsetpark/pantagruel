@@ -1,9 +1,9 @@
 // @archlint.module test
 // @archlint.domain ts2pant.purity
 
+import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
-import assert from "node:assert/strict";
 import * as fc from "fast-check";
 import ts from "typescript";
 import {
@@ -98,7 +98,9 @@ function findCallExpression(
 ): ts.CallExpression | undefined {
   let result: ts.CallExpression | undefined;
   function visit(node: ts.Node) {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (ts.isCallExpression(node)) {
       result = node;
       return;
@@ -128,7 +130,9 @@ function findReturnExpression(
 ): ts.Expression | undefined {
   let result: ts.Expression | undefined;
   function visit(node: ts.Node) {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (ts.isReturnStatement(node) && node.expression) {
       result = node.expression;
       return;
@@ -145,7 +149,9 @@ function findFunctionDeclaration(
 ): ts.FunctionDeclaration {
   let result: ts.FunctionDeclaration | undefined;
   function visit(node: ts.Node) {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
       result = node;
       return;
@@ -166,7 +172,9 @@ function findCallInNamedFunction(
   const fn = findFunctionDeclaration(sourceFile, name);
   let result: ts.CallExpression | undefined;
   function visit(node: ts.Node) {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (ts.isCallExpression(node)) {
       result = node;
       return;
@@ -631,7 +639,9 @@ function findCallInFunction(
 ): ts.CallExpression | undefined {
   let result: ts.CallExpression | undefined;
   function visit(node: ts.Node) {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (
       ts.isFunctionDeclaration(node) &&
       node.name?.text === funcName &&
@@ -639,7 +649,9 @@ function findCallInFunction(
     ) {
       // Find first call in this function's body
       function findCall(n: ts.Node) {
-        if (result) return;
+        if (result) {
+          return;
+        }
         if (ts.isCallExpression(n)) {
           result = n;
           return;

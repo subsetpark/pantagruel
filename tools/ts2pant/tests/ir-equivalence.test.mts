@@ -95,7 +95,10 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
   },
 ];
 
-async function emitAlwaysOn(filePath: string, funcName: string): Promise<string> {
+async function emitAlwaysOn(
+  filePath: string,
+  funcName: string,
+): Promise<string> {
   const sf = createSourceFile(filePath);
   const doc = await buildDocumentFromSourceFile(sf, funcName);
   return emitDocument(doc);

@@ -1,22 +1,19 @@
 // @archlint.module test
 // @archlint.domain ts2pant.builtins
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { Project } from "ts-morph";
 import ts from "typescript";
 import {
-  deriveBuiltinSpec,
   type DepModuleName,
+  deriveBuiltinSpec,
   loadBuiltinDepModule,
   lookupBuiltinByCall,
 } from "../src/builtins.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
-import {
-  buildDocumentFromSourceFile,
-  emitAndCheck,
-} from "./helpers.mjs";
+import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 function findCallExpression(
   sourceFile: ts.SourceFile,
@@ -24,7 +21,9 @@ function findCallExpression(
 ): ts.CallExpression | undefined {
   let result: ts.CallExpression | undefined;
   function visit(node: ts.Node): void {
-    if (result) return;
+    if (result) {
+      return;
+    }
     if (ts.isCallExpression(node) && (!predicate || predicate(node))) {
       result = node;
       return;
@@ -43,7 +42,9 @@ function lookupFromSource(
   const checker = getChecker(sf);
   const program = sf.getProject().getProgram().compilerObject;
   const call = findCallExpression(sf.compilerNode, predicate);
-  if (!call) throw new Error("No CallExpression found in source");
+  if (!call) {
+    throw new Error("No CallExpression found in source");
+  }
   return lookupBuiltinByCall(call, checker, program);
 }
 
@@ -502,7 +503,9 @@ describe("builtins dispatch", () => {
     const checker = project.getTypeChecker().compilerObject;
     const program = project.getProgram().compilerObject;
     const call = findCallExpression(sf.compilerNode);
-    if (!call) throw new Error("expected a call");
+    if (!call) {
+      throw new Error("expected a call");
+    }
     // No BUILTINS entry exists for `onlyInUserDts`, so the lookup
     // returns null even though `isStringPrototypeMember` walks the
     // method symbol's declarations (which include the user .d.ts
@@ -519,46 +522,46 @@ describe("builtins dispatch", () => {
 describe("loadBuiltinDepModule", () => {
   it("loadBuiltinDepModule('JS_MATH') returns the on-disk text", () => {
     const text = loadBuiltinDepModule("JS_MATH");
-    assert.match(text, /^module JS_MATH\./m);
-    assert.match(text, /max-of a: Int, b: Int => Int\./);
-    assert.match(text, /min-of a: Int, b: Int => Int\./);
-    assert.match(text, /abs x: Int => Int\./);
+    assert.match(text, /^module JS_MATH\./mu);
+    assert.match(text, /max-of a: Int, b: Int => Int\./u);
+    assert.match(text, /min-of a: Int, b: Int => Int\./u);
+    assert.match(text, /abs x: Int => Int\./u);
   });
 
   it("loadBuiltinDepModule('JS_STRING') returns the on-disk text", () => {
     const text = loadBuiltinDepModule("JS_STRING");
-    assert.match(text, /^module JS_STRING\./m);
-    assert.match(text, /to-upper-case s: String => String\./);
-    assert.match(text, /index-of s: String, t: String => Int\./);
-    assert.match(text, /to-lower-case s: String => String\./);
-    assert.match(text, /trim s: String => String\./);
-    assert.match(text, /includes s: String, t: String => Bool\./);
-    assert.match(text, /starts-with s: String, prefix: String => Bool\./);
-    assert.match(text, /ends-with s: String, suffix: String => Bool\./);
-    assert.match(text, /last-index-of s: String, t: String => Int\./);
+    assert.match(text, /^module JS_STRING\./mu);
+    assert.match(text, /to-upper-case s: String => String\./u);
+    assert.match(text, /index-of s: String, t: String => Int\./u);
+    assert.match(text, /to-lower-case s: String => String\./u);
+    assert.match(text, /trim s: String => String\./u);
+    assert.match(text, /includes s: String, t: String => Bool\./u);
+    assert.match(text, /starts-with s: String, prefix: String => Bool\./u);
+    assert.match(text, /ends-with s: String, suffix: String => Bool\./u);
+    assert.match(text, /last-index-of s: String, t: String => Int\./u);
     assert.match(
       text,
-      /replace s: String, from: String, to: String => String\./,
+      /replace s: String, from: String, to: String => String\./u,
     );
   });
 
   it("loadBuiltinDepModule('JS_ARRAY') returns the on-disk text", () => {
     const text = loadBuiltinDepModule("JS_ARRAY");
-    assert.match(text, /^module JS_ARRAY\./m);
-    assert.match(text, /from xs: \[Int\] => \[Int\]\./);
+    assert.match(text, /^module JS_ARRAY\./mu);
+    assert.match(text, /from xs: \[Int\] => \[Int\]\./u);
     assert.match(
       text,
-      /from-entries xs: \[String \* Int\] => \[String \* Int\]\./,
+      /from-entries xs: \[String \* Int\] => \[String \* Int\]\./u,
     );
   });
 
   it("loadBuiltinDepModule('JS_MAP') returns the on-disk text", () => {
     const text = loadBuiltinDepModule("JS_MAP");
-    assert.match(text, /^module JS_MAP\./m);
-    assert.match(text, /StringToIntMap\./);
-    assert.match(text, /values m: StringToIntMap => \[Int\]\./);
-    assert.match(text, /entries m: StringToIntMap => \[String \* Int\]\./);
-    assert.match(text, /keys m: StringToIntMap => \[String\]\./);
+    assert.match(text, /^module JS_MAP\./mu);
+    assert.match(text, /StringToIntMap\./u);
+    assert.match(text, /values m: StringToIntMap => \[Int\]\./u);
+    assert.match(text, /entries m: StringToIntMap => \[String \* Int\]\./u);
+    assert.match(text, /keys m: StringToIntMap => \[String\]\./u);
   });
 
   it("caches the loaded module text across calls", () => {
@@ -574,8 +577,8 @@ describe("builtins dispatch emission", () => {
       "export function f(a: number, b: number) { return Math.max(a, b); }",
       "f",
     );
-    assert.match(output, /^import JS_MATH\.$/m);
-    assert.match(output, /JS_MATH::max-of/);
+    assert.match(output, /^import JS_MATH\.$/mu);
+    assert.match(output, /JS_MATH::max-of/u);
   });
 
   it("s.toUpperCase emits JS_STRING::to-upper-case and imports JS_STRING", async () => {
@@ -583,8 +586,8 @@ describe("builtins dispatch emission", () => {
       "export function f(s: string) { return s.toUpperCase(); }",
       "f",
     );
-    assert.match(output, /^import JS_STRING\.$/m);
-    assert.match(output, /JS_STRING::to-upper-case/);
+    assert.match(output, /^import JS_STRING\.$/mu);
+    assert.match(output, /JS_STRING::to-upper-case/u);
   });
 
   it("Array.from emits JS_ARRAY::from and imports JS_ARRAY", async () => {
@@ -592,8 +595,8 @@ describe("builtins dispatch emission", () => {
       "export function f(xs: number[]) { return Array.from(xs); }",
       "f",
     );
-    assert.match(output, /^import JS_ARRAY\.$/m);
-    assert.match(output, /JS_ARRAY::from/);
+    assert.match(output, /^import JS_ARRAY\.$/mu);
+    assert.match(output, /JS_ARRAY::from/u);
   });
 
   it("m.values emits JS_MAP::values and imports JS_MAP", async () => {
@@ -601,8 +604,8 @@ describe("builtins dispatch emission", () => {
       "export function f(m: Map<string, number>) { return m.values(); }",
       "f",
     );
-    assert.match(output, /^import JS_MAP\.$/m);
-    assert.match(output, /JS_MAP::values/);
+    assert.match(output, /^import JS_MAP\.$/mu);
+    assert.match(output, /JS_MAP::values/u);
   });
 
   it("string-arg replace emits JS_STRING::replace", async () => {
@@ -610,8 +613,8 @@ describe("builtins dispatch emission", () => {
       'export function f(s: string) { return s.replace("a", "b"); }',
       "f",
     );
-    assert.match(output, /^import JS_STRING\.$/m);
-    assert.match(output, /JS_STRING::replace/);
+    assert.match(output, /^import JS_STRING\.$/mu);
+    assert.match(output, /JS_STRING::replace/u);
   });
 });
 

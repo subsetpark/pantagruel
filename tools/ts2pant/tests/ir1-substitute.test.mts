@@ -19,8 +19,8 @@ import {
   ir1Exists,
   ir1ExprStmt,
   ir1For,
-  ir1Foreach,
   ir1Forall,
+  ir1Foreach,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -92,7 +92,11 @@ describe("ir1-substitute", () => {
     });
 
     it("freeVarsIR1Expr scopes exists binder", () => {
-      const expr = ir1Exists("x", "Int", ir1Binop("eq", ir1Var("x"), ir1Var("z")));
+      const expr = ir1Exists(
+        "x",
+        "Int",
+        ir1Binop("eq", ir1Var("x"), ir1Var("z")),
+      );
       assertSetEqual(freeVarsIR1Expr(expr), ["z"]);
     });
 
@@ -358,7 +362,10 @@ describe("ir1-substitute", () => {
     });
 
     it("walker arms exhaustive over new IR1SsaLocation kind", () => {
-      assertSetEqual(freeVarsIR1SsaLocation(ir1SsaReturnValueLocation("f")), []);
+      assertSetEqual(
+        freeVarsIR1SsaLocation(ir1SsaReturnValueLocation("f")),
+        [],
+      );
     });
   });
 
@@ -446,7 +453,9 @@ describe("ir1-substitute", () => {
       fc.assert(
         fc.property(nameArb, arbIR1Expr(), nameArb, (rule, receiver, prop) => {
           assertSetEqual(
-            freeVarsIR1SsaLocation(ir1SsaPropertyLocation(rule, receiver, prop)),
+            freeVarsIR1SsaLocation(
+              ir1SsaPropertyLocation(rule, receiver, prop),
+            ),
             [...freeVarsIR1Expr(receiver)],
           );
         }),

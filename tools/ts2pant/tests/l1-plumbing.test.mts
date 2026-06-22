@@ -64,10 +64,7 @@ describe("L1: switch (clean) translates", () => {
     `;
     const { unsupported, pant } = translate(source, "classify");
     assert.equal(unsupported, null);
-    assert.equal(
-      pant,
-      "cond x = 0 => 100, x = 1 => 200, true => 300",
-    );
+    assert.equal(pant, "cond x = 0 => 100, x = 1 => 200, true => 300");
   });
 
   it("switch with string cases", () => {
@@ -107,10 +104,7 @@ describe("L1: flat-cond canonicalization", () => {
     `;
     const { unsupported, pant } = translate(source, "bucket");
     assert.equal(unsupported, null);
-    assert.equal(
-      pant,
-      "cond n < 0 => 0, n < 10 => 1, n < 100 => 2, true => 3",
-    );
+    assert.equal(pant, "cond n < 0 => 0, n < 10 => 1, n < 100 => 2, true => 3");
   });
 
   it("if/else-if/else chain flattens to one cond", () => {
@@ -127,10 +121,7 @@ describe("L1: flat-cond canonicalization", () => {
     `;
     const { unsupported, pant } = translate(source, "classify");
     assert.equal(unsupported, null);
-    assert.equal(
-      pant,
-      "cond n < 0 => -1, n = 0 => 0, true => 1",
-    );
+    assert.equal(pant, "cond n < 0 => -1, n = 0 => 0, true => 1");
   });
 
   it("early-return arm + ternary terminal merges into one flat cond", () => {
@@ -144,10 +135,7 @@ describe("L1: flat-cond canonicalization", () => {
     `;
     const { unsupported, pant } = translate(source, "nested");
     assert.equal(unsupported, null);
-    assert.equal(
-      pant,
-      "cond n < 0 => -1, n = 0 => 0, true => 1",
-    );
+    assert.equal(pant, "cond n < 0 => -1, n = 0 => 0, true => 1");
   });
 });
 
@@ -167,7 +155,7 @@ describe("L1: conservative-refusal rejection cases", () => {
     `;
     const { unsupported } = translate(source, "badOrder");
     assert.notEqual(unsupported, null);
-    assert.match(unsupported!, /default must be the last/);
+    assert.match(unsupported!, /default must be the last/u);
   });
 
   it("switch fall-through (case body not ending in return) rejects", () => {
@@ -182,7 +170,7 @@ describe("L1: conservative-refusal rejection cases", () => {
     `;
     const { unsupported } = translate(source, "fallthrough");
     assert.notEqual(unsupported, null);
-    assert.match(unsupported!, /case must end with `return EXPR`/);
+    assert.match(unsupported!, /case must end with `return EXPR`/u);
   });
 
   it("switch break-only case rejects", () => {
@@ -209,7 +197,7 @@ describe("L1: conservative-refusal rejection cases", () => {
     `;
     const { unsupported } = translate(source, "nonLiteral");
     assert.notEqual(unsupported, null);
-    assert.match(unsupported!, /literal/);
+    assert.match(unsupported!, /literal/u);
   });
 
   it("non-Bool && rejects instead of lowering truthy/falsy semantics", () => {

@@ -183,7 +183,7 @@ describe("formatIR1Expr", () => {
 
   it("generated vars format consistently across expression, location, and program", () => {
     fc.assert(
-      fc.property(fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/), (name) => {
+      fc.property(fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/u), (name) => {
         const expr = ir1Var(name);
         const location = ir1SsaPropertyLocation("value", expr, "value");
         const version = ir1SsaInitialVersion(location);

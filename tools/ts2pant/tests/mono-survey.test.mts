@@ -5,15 +5,9 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 
-import {
-  M6_THRESHOLD,
-  surveyMonomorphization,
-} from "../src/mono-survey.js";
+import { M6_THRESHOLD, surveyMonomorphization } from "../src/mono-survey.js";
 
-const CASES = resolve(
-  import.meta.dirname,
-  "fixtures/mono-survey/cases.ts",
-);
+const CASES = resolve(import.meta.dirname, "fixtures/mono-survey/cases.ts");
 
 describe("monomorphization survey classifier", () => {
   const report = surveyMonomorphization([CASES]);

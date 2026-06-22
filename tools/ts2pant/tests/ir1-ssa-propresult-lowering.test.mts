@@ -100,95 +100,92 @@ describe("ir1-ssa-propresult-lowering", () => {
     }
   });
 
-  it.skip(
-    "collections lower value and membership props through one result",
-    () => {
-      const stmt = ir1Block([
-        ir1MapSet(
-          "Cache_value",
-          "Cache_hasKey",
-          "Owner",
-          "Key",
-          ir1Var("cache"),
-          ir1Var("key"),
-          ir1LitNat(7),
-        ),
-        ir1MapDelete(
-          "Cache_value",
-          "Cache_hasKey",
-          "Owner",
-          "Key",
-          ir1Var("cache"),
-          ir1Var("otherKey"),
-        ),
-        ir1SetAddOrDelete(
-          "add",
-          "Owner_tags",
-          "Owner",
-          "Tag",
-          ir1Var("owner"),
-          ir1Var("x"),
-        ),
-        ir1SetAddOrDelete(
-          "delete",
-          "Owner_tags",
-          "Owner",
-          "Tag",
-          ir1Var("owner"),
-          ir1Var("x"),
-        ),
-        ir1SetClear("Owner_tags", "Owner", "Tag", ir1Var("owner")),
-        ir1SetAddOrDelete(
-          "add",
-          "Owner_tags",
-          "Owner",
-          "Tag",
-          ir1Var("owner"),
-          ir1Var("y"),
-        ),
-      ]);
+  it.skip("collections lower value and membership props through one result", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      ir1MapDelete(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("otherKey"),
+      ),
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+      ir1SetAddOrDelete(
+        "delete",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+      ir1SetClear("Owner_tags", "Owner", "Tag", ir1Var("owner")),
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("y"),
+      ),
+    ]);
 
-      const lowered = lowerCollectionSsaToResult(stmt, {
-        declaredRules: ["Owner_name"],
-      });
-      const result = pendingUnifiedLowerResult({
-        declaredRules: lowered.program.declaredRules,
-        propositions: lowered.propositions,
-        modifiedRules: lowered.modifiedRules,
-        diagnostics: lowered.diagnostics,
-      });
-      const ast = getAst();
-      const valueEq = findEquation(result.propositions, "Cache_value'");
-      const membershipEq = findEquation(result.propositions, "Cache_hasKey'");
-      const setAssertion = result.propositions.find(
-        (p): p is Extract<PropResult, { kind: "assertion" }> =>
-          p.kind === "assertion",
-      );
+    const lowered = lowerCollectionSsaToResult(stmt, {
+      declaredRules: ["Owner_name"],
+    });
+    const result = pendingUnifiedLowerResult({
+      declaredRules: lowered.program.declaredRules,
+      propositions: lowered.propositions,
+      modifiedRules: lowered.modifiedRules,
+      diagnostics: lowered.diagnostics,
+    });
+    const ast = getAst();
+    const valueEq = findEquation(result.propositions, "Cache_value'");
+    const membershipEq = findEquation(result.propositions, "Cache_hasKey'");
+    const setAssertion = result.propositions.find(
+      (p): p is Extract<PropResult, { kind: "assertion" }> =>
+        p.kind === "assertion",
+    );
 
-      assert.deepEqual(result.diagnostics, []);
-      assert.deepEqual(
-        new Set(result.modifiedRules),
-        new Set(["Cache_value", "Cache_hasKey", "Owner_tags"]),
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(
+      new Set(result.modifiedRules),
+      new Set(["Cache_value", "Cache_hasKey", "Owner_tags"]),
+    );
+    assert.deepEqual(result.framedRules, ["Owner_name"]);
+    assert.ok(valueEq, "expected a final Map value proposition");
+    assert.ok(membershipEq, "expected a final Map membership proposition");
+    assert.ok(setAssertion, "expected a final Set membership proposition");
+    if (valueEq !== undefined) {
+      assert.match(ast.strExpr(valueEq.rhs), /Cache_value.*->\s*7/u);
+    }
+    if (membershipEq !== undefined) {
+      assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*true/u);
+      assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*false/u);
+    }
+    if (setAssertion !== undefined) {
+      assert.equal(
+        ast.strExpr(setAssertion.body),
+        "y1 in Owner_tags' owner <-> (cond y1 = y => true, true => false)",
       );
-      assert.deepEqual(result.framedRules, ["Owner_name"]);
-      assert.ok(valueEq, "expected a final Map value proposition");
-      assert.ok(membershipEq, "expected a final Map membership proposition");
-      assert.ok(setAssertion, "expected a final Set membership proposition");
-      if (valueEq !== undefined) {
-        assert.match(ast.strExpr(valueEq.rhs), /Cache_value.*->\s*7/u);
-      }
-      if (membershipEq !== undefined) {
-        assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*true/u);
-        assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*false/u);
-      }
-      if (setAssertion !== undefined) {
-        assert.equal(
-          ast.strExpr(setAssertion.body),
-          "y1 in Owner_tags' owner <-> (cond y1 = y => true, true => false)",
-        );
-      }
-    },
-  );
+    }
+  });
 
   it("frames derive from result modified rules", () => {
     const result = appendFramesForUnmodifiedRules(

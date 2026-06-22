@@ -68,12 +68,7 @@ describe("du-cutover", () => {
     const alias = extractAllTypes(sourceFile).aliases[0];
     assert.ok(alias);
 
-    const mapped = mapTsType(
-      alias.type,
-      checker,
-      IntStrategy,
-      newSynthCell(),
-    );
+    const mapped = mapTsType(alias.type, checker, IntStrategy, newSynthCell());
 
     // Refused (not fallen through to the `A + B` union encoding).
     assert.deepEqual(mapped, {

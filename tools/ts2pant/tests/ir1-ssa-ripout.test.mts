@@ -28,7 +28,10 @@ function sourceFilesUnder(dir: string): string[] {
   return files;
 }
 
-async function emitFixture(fileName: string, functionName: string): Promise<string> {
+async function emitFixture(
+  fileName: string,
+  functionName: string,
+): Promise<string> {
   const doc = await buildDocument(
     resolve(CONSTRUCTS_DIR, fileName),
     functionName,
@@ -53,7 +56,11 @@ function extractTranslateMutatingBodySource(sourceText: string): string {
     "\nfunction buildSupportedSsaMutatingBody(",
     start,
   );
-  assert.notEqual(start, -1, "expected translateMutatingBody in translate-body.ts");
+  assert.notEqual(
+    start,
+    -1,
+    "expected translateMutatingBody in translate-body.ts",
+  );
   assert.notEqual(
     end,
     -1,
@@ -96,58 +103,52 @@ function exportedSymbolNames(sourceText: string): Set<string> {
 }
 
 describe("ir1-ssa-ripout", () => {
-  it(
-    "lowers fallback-era supported mutating fixtures through SSA",
-    async () => {
-      const fixtures = [
-        ["functions-mutating.ts", "deposit"],
-        ["expressions-map-mutation.ts", "setAndCopy"],
-        ["expressions-set-mutation-field.ts", "tagClearAndAdd"],
-        ["functions-mutating-loop.ts", "forEachActivate"],
-        ["functions-mutating-loop.ts", "forEachSum"],
-      ] as const;
+  it("lowers fallback-era supported mutating fixtures through SSA", async () => {
+    const fixtures = [
+      ["functions-mutating.ts", "deposit"],
+      ["expressions-map-mutation.ts", "setAndCopy"],
+      ["expressions-set-mutation-field.ts", "tagClearAndAdd"],
+      ["functions-mutating-loop.ts", "forEachActivate"],
+      ["functions-mutating-loop.ts", "forEachSum"],
+    ] as const;
 
-      for (const [fileName, functionName] of fixtures) {
-        const output = await emitFixture(fileName, functionName);
-        assert.doesNotMatch(
-          output,
-          /^> UNSUPPORTED:/mu,
-          `${fileName} > ${functionName} should keep lowering through SSA`,
-        );
-        assert.match(
-          output,
-          /\n---\n\n\S/mu,
-          `${fileName} > ${functionName} should still emit body propositions`,
-        );
-      }
-    },
-  );
+    for (const [fileName, functionName] of fixtures) {
+      const output = await emitFixture(fileName, functionName);
+      assert.doesNotMatch(
+        output,
+        /^> UNSUPPORTED:/mu,
+        `${fileName} > ${functionName} should keep lowering through SSA`,
+      );
+      assert.match(
+        output,
+        /\n---\n\n\S/mu,
+        `${fileName} > ${functionName} should still emit body propositions`,
+      );
+    }
+  });
 
-  it(
-    "const aliases and state-aware reads survive without symbolic fallback",
-    async () => {
-      const fixtures = [
-        ["functions-mutating-const.ts", "aliasedSequentialWrites"],
-        ["expressions-state-aware-reads.ts", "entrySetThenCheck"],
-        ["expressions-state-aware-reads.ts", "bumpInBranch"],
-        ["expressions-state-aware-reads.ts", "tagThenCheck"],
-      ] as const;
+  it("const aliases and state-aware reads survive without symbolic fallback", async () => {
+    const fixtures = [
+      ["functions-mutating-const.ts", "aliasedSequentialWrites"],
+      ["expressions-state-aware-reads.ts", "entrySetThenCheck"],
+      ["expressions-state-aware-reads.ts", "bumpInBranch"],
+      ["expressions-state-aware-reads.ts", "tagThenCheck"],
+    ] as const;
 
-      for (const [fileName, functionName] of fixtures) {
-        const output = await emitFixture(fileName, functionName);
-        assert.doesNotMatch(
-          output,
-          /^> UNSUPPORTED:/mu,
-          `${fileName} > ${functionName} should keep lowering through SSA`,
-        );
-        assert.match(
-          output,
-          /\n---\n\n\S/mu,
-          `${fileName} > ${functionName} should still emit body propositions`,
-        );
-      }
-    },
-  );
+    for (const [fileName, functionName] of fixtures) {
+      const output = await emitFixture(fileName, functionName);
+      assert.doesNotMatch(
+        output,
+        /^> UNSUPPORTED:/mu,
+        `${fileName} > ${functionName} should keep lowering through SSA`,
+      );
+      assert.match(
+        output,
+        /\n---\n\n\S/mu,
+        `${fileName} > ${functionName} should still emit body propositions`,
+      );
+    }
+  });
 
   it("unsupported SSA build failure emits no frames", () => {
     const props = translateMutatingSource(
@@ -180,7 +181,10 @@ describe("ir1-ssa-ripout", () => {
   });
 
   it("translate-body has no symbolicExecute fallback", () => {
-    const sourceText = readFileSync(resolve(SRC_DIR, "translate-body.ts"), "utf8");
+    const sourceText = readFileSync(
+      resolve(SRC_DIR, "translate-body.ts"),
+      "utf8",
+    );
     const translateMutatingBodySource =
       extractTranslateMutatingBodySource(sourceText);
 

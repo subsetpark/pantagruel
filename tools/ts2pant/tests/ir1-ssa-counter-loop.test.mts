@@ -2,8 +2,8 @@
 // @archlint.domain ts2pant.ir1-ssa-counter-loop
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, describe, it } from "node:test";
+import * as fc from "fast-check";
 
 import {
   type IR1Expr,

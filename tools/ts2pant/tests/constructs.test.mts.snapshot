@@ -19,7 +19,7 @@ exports[`annotations.ts > sum 1`] = `
 `;
 
 exports[`branded-param-preconditions.ts > brandAndEffect 1`] = `
-"module BRAND_AND_EFFECT.\\n\\nbrand-and-effect x: Int, ~(x < 10) and x > 0 => Effect.\\n\\n---\\n\\n> UNSUPPORTED: brand-and-effect — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | brand-and-effect x = x.\\n"
+"module BRAND_AND_EFFECT.\\n\\nForeignEffect.\\nbrand-and-effect x: Int, ~(x < 10) and x > 0 => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: brand-and-effect — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | brand-and-effect x = x.\\n"
 `;
 
 exports[`branded-param-preconditions.ts > intBranded 1`] = `
@@ -59,27 +59,27 @@ exports[`control-flow.ts > max 1`] = `
 `;
 
 exports[`effect-gen-error-guards.ts > combinedWithThrow 1`] = `
-"module COMBINED_WITH_THROW.\\n\\ncombined-with-throw x: Int, x <= 1000 and ~(x < 0) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: combined-with-throw — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | combined-with-throw x = x.\\n"
+"module COMBINED_WITH_THROW.\\n\\nForeignEffect.\\ncombined-with-throw x: Int, x <= 1000 and ~(x < 0) => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: combined-with-throw — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | combined-with-throw x = x.\\n"
 `;
 
 exports[`effect-gen-error-guards.ts > impureCond 1`] = `
-"module IMPURE_COND.\\n\\nis-blocked  => Bool.\\nimpure-cond x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: impure-cond — var bindings are not supported (use let or const).\\n"
+"module IMPURE_COND.\\n\\nForeignEffect.\\nis-blocked  => Bool.\\nimpure-cond x: Int => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: impure-cond — var bindings are not supported (use let or const).\\n"
 `;
 
 exports[`effect-gen-error-guards.ts > multiError 1`] = `
-"module MULTI_ERROR.\\n\\nmulti-error x: Int, ~(x < 0) and ~(x > 100) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: multi-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | multi-error x = x.\\n"
+"module MULTI_ERROR.\\n\\nForeignEffect.\\nmulti-error x: Int, ~(x < 0) and ~(x > 100) => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: multi-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | multi-error x = x.\\n"
 `;
 
 exports[`effect-gen-error-guards.ts > partialRecovery 1`] = `
-"module PARTIAL_RECOVERY.\\n\\npartial-recovery x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: partial-recovery — var bindings are not supported (use let or const).\\n"
+"module PARTIAL_RECOVERY.\\n\\nForeignEffect.\\npartial-recovery x: Int => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: partial-recovery — var bindings are not supported (use let or const).\\n"
 `;
 
 exports[`effect-gen-error-guards.ts > singleError 1`] = `
-"module SINGLE_ERROR.\\n\\nsingle-error x: Int, ~(x < 0) => Effect.\\n\\n---\\n\\n> UNSUPPORTED: single-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | single-error x = x.\\n"
+"module SINGLE_ERROR.\\n\\nForeignEffect.\\nsingle-error x: Int, ~(x < 0) => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: single-error — var bindings are not supported (use let or const).\\n\\ncheck\\n\\nall x: Int | single-error x = x.\\n"
 `;
 
 exports[`effect-gen-error-guards.ts > unmatchedShape 1`] = `
-"module UNMATCHED_SHAPE.\\n\\nunmatched-shape x: Int => Effect.\\n\\n---\\n\\n> UNSUPPORTED: unmatched-shape — var bindings are not supported (use let or const).\\n"
+"module UNMATCHED_SHAPE.\\n\\nForeignEffect.\\nunmatched-shape x: Int => ForeignEffect.\\n\\n---\\n\\n> UNSUPPORTED: unmatched-shape — var bindings are not supported (use let or const).\\n"
 `;
 
 exports[`expressions-arithmetic.ts > add 1`] = `

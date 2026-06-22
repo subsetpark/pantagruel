@@ -1,8 +1,8 @@
 // @archlint.module test
 // @archlint.domain ts2pant.wasm-ast
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { loadAst } from "../src/pant-wasm.js";
 
 describe("wasm AST constructors", async () => {
@@ -30,9 +30,15 @@ describe("wasm AST constructors", async () => {
     const a = ast.var("a");
     const b = ast.var("b");
     assert.equal(ast.strExpr(ast.binop(ast.opAnd(), a, b)), "a and b");
-    assert.equal(ast.strExpr(ast.binop(ast.opGe(), a, ast.litNat(0))), "a >= 0");
+    assert.equal(
+      ast.strExpr(ast.binop(ast.opGe(), a, ast.litNat(0))),
+      "a >= 0",
+    );
     assert.equal(ast.strExpr(ast.binop(ast.opAdd(), a, b)), "a + b");
-    assert.equal(ast.strExpr(ast.binop(ast.opIn(), a, ast.domain("User"))), "a in User");
+    assert.equal(
+      ast.strExpr(ast.binop(ast.opIn(), a, ast.domain("User"))),
+      "a in User",
+    );
   });
 
   it("unops", () => {
@@ -51,7 +57,11 @@ describe("wasm AST constructors", async () => {
 
   it("forall", () => {
     const p = ast.param("x", ast.tName("Int"));
-    const e = ast.forall([p], [], ast.binop(ast.opGt(), ast.var("x"), ast.litNat(0)));
+    const e = ast.forall(
+      [p],
+      [],
+      ast.binop(ast.opGt(), ast.var("x"), ast.litNat(0)),
+    );
     assert.equal(ast.strExpr(e), "all x: Int | x > 0");
   });
 
@@ -77,7 +87,12 @@ describe("wasm AST constructors", async () => {
     assert.equal(ast.strDecl(ast.declDomain("User")), "User.");
     assert.equal(
       ast.strDecl(
-        ast.declRule("balance", [ast.param("a", ast.tName("Account"))], [], ast.tName("Int")),
+        ast.declRule(
+          "balance",
+          [ast.param("a", ast.tName("Account"))],
+          [],
+          ast.tName("Int"),
+        ),
       ),
       "balance a: Account => Int.",
     );
@@ -85,7 +100,11 @@ describe("wasm AST constructors", async () => {
 
   it("substituteBinder", () => {
     const expr = ast.app(ast.var("f"), [ast.var("x")]);
-    const subst = ast.substituteBinder(expr, "x", ast.app(ast.var("g"), [ast.var("y")]));
+    const subst = ast.substituteBinder(
+      expr,
+      "x",
+      ast.app(ast.var("g"), [ast.var("y")]),
+    );
     assert.equal(ast.strExpr(subst), "f (g y)");
   });
 

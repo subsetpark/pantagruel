@@ -2,14 +2,14 @@
 // @archlint.domain ts2pant.ir1-build-body
 
 import assert from "node:assert/strict";
-import * as fc from "fast-check";
 import { before, it } from "node:test";
+import * as fc from "fast-check";
 import ts from "typescript";
-import * as BB from "../src/ir1-build-body.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import { createL1AssumptionEnv } from "../src/ir1-build.js";
+import * as BB from "../src/ir1-build-body.js";
 import { loadAst } from "../src/pant-wasm.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
-import { createL1AssumptionEnv } from "../src/ir1-build.js";
 
 before(async () => {
   await loadAst();
@@ -40,18 +40,24 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
         }
       `);
       const unsupportedFn = unsupportedSource.getFunctions()[0]!.compilerNode;
-      const forOfStmt = unsupportedFn.body!.statements.find(ts.isForOfStatement);
+      const forOfStmt = unsupportedFn.body!.statements.find(
+        ts.isForOfStatement,
+      );
       const mapStmt = unsupportedFn.body!.statements.find(
         (candidate): candidate is ts.ExpressionStatement =>
           ts.isExpressionStatement(candidate) &&
           ts.isCallExpression(candidate.expression) &&
-          candidate.expression.getText(unsupportedSource.compilerNode).startsWith("items.map"),
+          candidate.expression
+            .getText(unsupportedSource.compilerNode)
+            .startsWith("items.map"),
       );
       const helperStmt = unsupportedFn.body!.statements.find(
         (candidate): candidate is ts.ExpressionStatement =>
           ts.isExpressionStatement(candidate) &&
           ts.isCallExpression(candidate.expression) &&
-          candidate.expression.getText(unsupportedSource.compilerNode).startsWith("helper"),
+          candidate.expression
+            .getText(unsupportedSource.compilerNode)
+            .startsWith("helper"),
       );
       if (!forOfStmt || !mapStmt || !helperStmt) {
         throw new Error("expected unsupported body fixtures");
@@ -76,10 +82,25 @@ it("generated inputs exercise the ir1-build-body exported surface", () => {
       assert.equal(BB.isUnsupported({ unsupported: name }), true);
       assert.equal(BB.buildL1SubExpr(expr, ctx).kind !== undefined, true);
       assert.equal(BB.buildL1AssignStmt(stmt, ctx).kind !== undefined, true);
-      assert.equal(BB.buildL1IfMutation(stmt, ctx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1ForOfMutation(forOfStmt, unsupportedCtx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1ForEachCall(mapStmt.expression, unsupportedCtx).unsupported !== undefined, true);
-      assert.equal(BB.buildL1EffectCall(helperStmt.expression, unsupportedCtx).unsupported !== undefined, true);
+      assert.equal(
+        BB.buildL1IfMutation(stmt, ctx).unsupported !== undefined,
+        true,
+      );
+      assert.equal(
+        BB.buildL1ForOfMutation(forOfStmt, unsupportedCtx).unsupported !==
+          undefined,
+        true,
+      );
+      assert.equal(
+        BB.buildL1ForEachCall(mapStmt.expression, unsupportedCtx)
+          .unsupported !== undefined,
+        true,
+      );
+      assert.equal(
+        BB.buildL1EffectCall(helperStmt.expression, unsupportedCtx)
+          .unsupported !== undefined,
+        true,
+      );
     }),
   );
 });

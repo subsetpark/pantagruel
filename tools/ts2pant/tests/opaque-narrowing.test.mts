@@ -10,21 +10,18 @@ import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 const OPAQUE_FIXTURE_DIR = resolve(import.meta.dirname, "fixtures/opaque");
 
 describe("opaque narrowing", () => {
-  it(
-    "a typeof-narrowed unknown read lowers to the concrete sort, not Opaque",
-    async () => {
-      const sourceFile = createSourceFile(
-        resolve(OPAQUE_FIXTURE_DIR, "narrowing.ts"),
-      );
-      const output = await emitAndCheck(
-        await buildDocumentFromSourceFile(sourceFile, "typeofString"),
-      );
+  it("a typeof-narrowed unknown read lowers to the concrete sort, not Opaque", async () => {
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "narrowing.ts"),
+    );
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "typeofString"),
+    );
 
-      assert.match(output, /^typeof-string value: Opaque => String\.$/mu);
-      assert.match(output, /^opaque_value_.* => String\.$/mu);
-      assert.doesNotMatch(output, /^opaque_value_.* => Opaque\.$/mu);
-    },
-  );
+    assert.match(output, /^typeof-string value: Opaque => String\.$/mu);
+    assert.match(output, /^opaque_value_.* => String\.$/mu);
+    assert.doesNotMatch(output, /^opaque_value_.* => Opaque\.$/mu);
+  });
 
   it("supported non-scalar narrowed reads lower to their concrete sorts", async () => {
     const sourceFile = createSourceFile(
@@ -88,27 +85,24 @@ describe("opaque narrowing", () => {
     );
   });
 
-  it(
-    "narrowing is use-site-local and the parameter signature sort stays Opaque",
-    async () => {
-      const sourceFile = createSourceFile(
-        resolve(OPAQUE_FIXTURE_DIR, "narrowing.ts"),
-      );
-      const output = await emitAndCheck(
-        await buildDocumentFromSourceFile(sourceFile, "perUseSite"),
-      );
+  it("narrowing is use-site-local and the parameter signature sort stays Opaque", async () => {
+    const sourceFile = createSourceFile(
+      resolve(OPAQUE_FIXTURE_DIR, "narrowing.ts"),
+    );
+    const output = await emitAndCheck(
+      await buildDocumentFromSourceFile(sourceFile, "perUseSite"),
+    );
 
-      assert.match(
-        output,
-        /^per-use-site value: Opaque, flag: Bool => String\.$/mu,
-      );
-      assert.equal(
-        [...output.matchAll(/^opaque_value_.* => String\.$/gmu)].length,
-        2,
-      );
-      assert.doesNotMatch(output, /^per-use-site value: String/mu);
-    },
-  );
+    assert.match(
+      output,
+      /^per-use-site value: Opaque, flag: Bool => String\.$/mu,
+    );
+    assert.equal(
+      [...output.matchAll(/^opaque_value_.* => String\.$/gmu)].length,
+      2,
+    );
+    assert.doesNotMatch(output, /^per-use-site value: String/mu);
+  });
 
   it("same-line narrowed use sites keep distinct origins", async () => {
     const sourceFile = createSourceFile(

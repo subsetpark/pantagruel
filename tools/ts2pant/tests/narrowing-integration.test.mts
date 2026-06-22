@@ -19,10 +19,7 @@ import {
 import { buildL1IfMutation } from "../src/ir1-build-body.js";
 import { loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/supply.js";
-import {
-  makeSymbolicState,
-  translateBody,
-} from "../src/translate-body.js";
+import { makeSymbolicState, translateBody } from "../src/translate-body.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {
