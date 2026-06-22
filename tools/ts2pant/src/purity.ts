@@ -409,6 +409,61 @@ const EFFECT_PURE_EXPORTS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 // Public API
 // ---------------------------------------------------------------------------
 
+export interface EffectOracleOptions {
+  admitForeignBoolPredicates?: boolean;
+}
+
+export function isDeclarationFileCallableSymbol(
+  symbol: ts.Symbol | undefined,
+  checker: ts.TypeChecker,
+): boolean {
+  if (symbol === undefined) {
+    return false;
+  }
+  const resolved =
+    symbol.flags & ts.SymbolFlags.Alias
+      ? checker.getAliasedSymbol(symbol)
+      : symbol;
+  return (resolved.getDeclarations() ?? []).some((decl) => {
+    const sf = decl.getSourceFile();
+    return (
+      sf.isDeclarationFile &&
+      (ts.isFunctionDeclaration(decl) || ts.isMethodSignature(decl))
+    );
+  });
+}
+
+export function isBoolReturningDeclarationFileCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  if (!ts.isPropertyAccessExpression(expr.expression)) {
+    return false;
+  }
+  if (
+    !isDeclarationFileCallableSymbol(
+      checker.getSymbolAtLocation(expr.expression.name),
+      checker,
+    )
+  ) {
+    return false;
+  }
+  const returnType = checker.getResolvedSignature(expr)?.getReturnType();
+  if (
+    returnType === undefined ||
+    (returnType.flags &
+      (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) ===
+      0
+  ) {
+    return false;
+  }
+  return isPredicateLikeDeclarationFileBoolCallName(expr.expression.name.text);
+}
+
+function isPredicateLikeDeclarationFileBoolCallName(name: string): boolean {
+  return /^(?:is|has)(?:[A-Z_]|$)/.test(name);
+}
+
 /**
  * Determine whether a call expression is known to be pure (no side effects).
  *
@@ -624,8 +679,9 @@ export function isPureUserFunction(
 export function isEffectFree(
   expr: ts.Expression,
   checker: ts.TypeChecker,
+  options: EffectOracleOptions = {},
 ): boolean {
-  return !expressionHasSideEffects(expr, checker);
+  return !expressionHasSideEffects(expr, checker, options);
 }
 
 /**
@@ -636,6 +692,7 @@ export function isEffectFree(
 export function expressionHasSideEffects(
   expr: ts.Expression,
   checker: ts.TypeChecker,
+  options: EffectOracleOptions = {},
 ): boolean {
   expr = unwrapEffectExpression(expr);
 
@@ -646,19 +703,32 @@ export function expressionHasSideEffects(
   if (ts.isBinaryExpression(expr)) {
     return (
       isAssignmentOperator(expr.operatorToken.kind) ||
-      expressionHasSideEffects(expr.left, checker) ||
-      expressionHasSideEffects(expr.right, checker)
+      expressionHasSideEffects(expr.left, checker, options) ||
+      expressionHasSideEffects(expr.right, checker, options)
     );
   }
 
   if (ts.isCallExpression(expr)) {
+    if (
+      options.admitForeignBoolPredicates === true &&
+      canAdmitForeignBoolPredicate(expr, checker)
+    ) {
+      return (
+        expressionHasSideEffects(expr.expression, checker, options) ||
+        expr.arguments.some((arg) =>
+          expressionHasSideEffects(arg, checker, options),
+        )
+      );
+    }
     if (isKnownPureCall(expr, checker)) {
       // Known-pure callees still require pure receiver/callee and arguments:
       // e.g. `makeString().trim()` matches the String method allowlist, but
       // the receiver call itself has unknown effects.
       return (
-        expressionHasSideEffects(expr.expression, checker) ||
-        expr.arguments.some((arg) => expressionHasSideEffects(arg, checker))
+        expressionHasSideEffects(expr.expression, checker, options) ||
+        expr.arguments.some((arg) =>
+          expressionHasSideEffects(arg, checker, options),
+        )
       );
     }
     return true;
@@ -673,15 +743,28 @@ export function expressionHasSideEffects(
     return (
       op === ts.SyntaxKind.PlusPlusToken ||
       op === ts.SyntaxKind.MinusMinusToken ||
-      expressionHasSideEffects(expr.operand, checker)
+      expressionHasSideEffects(expr.operand, checker, options)
     );
   }
 
   return (
     ts.forEachChild(expr, (child) =>
-      ts.isExpression(child) ? expressionHasSideEffects(child, checker) : false,
+      ts.isExpression(child)
+        ? expressionHasSideEffects(child, checker, options)
+        : false,
     ) ?? false
   );
+}
+
+function canAdmitForeignBoolPredicate(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  try {
+    return isBoolReturningDeclarationFileCall(expr, checker);
+  } catch {
+    return false;
+  }
 }
 
 function unwrapEffectExpression(expr: ts.Expression): ts.Expression {

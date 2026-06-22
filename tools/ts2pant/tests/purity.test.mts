@@ -14,6 +14,7 @@ import {
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   expressionHasSideEffects,
+  isBoolReturningDeclarationFileCall,
   isEffectFree,
   isKnownPureCall,
   isPureUserCall,
@@ -447,7 +448,7 @@ describe("isKnownPureCall", () => {
 });
 
 describe("isEffectFree", () => {
-  it.skip("PENDING Patch 2: effect oracle admits a declaration-file bool call under admitForeignBoolPredicates", () => {
+  it("admits a declaration-file bool call under admitForeignBoolPredicates", () => {
     const sf = createSourceFile(
       resolve(
         import.meta.dirname,
@@ -466,7 +467,7 @@ describe("isEffectFree", () => {
     );
   });
 
-  it.skip("PENDING Patch 2: effect oracle keeps a declaration-file bool call effectful by default", () => {
+  it("keeps a declaration-file bool call effectful by default", () => {
     const sf = createSourceFile(
       resolve(
         import.meta.dirname,
@@ -480,6 +481,29 @@ describe("isEffectFree", () => {
     );
 
     assert.equal(isEffectFree(call, checker), false);
+  });
+
+  it("does not admit declaration-file boolean mutators", () => {
+    const sf = createSourceFileFromSource(`
+      function f(xs: Set<string>, value: string) { return xs.delete(value); }
+    `);
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(sf.compilerNode, "f");
+
+    assert.equal(
+      isEffectFree(call, checker, { admitForeignBoolPredicates: true }),
+      false,
+    );
+  });
+
+  it("recognizes exact declaration-file has predicates", () => {
+    const sf = createSourceFileFromSource(`
+      function f(xs: Set<string>, value: string) { return xs.has(value); }
+    `);
+    const checker = getChecker(sf);
+    const call = findCallInNamedFunction(sf.compilerNode, "f");
+
+    assert.equal(isBoolReturningDeclarationFileCall(call, checker), true);
   });
 
   it("treats known-pure builtin calls as effect-free", () => {
