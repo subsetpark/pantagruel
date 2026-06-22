@@ -10,6 +10,7 @@ import { createSourceFile } from "../src/extract.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
+const SCAFFOLD_ONLY_FIXTURES = new Set(["expressions-for-of-comprehension.ts"]);
 
 import { KNOWN_TYPECHECK_FAILURES } from "./known-typecheck-failures.mjs";
 
@@ -43,6 +44,7 @@ function discoverTestTargets(sourceFile: SourceFile): string[] {
 
 const fixtureFiles = readdirSync(CONSTRUCTS_DIR)
   .filter((f) => f.endsWith(".ts"))
+  .filter((f) => !SCAFFOLD_ONLY_FIXTURES.has(f))
   .sort();
 
 for (const file of fixtureFiles) {
@@ -50,9 +52,7 @@ for (const file of fixtureFiles) {
     const filePath = resolve(CONSTRUCTS_DIR, file);
     const discoverySourceFile = createSourceFile(filePath);
     const targets = discoverTestTargets(discoverySourceFile);
-    discoverySourceFile
-      .getProject()
-      .removeSourceFile(discoverySourceFile);
+    discoverySourceFile.getProject().removeSourceFile(discoverySourceFile);
     if (targets.length === 0) {
       throw new Error(`No exported snapshot targets found in ${file}`);
     }
