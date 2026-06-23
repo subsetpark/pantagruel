@@ -552,8 +552,10 @@ describe("unsupported patterns", () => {
     );
   });
 
-  it.skip("PENDING Patch 4: switch and callback block consumers reuse nested pure block lowering", () => {
-    const source = `
+  it(
+    "switch and callback block consumers reuse nested pure block lowering",
+    () => {
+      const source = `
         interface User { active: boolean; score: number; }
         function scores(users: User[]): number[] {
           return users.map((u) => {
@@ -584,6 +586,31 @@ describe("unsupported patterns", () => {
         false,
       );
     }
+  });
+
+  it("callback block locals do not capture property accessor names", () => {
+    const source = `
+      interface User { active: boolean; score: number; }
+      function scores(users: User[]): number[] {
+        return users.map((u) => {
+          const score = u.score + 1;
+          if (u.active) {
+            return u.score;
+          }
+          return score;
+        });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "scores");
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(
+      equationRhsText(props),
+      "each x in users | cond user--active x => user--score x, true => user--score x + 1",
+    );
   });
 
   it("record-return conditional lowers fieldwise", () => {

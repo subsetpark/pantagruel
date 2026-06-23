@@ -118,6 +118,7 @@ import {
   expressionReferencesNames,
   extractReturnFromBranch,
   isNullableTsType,
+  lowerNestedPureBlockReturnToL1,
   qualifyFieldAccess,
   symbolicKey,
 } from "./translate-body.js";
@@ -3380,14 +3381,32 @@ function lowerCaseReturnValue(
   clause: ts.CaseClause | ts.DefaultClause,
   ctx: L1BuildContext,
 ): L1BuildResult | null {
-  const extracted = extractCaseReturn(clause);
-  if (extracted === null) {
+  const stmt = extractCaseEffectiveStatement(clause);
+  if (stmt === null) {
     return null;
   }
-  if (extracted.bindings.length === 0) {
-    return buildSubExpr(extracted.returnExpr, ctx);
+  if (ts.isBlock(stmt)) {
+    const lowered = lowerNestedPureBlockReturnToL1(stmt, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: ctx.paramNames,
+      supply: ctx.supply,
+      env: ctx.env,
+      ...(ctx.state === undefined ? {} : { state: ctx.state }),
+      ...(ctx.expectedSort === undefined
+        ? {}
+        : { expectedReturnSort: ctx.expectedSort }),
+    });
+    if (lowered !== null) {
+      return lowered;
+    }
+    const extracted = extractBlockReturn(stmt);
+    return extracted === null ? null : lowerBlockReturnValue(extracted, ctx);
   }
-  return lowerBlockReturnValue(extracted, ctx);
+  if (ts.isReturnStatement(stmt) && stmt.expression) {
+    return buildSubExpr(stmt.expression, ctx);
+  }
+  return null;
 }
 
 function lowerBlockReturnValue(
@@ -3447,9 +3466,9 @@ function withParam<K, V>(m: ReadonlyMap<K, V>, k: K, v: V): ReadonlyMap<K, V> {
   return next;
 }
 
-function extractCaseReturn(
+function extractCaseEffectiveStatement(
   clause: ts.CaseClause | ts.DefaultClause,
-): ExtractedBlockReturn | null {
+): ts.Statement | null {
   // Filter to the structural body. Each case body is a list of
   // statements at the top level (TS doesn't wrap them in a Block by default).
   // M1 requires exactly one effective statement: either `return EXPR;` or a
@@ -3470,14 +3489,7 @@ function extractCaseReturn(
   if (lastIdx !== 0) {
     return null;
   }
-  const last: ts.Statement = stmts[lastIdx]!;
-  if (ts.isBlock(last)) {
-    return extractBlockReturn(last);
-  }
-  if (ts.isReturnStatement(last) && last.expression) {
-    return { bindings: [], returnExpr: last.expression };
-  }
-  return null;
+  return stmts[lastIdx]!;
 }
 
 // ---------------------------------------------------------------------------

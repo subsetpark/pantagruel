@@ -163,7 +163,7 @@ exports[`expressions-block-early-return.ts > blockEarlyReturnSingleBinding 1`] =
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2CallbackNestedBlock 1`] = `
-"module RD2_CALLBACK_NESTED_BLOCK.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nuser--name u: User => String.\\nrd2-callback-nested-block users: [User] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: array callback block body must be a single return.\\n"
+"module RD2_CALLBACK_NESTED_BLOCK.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nuser--name u: User => String.\\nrd2-callback-nested-block users: [User] => [Int].\\n\\n---\\n\\nrd2-callback-nested-block users = (each x in users | cond user--active x => (cond user--score x > 0 => user--score x, true => 0), true => -1).\\n"
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2EffectfulBlockConstRejected 1`] = `
@@ -203,7 +203,7 @@ exports[`expressions-body-lowering-rd2.ts > rd2SwitchFallThrough 1`] = `
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2SwitchNestedBlockClause 1`] = `
-"module RD2_SWITCH_NESTED_BLOCK_CLAUSE.\\n\\nrd2-switch-nested-block-clause x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-switch-nested-block-clause — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+"module RD2_SWITCH_NESTED_BLOCK_CLAUSE.\\n\\nrd2-switch-nested-block-clause x: Int => Int.\\n\\n---\\n\\nrd2-switch-nested-block-clause x = (cond x = 0 => (cond x < 1 => x + 10, true => x), true => (cond x + 1 > 5 => x + 1, true => 5)).\\n"
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2SwitchNonLiteralLabel 1`] = `
@@ -1591,7 +1591,7 @@ exports[`types-primitives.ts > isActive 1`] = `
 `;
 
 exports[`unsupported.ts > arrowWithLocals 1`] = `
-"module ARROW_WITH_LOCALS.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\narrow-with-locals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: array callback block body must be a single return.\\n"
+"module ARROW_WITH_LOCALS.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\narrow-with-locals users: [User] => [String].\\n\\n---\\n\\narrow-with-locals users = (each x1 in users, user--active x1 | user--name x1).\\n"
 `;
 
 exports[`unsupported.ts > destructuredParam 1`] = `
