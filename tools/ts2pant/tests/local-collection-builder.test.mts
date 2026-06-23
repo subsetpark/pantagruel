@@ -130,6 +130,9 @@ describe("local collection builder", () => {
   it("mapFinalMutationRejected remains unsupported", async () => {
     const output = await emitFixture("mapFinalMutationRejected");
     assert.match(output, /^> UNSUPPORTED: map-final-mutation-rejected/mu);
-    assert.match(output, /Map|map|builder/u);
+    assert.match(
+      output,
+      /Map builder construction is not supported in this milestone/u,
+    );
   });
 });
