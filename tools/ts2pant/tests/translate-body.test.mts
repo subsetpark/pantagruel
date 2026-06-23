@@ -502,30 +502,58 @@ describe("unsupported patterns", () => {
     );
   });
 
-  it.skip(
-    "PENDING Patch 3: early-return arm block may contain nested early returns",
-    () => {
-      const source = `
-        function arm(n: number): number {
-          if (n < 0) {
-            if (n < -10) {
-              return 10;
-            }
-            return 0 - n;
+  it("early-return arm block may contain nested early returns", () => {
+    const source = `
+      function arm(n: number): number {
+        if (n < 0) {
+          if (n < -10) {
+            return 10;
           }
-          return n;
+          return 0 - n;
         }
-      `;
-      const sourceFile = createSourceFileFromSource(source);
-      const props = translateBodyWithSynth(sourceFile, "arm");
-      assert.equal(props.some((p) => p.kind === "unsupported"), false);
-    },
-  );
+        return n;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "arm");
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(
+      equationRhsText(props),
+      "cond n < 0 => (cond n < -10 => 10, true => 0 - n), true => n",
+    );
+  });
 
-  it.skip(
-    "PENDING Patch 4: switch and callback block consumers reuse nested pure block lowering",
-    () => {
-      const source = `
+  it("terminal if branches may contain nested pure block returns", () => {
+    const source = `
+      function branch(n: number): number {
+        if (n < 0) {
+          const m = 0 - n;
+          if (m > 10) {
+            return m + 1;
+          }
+          return m;
+        } else {
+          return n + 1;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "branch");
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(
+      equationRhsText(props),
+      "cond n < 0 => (cond 0 - n > 10 => 0 - n + 1, true => 0 - n), true => n + 1",
+    );
+  });
+
+  it.skip("PENDING Patch 4: switch and callback block consumers reuse nested pure block lowering", () => {
+    const source = `
         interface User { active: boolean; score: number; }
         function scores(users: User[]): number[] {
           return users.map((u) => {
@@ -548,18 +576,18 @@ describe("unsupported patterns", () => {
           }
         }
       `;
-      const sourceFile = createSourceFileFromSource(source);
-      for (const functionName of ["scores", "choose"]) {
-        const props = translateBodyWithSynth(sourceFile, functionName);
-        assert.equal(props.some((p) => p.kind === "unsupported"), false);
-      }
-    },
-  );
+    const sourceFile = createSourceFileFromSource(source);
+    for (const functionName of ["scores", "choose"]) {
+      const props = translateBodyWithSynth(sourceFile, functionName);
+      assert.equal(
+        props.some((p) => p.kind === "unsupported"),
+        false,
+      );
+    }
+  });
 
-  it.skip(
-    "PENDING Patch 5: record-return conditional lowers fieldwise",
-    () => {
-      const source = `
+  it.skip("PENDING Patch 5: record-return conditional lowers fieldwise", () => {
+    const source = `
         interface Pair { x: number; y: number; }
         function pair(n: number, flag: boolean): Pair {
           if (flag) {
@@ -568,12 +596,14 @@ describe("unsupported patterns", () => {
           return { x: 0, y: 1 };
         }
       `;
-      const sourceFile = createSourceFileFromSource(source);
-      const props = translateBodyWithSynth(sourceFile, "pair");
-      assert.equal(props.some((p) => p.kind === "unsupported"), false);
-      assert.equal(props.filter((p) => p.kind === "equation").length, 2);
-    },
-  );
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "pair");
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(props.filter((p) => p.kind === "equation").length, 2);
+  });
 
   it("returns empty for function with no body", () => {
     const source = `
@@ -1165,7 +1195,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects pure block-bodied early-return arms with branch-local guards", () => {
+  it("allows pure block-bodied early-return arms with branch-local guards", () => {
     const source = `
       function assert(condition: unknown): asserts condition {
         if (!condition) throw new Error("no");
@@ -1185,14 +1215,11 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
-    if (props[0]?.kind === "unsupported") {
-      assert.match(
-        props[0].reason,
-        /only const bindings followed by a return/u,
-      );
-    }
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(equationRhsText(props), "cond n < 0 => 0 - n, true => n + 1");
   });
 
   it("composes arms with a μ-search prelude", () => {
@@ -1218,7 +1245,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects a block early-return arm with non-const local bindings", () => {
+  it("allows const-like let bindings in block early-return arms", () => {
     const source = `
       export function f(n: number): number {
         if (n < 0) {
@@ -1234,14 +1261,11 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
-    if (props[0]?.kind === "unsupported") {
-      assert.match(
-        props[0].reason,
-        /only const bindings followed by a return/u,
-      );
-    }
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(equationRhsText(props), "cond n < 0 => 1, true => n");
   });
 
   it("rejects an if-with-else in non-final position", () => {
