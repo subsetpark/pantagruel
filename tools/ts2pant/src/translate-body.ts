@@ -230,8 +230,9 @@ type PreludeStmt =
   | {
       kind: "earlyReturn";
       predicateExpr: ts.Expression;
-      valueExpr: ts.Expression;
+      valueExpr?: ts.Expression;
       blockBindings: readonly ExtractedBlockConstBinding[];
+      nestedBlock?: ts.Block;
     };
 
 export interface RecognizedForOfPush {
@@ -1223,6 +1224,7 @@ function translatePureBody(
   if (
     extracted.bindings.length === 1 &&
     extracted.bindings[0]!.kind === "earlyReturn" &&
+    extracted.bindings[0]!.valueExpr !== undefined &&
     ts.isExpression(extracted.returnExpr)
   ) {
     const arm = extracted.bindings[0] as Extract<
@@ -1232,7 +1234,7 @@ function translatePureBody(
     const lifted = tryRecognizeFunctorLift(
       {
         guard: arm.predicateExpr,
-        thenExpr: arm.valueExpr,
+        thenExpr: arm.valueExpr!,
         elseExpr: extracted.returnExpr,
         contextNode: node,
       },
@@ -1335,7 +1337,9 @@ function translatePureBody(
   // garbage Pantagruel — reject those uniformly.
   const armHasObjLit = extracted.bindings.some(
     (b) =>
-      b.kind === "earlyReturn" && ts.isObjectLiteralExpression(b.valueExpr),
+      b.kind === "earlyReturn" &&
+      b.valueExpr !== undefined &&
+      ts.isObjectLiteralExpression(b.valueExpr),
   );
   const terminalIsObjLit =
     ts.isExpression(extracted.returnExpr) &&
@@ -1412,7 +1416,25 @@ function translatePureBody(
         // itself a cond we
         // splice its arms in to keep the output flat (matching the
         // legacy single-cond shape).
-        const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
+        const terminalL1 = ts.isIfStatement(extracted.returnExpr)
+          ? (lowerNestedPureIfStatementToL1(
+              extracted.returnExpr,
+              {
+                checker,
+                strategy,
+                paramNames: prelude.scopedParams,
+                supply,
+                env,
+                ...(expectedReturnSort === undefined
+                  ? {}
+                  : { expectedReturnSort }),
+              },
+              prelude.scopedParams,
+            ) ?? {
+              unsupported:
+                "if-then branch must contain a single return-with-value",
+            })
+          : buildL1Conditional(extracted.returnExpr, l1Ctx);
         if (isL1Unsupported(terminalL1)) {
           return [
             {
@@ -1918,8 +1940,9 @@ function recognizeLetWhilePair(
  */
 function recognizeEarlyReturnArm(stmt: ts.Statement): {
   predicateExpr: ts.Expression;
-  valueExpr: ts.Expression;
+  valueExpr?: ts.Expression;
   blockBindings: readonly ExtractedBlockConstBinding[];
+  nestedBlock?: ts.Block;
 } | null {
   if (!ts.isIfStatement(stmt)) {
     return null;
@@ -1943,13 +1966,42 @@ function recognizeEarlyReturnArm(stmt: ts.Statement): {
   }
   const extracted = extractBlockReturn(body);
   if (extracted === null) {
-    return null;
+    if (!blockHasReturnTerminal(body)) {
+      return null;
+    }
+    return {
+      predicateExpr: stmt.expression,
+      blockBindings: [],
+      nestedBlock: body,
+    };
   }
   return {
     predicateExpr: stmt.expression,
     valueExpr: extracted.returnExpr,
     blockBindings: extracted.bindings,
   };
+}
+
+function blockHasReturnTerminal(block: ts.Block): boolean {
+  const last = [...block.statements].at(-1);
+  return last !== undefined && statementHasReturnTerminal(last);
+}
+
+function statementHasReturnTerminal(stmt: ts.Statement): boolean {
+  if (ts.isReturnStatement(stmt)) {
+    return stmt.expression !== undefined;
+  }
+  if (ts.isBlock(stmt)) {
+    return blockHasReturnTerminal(stmt);
+  }
+  if (ts.isIfStatement(stmt)) {
+    return (
+      stmt.elseStatement !== undefined &&
+      statementHasReturnTerminal(stmt.thenStatement) &&
+      statementHasReturnTerminal(stmt.elseStatement)
+    );
+  }
+  return ts.isSwitchStatement(stmt);
 }
 
 /**
@@ -2968,7 +3020,31 @@ function lowerPreludeBindings(
               pushFact(env, fact);
             }
           }
-          if (binding.blockBindings.length === 0) {
+          if (binding.nestedBlock !== undefined) {
+            const value = lowerNestedPureBlockReturnToL1(binding.nestedBlock, {
+              checker,
+              strategy,
+              paramNames: acc.scopedParams,
+              state: state ?? makeSymbolicState(),
+              supply,
+              env,
+              ...(expectedReturnSort === undefined
+                ? {}
+                : { expectedReturnSort }),
+            });
+            valRes =
+              value === null
+                ? {
+                    error:
+                      "if-with-return block must contain only const bindings followed by a return",
+                  }
+                : {
+                    value: applyOpaqueAliases(lowerL1ToOpaque(value), supply),
+                  };
+          } else if (
+            binding.valueExpr !== undefined &&
+            binding.blockBindings.length === 0
+          ) {
             const definednessSnapshot = supply.synthCell
               ? [...supply.synthCell.definednessObligations]
               : null;
@@ -3010,7 +3086,7 @@ function lowerPreludeBindings(
                       env,
                     );
                   })();
-          } else {
+          } else if (binding.valueExpr !== undefined) {
             valRes = translateEarlyReturnBlockValue(
               binding.blockBindings,
               binding.valueExpr,
@@ -3026,6 +3102,11 @@ function lowerPreludeBindings(
                   : { expectedReturnSort }),
               },
             );
+          } else {
+            valRes = {
+              error:
+                "if-with-return block must contain only const bindings followed by a return",
+            };
           }
         } finally {
           exitFrame(env);
@@ -3280,17 +3361,25 @@ function validatePreludeBindings(
           };
         }
       }
-      if (
-        expressionHasSideEffects(binding.valueExpr, checker, {
-          admitForeignBoolPredicates: true,
-        })
-      ) {
-        return { error: "early-return value has side effects" };
-      }
       if (expressionReferencesNames(binding.predicateExpr, blockedNames)) {
         return { error: "early-return predicate references a later binding" };
       }
-      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+      if (binding.valueExpr !== undefined) {
+        if (
+          expressionHasSideEffects(binding.valueExpr, checker, {
+            admitForeignBoolPredicates: true,
+          })
+        ) {
+          return { error: "early-return value has side effects" };
+        }
+        if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+          return { error: "early-return value references a later binding" };
+        }
+      }
+      if (
+        binding.nestedBlock !== undefined &&
+        nodeReferencesNames(binding.nestedBlock, blockedNames)
+      ) {
         return { error: "early-return value references a later binding" };
       }
     }
@@ -3418,6 +3507,15 @@ function lowerNestedPureBlockReturnToL1(
   if (validation !== null) {
     return null;
   }
+  if (
+    extracted.bindings.some(
+      (binding) =>
+        binding.kind === "const" &&
+        expressionHasSideEffects(binding.initializer, ctx.checker),
+    )
+  ) {
+    return null;
+  }
 
   let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
   const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
@@ -3453,11 +3551,9 @@ function lowerNestedPureBlockReturnToL1(
       const value = withNestedFactFrame(
         ctx.env,
         [...fallthroughFacts, currentFact],
-        () =>
-          lowerEarlyReturnArmValueToL1(
-            binding.blockBindings,
-            binding.valueExpr,
-            {
+        () => {
+          if (binding.nestedBlock !== undefined) {
+            return lowerNestedPureBlockReturnToL1(binding.nestedBlock, {
               checker: ctx.checker,
               strategy: ctx.strategy,
               paramNames: scopedParams,
@@ -3467,8 +3563,27 @@ function lowerNestedPureBlockReturnToL1(
               ...(ctx.expectedReturnSort === undefined
                 ? {}
                 : { expectedReturnSort: ctx.expectedReturnSort }),
-            },
-          ),
+            });
+          }
+          if (binding.valueExpr !== undefined) {
+            return lowerEarlyReturnArmValueToL1(
+              binding.blockBindings,
+              binding.valueExpr,
+              {
+                checker: ctx.checker,
+                strategy: ctx.strategy,
+                paramNames: scopedParams,
+                state: ctx.state ?? makeSymbolicState(),
+                supply: ctx.supply,
+                env: ctx.env,
+                ...(ctx.expectedReturnSort === undefined
+                  ? {}
+                  : { expectedReturnSort: ctx.expectedReturnSort }),
+              },
+            );
+          }
+          return null;
+        },
       );
       if (value === null) {
         return null;
@@ -3612,12 +3727,146 @@ function lowerNestedPureTerminalToL1(
       ? {}
       : { expectedSort: ctx.expectedReturnSort }),
   };
-  if (ts.isIfStatement(terminal) || ts.isSwitchStatement(terminal)) {
+  if (ts.isIfStatement(terminal)) {
+    return lowerNestedPureIfStatementToL1(terminal, ctx, scopedParams);
+  }
+  if (ts.isSwitchStatement(terminal)) {
     const value = buildL1Conditional(terminal, l1Ctx);
     return isL1Unsupported(value) ? null : value;
   }
   const value = buildL1SubExpr(terminal, l1Ctx);
   return isUnsupported(value) || isL1Unsupported(value) ? null : value;
+}
+
+function lowerNestedPureIfStatementToL1(
+  stmt: ts.IfStatement,
+  ctx: NestedPureBlockReturnContext,
+  scopedParams: ReadonlyMap<string, string>,
+): IR1Expr | null {
+  const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
+  let current: ts.IfStatement = stmt;
+  const elsePathFacts: Fact[] = [];
+
+  while (true) {
+    if (!current.elseStatement) {
+      return null;
+    }
+    const currentFact = recognizeBranchFact(current.expression, ctx.checker);
+    const guard = lowerWithFactsFrame(ctx.env, elsePathFacts, () =>
+      buildL1SubExpr(current.expression, {
+        checker: ctx.checker,
+        strategy: ctx.strategy,
+        paramNames: scopedParams,
+        state: ctx.state ?? makeSymbolicState(),
+        supply: ctx.supply,
+        env: ctx.env,
+      }),
+    );
+    if (isUnsupported(guard) || isL1Unsupported(guard)) {
+      return null;
+    }
+
+    const thenValue = lowerWithFactsFrame(
+      ctx.env,
+      [...elsePathFacts, currentFact],
+      () =>
+        lowerNestedPureBranchStatementToL1(
+          current.thenStatement,
+          ctx,
+          scopedParams,
+        ),
+    );
+    if (thenValue === null) {
+      return null;
+    }
+    arms.push([guard, thenValue] as const);
+
+    const elseFact = currentFact === null ? null : negateFact(currentFact);
+    if (ts.isIfStatement(current.elseStatement)) {
+      if (elseFact !== null) {
+        elsePathFacts.push(elseFact);
+      }
+      current = current.elseStatement;
+      continue;
+    }
+
+    const elseValue = lowerWithFactsFrame(
+      ctx.env,
+      [...elsePathFacts, elseFact],
+      () =>
+        lowerNestedPureBranchStatementToL1(
+          current.elseStatement!,
+          ctx,
+          scopedParams,
+        ),
+    );
+    if (elseValue === null || arms.length === 0) {
+      return null;
+    }
+    return ir1Cond(
+      arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
+      elseValue,
+    );
+  }
+}
+
+function lowerNestedPureBranchStatementToL1(
+  branch: ts.Statement,
+  ctx: NestedPureBlockReturnContext,
+  scopedParams: ReadonlyMap<string, string>,
+): IR1Expr | null {
+  if (ts.isReturnStatement(branch) && branch.expression !== undefined) {
+    const value = buildL1SubExpr(branch.expression, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: scopedParams,
+      state: ctx.state ?? makeSymbolicState(),
+      supply: ctx.supply,
+      env: ctx.env,
+      ...(ctx.expectedReturnSort === undefined
+        ? {}
+        : { expectedSort: ctx.expectedReturnSort }),
+    });
+    return isUnsupported(value) || isL1Unsupported(value) ? null : value;
+  }
+  if (ts.isBlock(branch)) {
+    return lowerNestedPureBlockReturnToL1(branch, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: scopedParams,
+      state: ctx.state ?? makeSymbolicState(),
+      supply: ctx.supply,
+      env: ctx.env,
+      ...(ctx.expectedReturnSort === undefined
+        ? {}
+        : { expectedReturnSort: ctx.expectedReturnSort }),
+    });
+  }
+  if (ts.isIfStatement(branch)) {
+    return lowerNestedPureIfStatementToL1(branch, ctx, scopedParams);
+  }
+  return null;
+}
+
+function lowerWithFactsFrame<T>(
+  env: AssumptionEnv,
+  facts: ReadonlyArray<Fact | null>,
+  lower: () => T,
+): T {
+  if (facts.every((fact) => fact === null)) {
+    return lower();
+  }
+  enterFrame(env);
+  try {
+    for (const fact of facts) {
+      if (fact !== null) {
+        pushFact(env, fact);
+      }
+    }
+    return lower();
+  } finally {
+    exitFrame(env);
+  }
 }
 
 function translateBindingInit(
