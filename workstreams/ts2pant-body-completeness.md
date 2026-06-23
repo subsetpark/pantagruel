@@ -216,8 +216,8 @@ fresh residual ranking before committing to M2's exact fixture set.
   milestone, and ambiguous element order.
 - The targeted `expression statement before return` bucket moves down in the
   post-M2 corpus diagnostic.
-- Constructs and dogfood tests cover both positive local builder cases and
-  preserved negative cases.
+- `tools/ts2pant/tests/local-collection-builder.test.mts` covers positive
+  ordered-list and Set-builder cases plus preserved negative cases.
 
 **Why this is a safe pause point**:
 The milestone turns one coherent stateful pure-body idiom into an explicit
@@ -363,7 +363,6 @@ type/opaque precision rather than structural body sequencing.
 |----------|-------|------------|
 | What post-M1 bucket threshold defines "workstream complete"? | Suggested threshold: no body-completeness-owned normalized bucket above 10 functions, but this should be confirmed after M1/M2 because bucket normalization may split or merge shapes. | M4 operator review |
 | Should scalar local folds be part of `iteration-builder-completeness`? | They are adjacent to collection builders but may require a different scalar-fold encoding. Include only if the post-M2 corpus split shows a coherent high-count family. | M3 gameplan |
-| Should Map builder construction be part of M2? | Map construction touches the guarded Map encoding and may deserve a Map-specific milestone. | M2 gameplan |
 | Is `forEach` callback `return` behavior in scope? | `forEach` callbacks do not return from the outer function, so support is only sound for local builder effects, not early outer returns. | M3 gameplan |
 
 ## Decisions Made
@@ -374,6 +373,8 @@ type/opaque precision rather than structural body sequencing.
 | Measurement gates milestone boundaries. | Each milestone ends with a corpus diagnostic run. Later milestones are intentionally thinner because the residual ranking changes after each landing. |
 | Local accumulator sequencing is not part of M1. | It is stateful local mutation with a pure function boundary. It needs a collection-builder model, not a larger pure block-return helper. |
 | Conservative refusal remains the steering policy. | The goal is not arbitrary JS support; it is accepting idiomatic, unambiguous TS only when Pantagruel has a faithful target. |
+| M2 ordered list builders use finite positional assertions. | Pantagruel has no list literal, and comprehensions over synthetic finite tuples would introduce unnecessary helper domains. Cardinality plus 1-based list-application equations preserves push order while constraining the declared return rule directly. |
+| M2 includes Set `.add` builders but defers Map builders. | Set lowers to the existing `[T]` membership encoding, so membership equivalence is a faithful target. Map construction touches the guarded Stage A/Stage B partial-rule pair and needs a Map-specific milestone rather than being bundled into local builder sequencing. |
 
 ## Definition of Done (Acceptance Suite)
 
@@ -409,15 +410,21 @@ not need to read source to decide pass/fail.
     `tools/ts2pant/src/translate-record.ts`.
 
 - **DoD-3 — Local collection builders translate without general expression-statement admission**
-  - **Assert**: A fixture using a recognized local collection builder before
-    return emits a Pantagruel list/set/map value, while an unrecognized
-    expression statement before return still emits UNSUPPORTED.
+  - **Assert**: Dedicated local-builder fixtures cover an ordered list builder
+    (`const xs = []; xs.push(...); return xs`) and a Set `.add` builder
+    (`const s = new Set<T>(); s.add(...); return s`), while unrecognized
+    expression statements, alias/escape cases, unknown mutating calls, and Map
+    builders still emit UNSUPPORTED.
   - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the local
-    collection builder fixture snapshots.
-  - **Expected**: Positive builder fixtures typecheck and negative expression
-    statement fixtures retain an UNSUPPORTED diagnostic.
+    collection builder tests in
+    `tools/ts2pant/tests/local-collection-builder.test.mts`.
+  - **Expected**: Positive list-builder fixtures typecheck and emit
+    cardinality plus positional index assertions; positive Set-builder
+    fixtures typecheck and emit membership-equivalence assertions; negative
+    expression-statement and Map-builder fixtures retain UNSUPPORTED
+    diagnostics.
   - **Traces to**: Milestone 2 — local collection builder lowering in
-    `tools/ts2pant/src/translate-body.ts` and supporting IR1 modules.
+    `tools/ts2pant/src/translate-body.ts`.
 
 - **DoD-4 — Builder-backed for-of variants translate**
   - **Assert**: A fixture whose `for-of` body builds a recognized local
