@@ -35,6 +35,32 @@ export function rd2NestedBlockWithConstPrelude(n: number): number {
   return n;
 }
 
+export function rd2NullableNestedTerminal(
+  u: User | null,
+  flag: boolean,
+): number {
+  if (flag) {
+    if (u === null) {
+      return 0;
+    }
+    return u.score;
+  }
+  return 0;
+}
+
+export function rd2NullableNestedArm(
+  u: User | null,
+  flag: boolean,
+): number {
+  if (flag) {
+    if (u !== null) {
+      return u.score;
+    }
+    return 0;
+  }
+  return 0;
+}
+
 export function rd2TerminalIfElseBranchBlocks(
   n: number,
   flag: boolean,
