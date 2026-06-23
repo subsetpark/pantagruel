@@ -3422,6 +3422,7 @@ function lowerNestedPureBlockReturnToL1(
   let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
   const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
   const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
+  const fallthroughFacts: Fact[] = [];
 
   for (const binding of extracted.bindings) {
     if (
@@ -3432,6 +3433,10 @@ function lowerNestedPureBlockReturnToL1(
       return null;
     }
     if (binding.kind === "earlyReturn") {
+      const currentFact = recognizeBranchFact(
+        binding.predicateExpr,
+        ctx.checker,
+      );
       const guard = buildL1SubExpr(binding.predicateExpr, {
         checker: ctx.checker,
         strategy: ctx.strategy,
@@ -3443,35 +3448,43 @@ function lowerNestedPureBlockReturnToL1(
       if (isUnsupported(guard) || isL1Unsupported(guard)) {
         return null;
       }
-      const value = lowerEarlyReturnArmValueToL1(
-        binding.blockBindings,
-        binding.valueExpr,
-        {
-          checker: ctx.checker,
-          strategy: ctx.strategy,
-          paramNames: scopedParams,
-          state: ctx.state ?? makeSymbolicState(),
-          supply: ctx.supply,
-          env: ctx.env,
-          ...(ctx.expectedReturnSort === undefined
-            ? {}
-            : { expectedReturnSort: ctx.expectedReturnSort }),
-        },
-      );
+      let value: IR1Expr | null = null;
+      enterFrame(ctx.env);
+      try {
+        for (const fact of [...fallthroughFacts, currentFact]) {
+          if (fact !== null) {
+            pushFact(ctx.env, fact);
+          }
+        }
+        value = lowerEarlyReturnArmValueToL1(
+          binding.blockBindings,
+          binding.valueExpr,
+          {
+            checker: ctx.checker,
+            strategy: ctx.strategy,
+            paramNames: scopedParams,
+            state: ctx.state ?? makeSymbolicState(),
+            supply: ctx.supply,
+            env: ctx.env,
+            ...(ctx.expectedReturnSort === undefined
+              ? {}
+              : { expectedReturnSort: ctx.expectedReturnSort }),
+          },
+        );
+      } finally {
+        exitFrame(ctx.env);
+      }
       if (value === null) {
         return null;
       }
       arms.push([guard, value] as const);
+      if (currentFact !== null) {
+        fallthroughFacts.push(negateFact(currentFact));
+      }
       continue;
     }
 
-    const localName =
-      binding.localName ??
-      allocLocalBindingName(
-        ctx.supply,
-        toPantTermName(binding.tsName),
-        scopedParams,
-      );
+    const localName = freshHygienicBinder(ctx.supply);
     const value =
       binding.kind === "const"
         ? buildL1SubExpr(binding.initializer, {
@@ -3497,11 +3510,20 @@ function lowerNestedPureBlockReturnToL1(
     scopedParams = withParam(scopedParams, binding.tsName, localName);
   }
 
-  const terminal = lowerNestedPureTerminalToL1(
-    extracted.returnExpr,
-    ctx,
-    scopedParams,
-  );
+  let terminal: IR1Expr | null = null;
+  enterFrame(ctx.env);
+  try {
+    for (const fact of fallthroughFacts) {
+      pushFact(ctx.env, fact);
+    }
+    terminal = lowerNestedPureTerminalToL1(
+      extracted.returnExpr,
+      ctx,
+      scopedParams,
+    );
+  } finally {
+    exitFrame(ctx.env);
+  }
   if (terminal === null) {
     return null;
   }

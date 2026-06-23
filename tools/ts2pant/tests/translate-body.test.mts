@@ -333,6 +333,90 @@ describe("unsupported patterns", () => {
     assert.equal(result, null);
   });
 
+  it("nested pure block-return helper threads branch facts into terminal", () => {
+    const source = `
+        interface User { score: number; }
+        function nested(u: User | null): number {
+          if (true) {
+            if (u === null) {
+              return 0;
+            }
+            return u.score;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond #u = 0 => 0, true => user--score (u 1)",
+    );
+  });
+
+  it("nested pure block-return helper threads branch facts into arm values", () => {
+    const source = `
+        interface User { score: number; }
+        function nested(u: User | null): number {
+          if (true) {
+            if (u !== null) {
+              return u.score;
+            }
+            return 0;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond ~(#u = 0) => user--score (u 1), true => 0",
+    );
+  });
+
   it.skip(
     "PENDING Patch 3: early-return arm block may contain nested early returns",
     () => {
