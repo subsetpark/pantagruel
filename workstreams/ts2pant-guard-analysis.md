@@ -313,6 +313,71 @@ workstream.
 - Whether branded types / `Schema.positive()` filters are in scope or deferred
   (name-based pattern matching, lower confidence). Resolve during M4's gameplan.
 
+---
+
+### Milestone 5: foreign-call-guard-admission — 📝 PLANNED (gameplan `gameplans/ts2pant-foreign-call-guard-admission.json`)
+
+> Added 2026-06-22. A new milestone, not in the original sketch: it directly
+> attacks the bottleneck the M2 survey named (self-translation gated by
+> TS-compiler-API calls, "not addressable by the purity lever"). A corpus
+> diagnostic over `src/` (805 functions) confirmed the largest single
+> body-lowering rejection bucket is `early-return predicate has side effects`
+> (83), dominated by declaration-file boolean type-predicates (`ts.isIdentifier(x)`,
+> `type.isUnion()`). M1 correctly bails on these (node_modules callees), so the
+> purity lever cannot reach them — but they can be **admitted as uninterpreted
+> EUF Bool terms** instead of proven pure. Depends only on M1; parallelizable with
+> the (now-complete) M3/M4.
+
+**Definition of Done**:
+- Decision A — a declaration-file boolean call (property-access form: `ts.isX(...)`,
+  `receiver.isX()`) in a **pure-rule** position is reclassified from effectful to
+  effect-free and modeled as the uninterpreted Bool rule-head application the
+  existing `isBoolReturningDeclarationFileCall` lowering already emits (with
+  type-predicate parameter-sort mapping). Compound predicates (`a || b`, `!a`) are
+  admitted whole via a recursive `admitForeignBoolPredicates` option on the
+  checker-aware effect oracle.
+- Decision B — that admission is trusted **only** inside pure-rule translation
+  contexts: the option is passed at the early-return predicate, μ-search predicate,
+  early-return boolean-value, and for-of guard gates, and **never** at the
+  mutating-body if-condition (`ir1-build-body.ts:1029`) or SSA-exit
+  (`translate-body.ts:5629`) gates — so a wrongly-assumed-pure condition can never
+  drop a real mutation. The boundary is enforced by which call site receives the
+  option, not by a new context-tracking mechanism.
+- The canonical declaration-file-bool-call detector is consolidated into `purity.ts`
+  and the duplicate `isBoolDeclarationFileNamespaceCall` (for-of gate) is retired —
+  three near-duplicate detectors collapse to one.
+- A library-agnostic construct fixture (extending the synthetic
+  `tests/fixtures/foreign-dependency` `.d.ts`, not the `typescript` package)
+  translates, passes the wasm typecheck, and carries a `@pant` annotation that
+  entails under `pant --check`.
+- Scope boundary: boolean returns only. Non-boolean foreign value/method calls
+  (`node.getText()` → String, `checker.getTypeAtLocation(n)` → domain) stay rejected
+  — they need a general foreign-call-to-EUF synthesis path that does not exist yet
+  (see the foreign-method-synthesis follow-on below).
+
+**Why this is a safe pause point**: Purely additive and conservative. The only new
+admission is a congruence-only EUF Bool term in a context that models no effects,
+reusing the existing rule-head lowering; the dormant oracle option (P2) ships
+byte-identical before any gate flips it (P3). Effectful and non-boolean foreign
+calls still reject.
+
+**Unlocks**: The dominant residual guard-rejection bucket on ts2pant's own corpus.
+Surfaces the **foreign-method-synthesis** follow-on (a candidate future milestone):
+non-boolean foreign value/method calls in value position need a general
+foreign-call-to-EUF synthesis path — the call-side analogue of the foreign-accessor
+field-read work — which this milestone deliberately defers.
+
+**Operator Actions Before Next Milestone**:
+- Re-run the corpus diagnostic; confirm the `early-return predicate has side effects`
+  bucket drops and no mutating-context condition was wrongly admitted (spot-check the
+  negative fixture and a few mutating functions).
+
+**Established Precedents** (milestone-scoped): the workstream-level Kroening &
+Strichman EUF/path-condition precedent is consumed directly — the admitted call is an
+uninterpreted-function application sound by congruence alone.
+
+**Open Questions**: none (both resolved during gameplan authoring — see Decisions Made).
+
 ## Dependency Graph
 
 ```text
@@ -321,6 +386,7 @@ workstream.
 3a (du-discriminant-narrowing-layer) → [2]      ── unlocks DU workstream M3 (cross-workstream)
 3b (nullish-and-predicate-narrowing) → [3a]
 4  (guard-effect-error-channel)     → [1]       (parallelizable; sequenced last)
+5  (foreign-call-guard-admission)   → [1]       📝 PLANNED (parallelizable; added post-M2-survey)
 ```
 
 **Note**: M1 → M2 → M3a is the critical path. M3 was split by the M2 survey: **M3a**
@@ -329,7 +395,9 @@ delivers the discriminant-narrowing fact the discriminated-union workstream's
 early as possible); **M3b** adds nullish + type-predicate narrowing on the same
 assumption-environment infrastructure. M4 depends only on M1 (Effect precondition
 extraction is independent of narrowing) and may run in parallel, positioned last by
-priority.
+priority. **M5** was added after the M2 survey to attack the survey's named
+self-translation bottleneck (TS-compiler-API predicate calls); it depends only on M1
+and is independent of the narrowing layer, so it parallelizes with M3/M4.
 
 ## Open Questions
 
@@ -356,7 +424,10 @@ in-repo call-following, Kroening & Strichman, TS Compiler API, Effect-TS) live i
 | Purity boundary: pure local `const` bindings + effect-free loops in a callee **allowed**; recursive callees **bail to effectful** | Resolves M1's open question. Allowing pure-local structure keeps the classifier useful; bailing on recursion keeps it sound and terminating (visited-set) without attempting a fixpoint. |
 | **M3 split into M3a (discriminant) + M3b (nullish + type-predicate)** | M2 survey decision. Discriminant narrowing is both the DU hard-dependency and the densest real pattern (58 `switch (x.kind)` + `.kind === lit` ifs); splitting ships the DU unlock first on the smallest surface, with nullish (165 sites) and the higher-effort type-predicate tail following on the same assumption-environment infra. |
 | M3 design: **function-scoped assumption environment** (discriminant / non-null / predicate facts as z3 path conditions) | M2 survey. A branch test pushes a fact; lowering consults it to discharge guards; pop on exit. The DU workstream consumes the `<property> === <literal>` fact. Occurrence typing modulo theories. |
-| ts2pant self-translation is **bottlenecked by TS-compiler-API calls**, not addressable by the purity lever | M2 finding. Residual predicate rejections mostly call `checker.getX` / `ts.isX` (node_modules → conservatively effectful); the ~66 dogfood figure overcounted the addressable set for ts2pant's own code. The purity lever remains real for user code; self-translation ceiling is lower than the raw count implied. |
+| ts2pant self-translation is **bottlenecked by TS-compiler-API calls**, not addressable by the purity lever | M2 finding. Residual predicate rejections mostly call `checker.getX` / `ts.isX` (node_modules → conservatively effectful); the ~66 dogfood figure overcounted the addressable set for ts2pant's own code. The purity lever remains real for user code; self-translation ceiling is lower than the raw count implied. **Revisited by M5 (2026-06-22):** the bottleneck *is* addressable — not by proving foreign purity (intractable), but by EUF-**admitting** declaration-file boolean calls in pure-rule contexts. The "not addressable" claim was specific to the *purity* lever; the EUF-admission lever reaches it. |
+| **M5 (foreign-call-guard-admission): Decision A — admit, don't prove.** Declaration-file boolean calls are reclassified effect-free and modeled as uninterpreted EUF Bool terms, rather than analyzed for purity | M5 gameplan (2026-06-22). Proving TS-compiler-API purity is intractable and against the no-foreign-semantics posture (consistent with foreign-accessor + free-call-decl). An EUF term commits only to congruence, asserting nothing about the call's value, so it is sound in a context that models no effects — the same abstraction the for-of guard gate and the value-position lowering already used. |
+| **M5: Decision B — trust admission only in pure-rule contexts**, by passing the oracle option at the early-return predicate/value, μ-search predicate, and for-of guard gates, never at mutating-body/SSA-exit gates | M5 gameplan. A wrong purity guess is harmless in a pure rule (no state; the guard contributes only its boolean value) but could drop a real mutation in a mutating action. Gating by *which physical call site* receives the option enforces the blast-radius boundary without a new context-tracking mechanism, because the pure and mutating gates are already distinct code paths. |
+| **M5: scope = boolean property-access foreign calls only**; non-boolean and bare-identifier foreign calls stay rejected | M5 gameplan. Boolean property-access calls reuse the existing `isBoolReturningDeclarationFileCall` lowering for free. Non-boolean foreign value/method calls (`node.getText()` → String) need a general foreign-call-to-EUF synthesis path that does not exist — deferred as the **foreign-method-synthesis** follow-on (call-side analogue of foreign-accessor field reads). The for-of guard's duplicate detector is unified into the one canonical `purity.ts` detector. |
 | Both condition-purity and flow-narrowing live in **one workstream** | They are the two facets of "reason about which facts hold where"; flow-narrowing (M3) is the layer the DU workstream was promised to consume, so it belongs on the same roadmap rather than orphaned. |
 | Flow narrowing is **intra-function only** | Matches the any/unknown-opaque workstream's "cross-function-call narrowing not trusted by default" decision. Guard *extraction* still follows calls (already implemented); narrowing does not. |
 | No field-name / discriminant special-casing in narrowing | Inherits the project-wide constraint: discriminant-equality narrowing keys on the structural predicate `<field> === <literal>`, never on `.kind` by name. |

@@ -680,6 +680,9 @@ function foldForBinop(
   }
 }
 
+/**
+ * @pant isAccumulatorOuterOp op <-> op = "add" or op = "sub" or op = "mul" or op = "div" or op = "and" or op = "or".
+ */
 function isAccumulatorOuterOp(
   op: string,
 ): op is AccumulatorFoldBody["outerOp"] {
@@ -693,6 +696,9 @@ function isAccumulatorOuterOp(
   );
 }
 
+/**
+ * @pant unsupported (recurrenceUnsupported) = "bounded counter loop body contains an accumulator self-recurrence; lift to L4 fixed-point lowering".
+ */
 function recurrenceUnsupported(): { unsupported: string } {
   return {
     unsupported:
@@ -712,6 +718,9 @@ function isNatLiteral(expr: IR1Expr, value: number): boolean {
   );
 }
 
+/**
+ * @pant isCounterBoundCmpOp op <-> op = "lt" or op = "le" or op = "gt" or op = "ge".
+ */
 function isCounterBoundCmpOp(op: string): op is CounterLoopShape["boundCmpOp"] {
   return op === "lt" || op === "le" || op === "gt" || op === "ge";
 }

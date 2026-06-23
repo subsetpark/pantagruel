@@ -611,6 +611,8 @@ export function clearedFallback(
  * crossed-field writes would be emitted against the first writer's types.
  * Include the full rule identity (rule, key predicate, owner, key) so only
  * writes that share a target rule coalesce.
+ *
+ * @pant mapWriteKey ruleName keyPredName ownerType keyType = "map::" + ruleName + "::" + keyPredName + "::" + ownerType + "::" + keyType.
  */
 function mapWriteKey(
   ruleName: string,

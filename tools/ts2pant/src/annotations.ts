@@ -181,6 +181,8 @@ export function extractFunctionAnnotationsAndOverrides(
 /**
  * Convenience wrapper: find a function by name and extract its \@pant
  * proposition texts as plain strings.
+ *
+ * @pant extractFunctionAnnotations sourceFile functionName = propositionTexts (extractFunctionAnnotationsAndOverrides sourceFile functionName).
  */
 export function extractFunctionAnnotations(
   sourceFile: SourceFile,
