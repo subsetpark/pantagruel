@@ -316,6 +316,19 @@ let test_split_form_rejects_rhs_free_param () =
   let chapter = List.hd doc.chapters in
   check int "free-param equation remains in body" 3 (List.length chapter.body)
 
+let test_split_form_allows_rhs_guard_binder () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       ok xs: [String] => Bool.\n\
+       ---\n\
+       ok xs = (all x in xs | x = x).\n"
+  in
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
+  match Env.lookup_rule_body_arity "ok" 1 env with
+  | Some _ -> ()
+  | None -> fail "expected guard-bound RHS variable to attach rule body"
+
 let test_recursive_rule_emits_define_fun_rec () =
   let env, doc =
     parse_and_collect
@@ -1463,6 +1476,32 @@ let test_expensive_string_quantifier_skips_consistency_only () =
   check bool "keeps entailment query" true
     (List.exists (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries)
 
+let test_expensive_composite_param_skips_consistency () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\nmarker => Bool.\n---\nall xs: [String] | xs = xs.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  check bool "skips list<string> invariant consistency" false
+    (List.exists
+       (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency)
+       queries)
+
+let test_expensive_gin_uses_quantifier_env () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Holder.\n\
+       strings h: Holder => [String].\n\
+       ---\n\
+       all h: Holder, x in strings h | x = x.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  check bool "skips GIn string element invariant consistency" false
+    (List.exists
+       (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency)
+       queries)
+
 let test_init_query_content () =
   let env, doc =
     parse_and_collect
@@ -1500,6 +1539,8 @@ let integration_tests =
       test_duplicate_split_form_equation_kept_in_body;
     test_case "split-form rejects RHS free param" `Quick
       test_split_form_rejects_rhs_free_param;
+    test_case "split-form allows RHS guard binder" `Quick
+      test_split_form_allows_rhs_guard_binder;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"
@@ -1525,6 +1566,10 @@ let integration_tests =
       test_list_domain_element_no_constraint;
     test_case "expensive string quantifier skips consistency only" `Quick
       test_expensive_string_quantifier_skips_consistency_only;
+    test_case "expensive composite param skips consistency" `Quick
+      test_expensive_composite_param_skips_consistency;
+    test_case "expensive GIn uses quantifier env" `Quick
+      test_expensive_gin_uses_quantifier_env;
     test_case "invariant query content" `Quick test_invariant_query_content;
     test_case "init query content" `Quick test_init_query_content;
   ]

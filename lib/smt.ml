@@ -2638,45 +2638,65 @@ let generate_action_entailment_query config env ~all_invariants ~index
 
 (** Generate all verification queries for a document *)
 let invariant_expensive_for_consistency env (inv : expr located) =
-  let unbounded_ty = function
+  let rec unbounded_ty = function
     | TyString | TyInt | TyReal -> true
-    | TyBool | TyNat | TyNat0 | TyNothing | TyDomain _ | TyList _ | TyProduct _
-    | TySum _ | TyFunc _ ->
-        false
+    | TyList ty -> unbounded_ty ty
+    | TyProduct tys | TySum tys -> List.exists unbounded_ty tys
+    | TyBool | TyNat | TyNat0 | TyNothing | TyDomain _ | TyFunc _ -> false
   in
-  let param_unbounded (p : param) =
-    match Collect.resolve_type env p.param_type dummy_loc with
-    | Ok ty -> unbounded_ty ty
-    | Error _ -> false
+  let param_ty env (p : param) =
+    Collect.resolve_type env p.param_type dummy_loc
   in
-  let rec expr_expensive = function
+  let param_unbounded env p =
+    match param_ty env p with Ok ty -> unbounded_ty ty | Error _ -> false
+  in
+  let bind_param env p =
+    match param_ty env p with
+    | Ok ty -> Env.with_vars [ (Ast.lower_name p.param_name, ty) ] env
+    | Error _ -> env
+  in
+  let rec expr_expensive env = function
     | EForall (mb, metas) | EExists (mb, metas) | EEach (mb, metas, _) ->
         let params, guards, body = Ast.unbind_quant mb metas in
-        List.exists param_unbounded params
-        || List.exists guard_expensive guards
-        || expr_expensive body
-    | EApp (func, args) -> List.exists expr_expensive (func :: args)
-    | EBinop (_, e1, e2) -> expr_expensive e1 || expr_expensive e2
-    | EUnop (_, e) | EProj (e, _) | EInitially e -> expr_expensive e
-    | ETuple es -> List.exists expr_expensive es
+        let params_expensive = List.exists (param_unbounded env) params in
+        let env = List.fold_left bind_param env params in
+        let guards_expensive, env =
+          List.fold_left
+            (fun (expensive, env) guard ->
+              let guard_expensive, env = guard_expensive env guard in
+              (expensive || guard_expensive, env))
+            (false, env) guards
+        in
+        params_expensive || guards_expensive || expr_expensive env body
+    | EApp (func, args) -> List.exists (expr_expensive env) (func :: args)
+    | EBinop (_, e1, e2) -> expr_expensive env e1 || expr_expensive env e2
+    | EUnop (_, e) | EProj (e, _) | EInitially e -> expr_expensive env e
+    | ETuple es -> List.exists (expr_expensive env) es
     | EOverride (_, pairs) ->
-        List.exists (fun (k, v) -> expr_expensive k || expr_expensive v) pairs
+        List.exists
+          (fun (k, v) -> expr_expensive env k || expr_expensive env v)
+          pairs
     | ECond arms ->
-        List.exists (fun (g, c) -> expr_expensive g || expr_expensive c) arms
+        List.exists
+          (fun (g, c) -> expr_expensive env g || expr_expensive env c)
+          arms
     | EVar _ | EPrimed _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
     | ELitString _ | ELitBool _ ->
         false
-  and guard_expensive = function
-    | GParam p -> param_unbounded p
-    | GIn (_, list_expr) -> (
+  and guard_expensive env = function
+    | GParam p -> (param_unbounded env p, bind_param env p)
+    | GIn (Lower name, list_expr) -> (
         match[@warning "-4"]
           Check.infer_type { Check.env; loc = dummy_loc } list_expr
         with
-        | Ok (TyList elem_ty) -> unbounded_ty elem_ty
-        | Ok _ | Error _ -> expr_expensive list_expr)
-    | GExpr e -> expr_expensive e
+        | Ok (TyList elem_ty) ->
+            let list_expensive = expr_expensive env list_expr in
+            let env = Env.with_vars [ (name, elem_ty) ] env in
+            (unbounded_ty elem_ty || list_expensive, env)
+        | Ok _ | Error _ -> (expr_expensive env list_expr, env))
+    | GExpr e -> (expr_expensive env e, env)
   in
-  expr_expensive inv.value
+  expr_expensive env inv.value
 
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in

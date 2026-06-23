@@ -439,20 +439,29 @@ let recognize_rule_definition_eq
           acc arms
     | EForall (mb, metas) | EExists (mb, metas) | EEach (mb, metas, _) ->
         let params, guards, body = Ast.unbind_quant mb metas in
-        let bound =
+        let bound0 =
           List.fold_left
             (fun s (p : Ast.param) ->
               StringSet.add (Ast.lower_name p.param_name) s)
             StringSet.empty params
         in
-        let guard_vars =
-          List.fold_left
-            (fun acc -> function
-              | GParam _ -> acc
-              | GIn (_, list_expr) -> value_vars acc list_expr
-              | GExpr e -> value_vars acc e)
-            StringSet.empty guards
+        let rec collect_guards acc bound = function
+          | [] -> (acc, bound)
+          | GParam p :: rest ->
+              collect_guards acc
+                (StringSet.add (Ast.lower_name p.param_name) bound)
+                rest
+          | GIn (Lower n, list_expr) :: rest ->
+              let vars =
+                StringSet.diff (value_vars StringSet.empty list_expr) bound
+              in
+              collect_guards (StringSet.union acc vars) (StringSet.add n bound)
+                rest
+          | GExpr e :: rest ->
+              let vars = StringSet.diff (value_vars StringSet.empty e) bound in
+              collect_guards (StringSet.union acc vars) bound rest
         in
+        let guard_vars, bound = collect_guards StringSet.empty bound0 guards in
         StringSet.union acc
           (StringSet.diff
              (StringSet.union guard_vars (value_vars StringSet.empty body))
