@@ -3437,43 +3437,39 @@ function lowerNestedPureBlockReturnToL1(
         binding.predicateExpr,
         ctx.checker,
       );
-      const guard = buildL1SubExpr(binding.predicateExpr, {
-        checker: ctx.checker,
-        strategy: ctx.strategy,
-        paramNames: scopedParams,
-        state: ctx.state ?? makeSymbolicState(),
-        supply: ctx.supply,
-        env: ctx.env,
-      });
+      const guard = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
+        buildL1SubExpr(binding.predicateExpr, {
+          checker: ctx.checker,
+          strategy: ctx.strategy,
+          paramNames: scopedParams,
+          state: ctx.state ?? makeSymbolicState(),
+          supply: ctx.supply,
+          env: ctx.env,
+        }),
+      );
       if (isUnsupported(guard) || isL1Unsupported(guard)) {
         return null;
       }
-      let value: IR1Expr | null = null;
-      enterFrame(ctx.env);
-      try {
-        for (const fact of [...fallthroughFacts, currentFact]) {
-          if (fact !== null) {
-            pushFact(ctx.env, fact);
-          }
-        }
-        value = lowerEarlyReturnArmValueToL1(
-          binding.blockBindings,
-          binding.valueExpr,
-          {
-            checker: ctx.checker,
-            strategy: ctx.strategy,
-            paramNames: scopedParams,
-            state: ctx.state ?? makeSymbolicState(),
-            supply: ctx.supply,
-            env: ctx.env,
-            ...(ctx.expectedReturnSort === undefined
-              ? {}
-              : { expectedReturnSort: ctx.expectedReturnSort }),
-          },
-        );
-      } finally {
-        exitFrame(ctx.env);
-      }
+      const value = withNestedFactFrame(
+        ctx.env,
+        [...fallthroughFacts, currentFact],
+        () =>
+          lowerEarlyReturnArmValueToL1(
+            binding.blockBindings,
+            binding.valueExpr,
+            {
+              checker: ctx.checker,
+              strategy: ctx.strategy,
+              paramNames: scopedParams,
+              state: ctx.state ?? makeSymbolicState(),
+              supply: ctx.supply,
+              env: ctx.env,
+              ...(ctx.expectedReturnSort === undefined
+                ? {}
+                : { expectedReturnSort: ctx.expectedReturnSort }),
+            },
+          ),
+      );
       if (value === null) {
         return null;
       }
@@ -3485,7 +3481,7 @@ function lowerNestedPureBlockReturnToL1(
     }
 
     const localName = freshHygienicBinder(ctx.supply);
-    const value =
+    const value = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
       binding.kind === "const"
         ? buildL1SubExpr(binding.initializer, {
             checker: ctx.checker,
@@ -3502,7 +3498,8 @@ function lowerNestedPureBlockReturnToL1(
             state: ctx.state,
             supply: ctx.supply,
             env: ctx.env,
-          });
+          }),
+    );
     if (isUnsupported(value) || isL1Unsupported(value)) {
       return null;
     }
@@ -3510,20 +3507,9 @@ function lowerNestedPureBlockReturnToL1(
     scopedParams = withParam(scopedParams, binding.tsName, localName);
   }
 
-  let terminal: IR1Expr | null = null;
-  enterFrame(ctx.env);
-  try {
-    for (const fact of fallthroughFacts) {
-      pushFact(ctx.env, fact);
-    }
-    terminal = lowerNestedPureTerminalToL1(
-      extracted.returnExpr,
-      ctx,
-      scopedParams,
-    );
-  } finally {
-    exitFrame(ctx.env);
-  }
+  const terminal = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
+    lowerNestedPureTerminalToL1(extracted.returnExpr, ctx, scopedParams),
+  );
   if (terminal === null) {
     return null;
   }
@@ -3539,6 +3525,24 @@ function lowerNestedPureBlockReturnToL1(
       substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
     withArms,
   );
+}
+
+function withNestedFactFrame<T>(
+  env: AssumptionEnv,
+  facts: ReadonlyArray<Fact | null>,
+  fn: () => T,
+): T {
+  enterFrame(env);
+  try {
+    for (const fact of facts) {
+      if (fact !== null) {
+        pushFact(env, fact);
+      }
+    }
+    return fn();
+  } finally {
+    exitFrame(env);
+  }
 }
 
 function lowerEarlyReturnArmValueToL1(
