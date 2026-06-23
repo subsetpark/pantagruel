@@ -12,6 +12,7 @@ import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
 const SCAFFOLD_ONLY_FIXTURES = new Set([
   "expressions-for-of-comprehension.ts",
+  "expressions-local-collection-builder.ts",
   "foreign-accessor-dependency.ts",
 ]);
 
