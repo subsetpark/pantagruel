@@ -2226,7 +2226,8 @@ function tryBuildLocalSetBuilderReturn(
     if (binding.kind === "const") {
       if (seenAdd) {
         return {
-          error: "Set builder const bindings must appear before added expressions",
+          error:
+            "Set builder const bindings must appear before added expressions",
         };
       }
       if (expressionReferencesNames(binding.initializer, accNames)) {
@@ -2919,7 +2920,9 @@ function describeLocalMapBuilderBodyRejection(
         }
         if (isMapConstructor(binding.initializer)) {
           mapAccNames.add(binding.tsName);
-        } else if (expressionReferencesNames(binding.initializer, mapAccNames)) {
+        } else if (
+          expressionReferencesNames(binding.initializer, mapAccNames)
+        ) {
           aliases.add(binding.tsName);
         }
       }
