@@ -3495,7 +3495,7 @@ function lowerNestedPureBlockReturnToL1(
             checker: ctx.checker,
             strategy: ctx.strategy,
             paramNames: scopedParams,
-            state: ctx.state,
+            state: ctx.state ?? makeSymbolicState(),
             supply: ctx.supply,
             env: ctx.env,
           }),

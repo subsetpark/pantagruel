@@ -333,6 +333,45 @@ describe("unsupported patterns", () => {
     assert.equal(result, null);
   });
 
+  it("nested pure block-return helper lowers mu-search without caller state", () => {
+    const source = `
+        function nested(used: ReadonlySet<number>): number {
+          if (true) {
+            let i = 0;
+            while (used.has(i)) {
+              i++;
+            }
+            return i;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.match(getAst().strExpr(TB.bodyExpr(result)), /min over each/u);
+  });
+
   it("nested pure block-return helper threads branch facts into terminal", () => {
     const source = `
         interface User { score: number; }
