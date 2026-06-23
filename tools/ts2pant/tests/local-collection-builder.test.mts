@@ -96,7 +96,7 @@ describe("local collection builder", () => {
     },
     async () => {
       const output = await emitFixture("listAliasEscapeRejected");
-      assert.match(output, /UNSUPPORTED: list-alias-escape-rejected/u);
+      assert.match(output, /^> UNSUPPORTED: list-alias-escape-rejected/mu);
       assert.match(output, /alias|escape|builder/u);
     },
   );
@@ -109,7 +109,10 @@ describe("local collection builder", () => {
     },
     async () => {
       const output = await emitFixture("listUnknownMutationRejected");
-      assert.match(output, /UNSUPPORTED: list-unknown-mutation-rejected/u);
+      assert.match(
+        output,
+        /^> UNSUPPORTED: list-unknown-mutation-rejected/mu,
+      );
       assert.match(output, /unknown|mutation|builder|unshift/u);
     },
   );
@@ -121,7 +124,7 @@ describe("local collection builder", () => {
     },
     async () => {
       const output = await emitFixture("mapBuilderRejected");
-      assert.match(output, /UNSUPPORTED: map-builder-rejected/u);
+      assert.match(output, /^> UNSUPPORTED: map-builder-rejected/mu);
       assert.match(output, /Map|map|builder/u);
     },
   );
