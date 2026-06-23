@@ -586,7 +586,7 @@ describe("unsupported patterns", () => {
     }
   });
 
-  it.skip("PENDING Patch 5: record-return conditional lowers fieldwise", () => {
+  it("record-return conditional lowers fieldwise", () => {
     const source = `
         interface Pair { x: number; y: number; }
         function pair(n: number, flag: boolean): Pair {
@@ -1313,7 +1313,7 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 
-  it("rejects early-return + record return (per-field cond decomposition not yet supported)", () => {
+  it("lowers early-return + record return fieldwise", () => {
     const source = `
       interface Pair { a: number; b: number }
       export function f(n: number): Pair {
@@ -1327,14 +1327,11 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
-    if (props[0]?.kind === "unsupported") {
-      assert.match(
-        props[0].reason,
-        /record return combined with early-return arms or if\/else branches/u,
-      );
-    }
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(props.filter((p) => p.kind === "equation").length, 2);
   });
 
   it("rejects record-shaped arm value with non-literal terminal", () => {
@@ -1362,7 +1359,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects record-shaped if/else terminal branches", () => {
+  it("lowers record-shaped if/else terminal branches fieldwise", () => {
     const source = `
       interface Pair { a: number; b: number }
       export function f(n: number): Pair {
@@ -1379,14 +1376,11 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
-    if (props[0]?.kind === "unsupported") {
-      assert.match(
-        props[0].reason,
-        /record return combined with early-return arms or if\/else branches/u,
-      );
-    }
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+    );
+    assert.equal(props.filter((p) => p.kind === "equation").length, 2);
   });
 
   const unknownCollectionCases = [

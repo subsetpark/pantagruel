@@ -191,11 +191,11 @@ exports[`expressions-body-lowering-rd2.ts > rd2NullableNestedTerminal 1`] = `
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2RecordReturnConditional 1`] = `
-"module RD2_RECORD_RETURN_CONDITIONAL.\\n\\nPair.\\npair--x p: Pair => Int.\\npair--y p: Pair => Int.\\nrd2-record-return-conditional n: Int, flag: Bool => Pair.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-conditional — record return combined with early-return arms or if/else branches is not yet supported.\\n"
+"module RD2_RECORD_RETURN_CONDITIONAL.\\n\\nPair.\\npair--x p: Pair => Int.\\npair--y p: Pair => Int.\\nrd2-record-return-conditional n: Int, flag: Bool => Pair.\\n\\n---\\n\\npair--x (rd2-record-return-conditional n flag) = (cond flag => n, true => 0).\\npair--y (rd2-record-return-conditional n flag) = (cond flag => n + 1, true => 1).\\n"
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2RecordReturnMismatchedFields 1`] = `
-"module RD2_RECORD_RETURN_MISMATCHED_FIELDS.\\n\\nXRec.\\nx-rec--x r: XRec => Int.\\nXYRec.\\nxy-rec--x r1: XYRec => Int.\\nxy-rec--y r1: XYRec => Int.\\nrd2-record-return-mismatched-fields n: Int, flag: Bool => XRec + XYRec.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-mismatched-fields — record return combined with early-return arms or if/else branches is not yet supported.\\n"
+"module RD2_RECORD_RETURN_MISMATCHED_FIELDS.\\n\\nXRec.\\nx-rec--x r: XRec => Int.\\nXYRec.\\nxy-rec--x r1: XYRec => Int.\\nxy-rec--y r1: XYRec => Int.\\nrd2-record-return-mismatched-fields n: Int, flag: Bool => XRec + XYRec.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-mismatched-fields — cannot resolve return type name for record return.\\n"
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2SwitchFallThrough 1`] = `

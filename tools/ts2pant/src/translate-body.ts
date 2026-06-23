@@ -99,7 +99,10 @@ import {
   nextSupply,
   type UniqueSupply,
 } from "./supply.js";
-import { translateRecordReturn } from "./translate-record.js";
+import {
+  translateRecordConditionalReturn,
+  translateRecordReturn,
+} from "./translate-record.js";
 import {
   classifyFunction,
   containsUnsupportedOperator,
@@ -1361,6 +1364,91 @@ function translatePureBody(
       synthCell,
       (e) => applyOpaqueAliases(e, supply),
     );
+  }
+
+  if (terminalIsObjLit && prelude.arms.length > 0) {
+    const recordArms = collectPreludeRecordArms(
+      extracted.bindings,
+      prelude.arms,
+    );
+    if ("error" in recordArms) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${recordArms.error}`,
+        },
+      ];
+    }
+    const conditionalResults = translateRecordConditionalReturn(
+      recordArms.arms,
+      extracted.returnExpr as ts.ObjectLiteralExpression,
+      functionName,
+      params,
+      node,
+      checker,
+      strategy,
+      prelude.scopedParams,
+      supply,
+      synthCell,
+      (e) => applyOpaqueAliases(e, supply),
+    );
+    return [
+      ...prelude.ruleDecls,
+      ...loweredLets.propositions,
+      ...conditionalResults,
+    ];
+  }
+
+  if (ts.isIfStatement(extracted.returnExpr) && terminalIfHasObjLitBranch) {
+    const preludeRecordArms = collectPreludeRecordArms(
+      extracted.bindings,
+      prelude.arms,
+    );
+    if ("error" in preludeRecordArms) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${preludeRecordArms.error}`,
+        },
+      ];
+    }
+    const recordIf = collectIfRecordConditionalArms(extracted.returnExpr, {
+      checker,
+      strategy,
+      paramNames: prelude.scopedParams,
+      state: undefined,
+      supply,
+      env,
+      ...(expectedReturnSort === undefined
+        ? {}
+        : { expectedSort: expectedReturnSort }),
+    });
+    if ("error" in recordIf) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${recordIf.error}`,
+        },
+      ];
+    }
+    const conditionalResults = translateRecordConditionalReturn(
+      [...preludeRecordArms.arms, ...recordIf.arms],
+      recordIf.otherwise,
+      functionName,
+      params,
+      node,
+      checker,
+      strategy,
+      prelude.scopedParams,
+      supply,
+      synthCell,
+      (e) => applyOpaqueAliases(e, supply),
+    );
+    return [
+      ...prelude.ruleDecls,
+      ...loweredLets.propositions,
+      ...conditionalResults,
+    ];
   }
 
   if (terminalIsObjLit || armHasObjLit || terminalIfHasObjLitBranch) {
@@ -4888,6 +4976,91 @@ function ifTerminalHasObjLitBranch(
     return ifTerminalHasObjLitBranch(stmt.elseStatement, checker);
   }
   return branchHasObjLit(stmt.elseStatement);
+}
+
+function collectPreludeRecordArms(
+  bindings: readonly PreludeStmt[],
+  loweredArms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>,
+):
+  | { arms: Array<readonly [OpaqueExpr, ts.ObjectLiteralExpression]> }
+  | { error: string } {
+  const earlyReturns = bindings.filter(
+    (b): b is Extract<PreludeStmt, { kind: "earlyReturn" }> =>
+      b.kind === "earlyReturn",
+  );
+  if (earlyReturns.length !== loweredArms.length) {
+    return {
+      error:
+        "record return branch collection lost an early-return guard during lowering",
+    };
+  }
+  const arms: Array<readonly [OpaqueExpr, ts.ObjectLiteralExpression]> = [];
+  for (const [idx, binding] of earlyReturns.entries()) {
+    if (
+      binding.valueExpr === undefined ||
+      !ts.isObjectLiteralExpression(binding.valueExpr)
+    ) {
+      return {
+        error:
+          "record return branches must all return object literals with the same field set",
+      };
+    }
+    arms.push([loweredArms[idx]![0], binding.valueExpr] as const);
+  }
+  return { arms };
+}
+
+function collectIfRecordConditionalArms(
+  stmt: ts.IfStatement,
+  ctx: L1BuildContext,
+):
+  | {
+      arms: Array<readonly [OpaqueExpr, ts.ObjectLiteralExpression]>;
+      otherwise: ts.ObjectLiteralExpression;
+    }
+  | { error: string } {
+  const arms: Array<readonly [OpaqueExpr, ts.ObjectLiteralExpression]> = [];
+  let current: ts.IfStatement = stmt;
+  while (true) {
+    const guard = buildL1SubExpr(current.expression, {
+      ...ctx,
+      state: ctx.state ?? makeSymbolicState(),
+    });
+    if (isUnsupported(guard) || isL1Unsupported(guard)) {
+      return { error: guard.unsupported };
+    }
+    const thenExpr = extractReturnFromBranch(
+      current.thenStatement,
+      ctx.checker,
+    );
+    if (thenExpr === null || !ts.isObjectLiteralExpression(thenExpr)) {
+      return {
+        error:
+          "record return branches must all return object literals with the same field set",
+      };
+    }
+    arms.push([lowerL1ToOpaque(guard), thenExpr] as const);
+    if (!current.elseStatement) {
+      return {
+        error: "record return if/else chain must have a final else branch",
+      };
+    }
+    if (ts.isIfStatement(current.elseStatement)) {
+      current = current.elseStatement;
+      continue;
+    }
+    const elseExpr = extractReturnFromBranch(
+      current.elseStatement,
+      ctx.checker,
+    );
+    if (elseExpr === null || !ts.isObjectLiteralExpression(elseExpr)) {
+      return {
+        error:
+          "record return branches must all return object literals with the same field set",
+      };
+    }
+    return { arms, otherwise: elseExpr };
+  }
 }
 
 /** Get element type name for an array-typed TS expression, or null. */
