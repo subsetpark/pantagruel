@@ -93,7 +93,7 @@ bindings through `substituteIR1ExprSubtree()`.
 - Local accumulator sequencing such as `lines.push(...); return lines` is handled
   by the separate collection-builder model below.
 
-## Local Collection Builder Recognition
+## Local Collection Builders
 
 **Standard name:** A-normal-form local builder recognition / effect
 encapsulation.
@@ -109,27 +109,94 @@ out.push(e2);
 return out;
 ```
 
-The local list-builder recognizer treats this as a bounded ANF-like prelude
-with one private mutable accumulator. The implementation entry point is
-`tryBuildLocalListBuilderReturn()`. It does **not** lower `push` as a pure
-expression and does not synthesize a list literal. Instead it emits constraints
-over the declared return rule: one cardinality assertion for the result and one
-1-based positional list-application assertion per pushed value, written in
-Pantagruel as `(f args) i = value_i` where `i` is a 1-based `Nat` index.
-Ordinary const bindings before the pushes are lowered through the existing
-local-rule prelude machinery so pushed values can refer to hygienically scoped
-local names.
+Local collection builders are recognized as bounded ANF-like preludes with one
+private mutable accumulator. The implementation entry points are
+`tryBuildLocalListBuilderReturn()` and `tryBuildLocalSetBuilderReturn()`. They
+do **not** lower `push` / `add` as pure expressions, and they do not synthesize
+target-language collection literals.
+
+### Ordered list builders
+
+For `T[]` builders, ts2pant emits constraints over the declared return rule:
+one cardinality assertion for the result and one positional list-application
+assertion per pushed value. Positions are 1-based Pantagruel `Nat` indexes, so:
+
+```ts
+const out: T[] = [];
+out.push(e1);
+out.push(e2);
+return out;
+```
+
+emits the assertion shape:
+
+```text
+#(f args) = 2.
+(f args) 1 = e1.
+(f args) 2 = e2.
+```
+
+The result remains the function's declared `[T]` rule. No list literal,
+synthetic finite tuple, or helper domain is introduced. Ordinary const bindings
+before the pushes are lowered through the existing local-rule prelude machinery
+so pushed values can refer to hygienically scoped local names.
+
+### Set builders
+
+For `Set<T>` / `ReadonlySet<T>` builders, ts2pant uses the existing Set-as-list
+encoding and emits membership assertions over the returned value. For direct
+straight-line `.add` calls:
+
+```ts
+const out = new Set<T>();
+out.add(e1);
+out.add(e2);
+return out;
+```
+
+the emitted assertion shape is a quantified equivalence:
+
+```text
+all x: T | x in f args <-> (x = e1 or x = e2).
+```
+
+Insertion order and duplicate insertion are intentionally not modeled beyond
+membership. An empty local Set builder emits universal non-membership:
+
+```text
+all x: T | ~(x in f args).
+```
+
+### Exclusions
 
 **Invariants:**
 - The returned identifier is the same local empty-array accumulator that
-  receives all pushes.
-- Push order is source order; emitted positions are `1..N`.
-- The accumulator is not aliased, read by a guard or pushed expression, passed
-  to another call, reassigned, or mutated by any method other than `.push`.
-- Const bindings are allowed only before the first push; later consts are
+  receives all pushes, or the same local empty-`Set` accumulator that receives
+  all adds.
+- List push order is source order; emitted positions are `1..N`.
+- Set additions are membership-only; no insertion order or uniqueness axioms are
+  emitted beyond the membership equivalence.
+- The accumulator is not aliased, read by a guard or pushed/added expression,
+  passed to another call, reassigned, or mutated by any method other than the
+  admitted builder method (`.push` for lists, `.add` for Sets).
+- Const bindings are allowed only before the first push/add; later consts are
   rejected to keep the model straight-line and unambiguous.
 - Unsupported builder shapes remain diagnostics. General expression statements
   still flow through the normal prelude rejection path.
+
+**Explicitly unsupported in M2:**
+- Map builders such as `const m = new Map(); m.set(k, v); return m`. Map
+  construction is deferred because it must respect the guarded membership/value
+  rule pair described in "Partial Rules (Map<K, V>)" below.
+- Set `.delete` and `.clear` builders. Straight-line local Set construction only
+  admits `.add` calls against a fresh empty local Set.
+- Accumulator aliasing or escape: returning an alias, assigning the accumulator
+  to another variable, capturing it in a closure, passing it to another call, or
+  reading it from a guard/value expression.
+- Unknown mutating methods on the accumulator.
+- Loop-backed builders outside the already-supported for-of build-list
+  comprehension path. Broader `for-of` and `forEach` builder completeness is a
+  separate iteration milestone.
 
 ## Uninterpreted Functions (General Function Calls)
 
