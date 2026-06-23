@@ -68,7 +68,7 @@ import {
   lowerScalarSsaEarlyExitMerge,
   type ScalarSsaEarlyExitPropertyInput,
 } from "./ir1-ssa-scalars.js";
-import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
+import { freeVarsIR1Expr, substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import {
   negateFact,
   recognizeNarrowingPredicate,
@@ -1353,6 +1353,7 @@ function translatePureBody(
   }
 
   const localSetBuilder = tryBuildLocalSetBuilderReturn(
+    node,
     extracted,
     checker,
     strategy,
@@ -1374,7 +1375,7 @@ function translatePureBody(
     }
     const argExprs = params.map((p) => ast.var(p.name));
     const resultApp = ast.app(ast.var(functionName), argExprs);
-    const binder = allocComprehensionBinder(supply, "x");
+    const binder = allocSetMembershipBinder(supply, params, localSetBuilder);
     const binderVar = ast.var(binder);
     const memberExpr = ast.binop(ast.opIn(), binderVar, resultApp);
     const body =
@@ -2146,6 +2147,7 @@ function tryBuildLocalListBuilderReturn(
 }
 
 function tryBuildLocalSetBuilderReturn(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
   extracted: ExtractedBody,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -2194,8 +2196,13 @@ function tryBuildLocalSetBuilderReturn(
     };
   }
 
+  const sig = checker.getSignatureFromDeclaration(node);
+  const returnType =
+    sig === undefined
+      ? checker.getTypeAtLocation(extracted.returnExpr)
+      : checker.getReturnTypeOfSignature(sig);
   const elemType = setElementSort(
-    checker.getTypeAtLocation(extracted.returnExpr),
+    returnType,
     checker,
     strategy,
     supply.synthCell,
@@ -2303,6 +2310,28 @@ function tryBuildLocalSetBuilderReturn(
     loweredLets,
     diagnostics: loweredLets.diagnostics,
   };
+}
+
+function allocSetMembershipBinder(
+  supply: UniqueSupply,
+  params: Array<{ name: string; type: string }>,
+  builder: LocalSetBuilderResult,
+): string {
+  const usedNames = new Set<string>(params.map((p) => p.name));
+  for (const name of builder.prelude.scopedParams.values()) {
+    usedNames.add(name);
+  }
+  for (const expr of builder.added) {
+    for (const name of freeVarsIR1Expr(expr)) {
+      usedNames.add(name);
+    }
+  }
+
+  let binder = allocComprehensionBinder(supply, "x");
+  while (usedNames.has(binder)) {
+    binder = allocComprehensionBinder(supply, "x");
+  }
+  return binder;
 }
 
 function describeUnsupportedLocalCollectionConstructorReturn(
@@ -2908,7 +2937,9 @@ function describeLocalMapBuilderBodyRejection(
 
   const mapAccNames = new Set<string>();
   const aliases = new Set<string>();
-  for (const stmt of stmts.slice(0, -1)) {
+  const last = stmts[stmts.length - 1]!;
+  const scanStmts = ts.isReturnStatement(last) ? stmts.slice(0, -1) : stmts;
+  for (const stmt of scanStmts) {
     if (ts.isVariableStatement(stmt)) {
       const bindings = constLikeBindingsFromVariableStatement(stmt, body);
       if (bindings === null) {

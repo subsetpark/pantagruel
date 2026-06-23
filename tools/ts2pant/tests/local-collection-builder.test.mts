@@ -64,6 +64,27 @@ describe("local collection builder", () => {
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
+  it("setUntypedAccumulator uses the function return element type", async () => {
+    const output = await emitFixture("setUntypedAccumulator");
+    assert.match(output, /all x: String \|/u);
+    assert.match(output, /x in set-untyped-accumulator seed <-> x = seed/u);
+    assert.doesNotMatch(output, /all x: Opaque/u);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
+  it("setBinderCollision avoids capturing parameter names", async () => {
+    const output = await emitFixture("setBinderCollision");
+    assert.match(
+      output,
+      /all x[0-9]+: String \| x[0-9]+ in set-binder-collision x <-> x[0-9]+ = x/u,
+    );
+    assert.doesNotMatch(
+      output,
+      /all x: String \| x in set-binder-collision x <-> x = x/u,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
   it("setEmptyBuilder emits empty membership assertion", async () => {
     const output = await emitFixture("setEmptyBuilder");
     assert.match(output, /all x: String \| ~\(x in set-empty-builder\)\./u);
@@ -103,6 +124,12 @@ describe("local collection builder", () => {
   it("mapBuilderRejected remains unsupported", async () => {
     const output = await emitFixture("mapBuilderRejected");
     assert.match(output, /^> UNSUPPORTED: map-builder-rejected/mu);
+    assert.match(output, /Map|map|builder/u);
+  });
+
+  it("mapFinalMutationRejected remains unsupported", async () => {
+    const output = await emitFixture("mapFinalMutationRejected");
+    assert.match(output, /^> UNSUPPORTED: map-final-mutation-rejected/mu);
     assert.match(output, /Map|map|builder/u);
   });
 });

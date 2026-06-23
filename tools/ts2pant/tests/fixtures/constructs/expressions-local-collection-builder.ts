@@ -88,6 +88,28 @@ function setAddBuilder(first: string, second: string): Set<string> {
 }
 
 /**
+ * Set builder whose accumulator omits the constructor type argument.
+ * Target type must come from the function return annotation.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setUntypedAccumulator(seed: string): ReadonlySet<string> {
+  const out = new Set();
+  out.add(seed);
+  return out;
+}
+
+/**
+ * Set builder whose parameter would collide with the default membership
+ * binder if the binder allocator did not check free names.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setBinderCollision(x: string): Set<string> {
+  const out = new Set<string>();
+  out.add(x);
+  return out;
+}
+
+/**
  * Empty Set builder.
  * Target Pantagruel encoding: universal non-membership.
  */
@@ -149,4 +171,14 @@ function mapBuilderRejected(key: string, value: number): Map<string, number> {
   const out = new Map<string, number>();
   out.set(key, value);
   return out;
+}
+
+/**
+ * Out-of-scope control for this milestone: Map construction is also rejected
+ * when the mutating call is the final statement of a void body.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function mapFinalMutationRejected(key: string, value: number): void {
+  const out = new Map<string, number>();
+  out.set(key, value);
 }
