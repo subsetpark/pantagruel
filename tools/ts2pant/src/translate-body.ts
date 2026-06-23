@@ -228,6 +228,7 @@ type PreludeStmt =
     }
   | { kind: "muSearch"; tsName: string; mu: MuSearch; localName?: string }
   | ({ kind: "forOf" } & RecognizedForOfPush)
+  | { kind: "builderPush"; accName: string; valueExpr: ts.Expression }
   | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
   | { kind: "stmt"; stmt: ts.Statement }
   | {
@@ -1298,6 +1299,58 @@ function translatePureBody(
     ];
   }
 
+  const localListBuilder = tryBuildLocalListBuilderReturn(
+    extracted,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+  );
+  if (localListBuilder !== null) {
+    if ("error" in localListBuilder) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${localListBuilder.error}`,
+        },
+      ];
+    }
+    if (localListBuilder.diagnostics.length > 0) {
+      return localListBuilder.diagnostics;
+    }
+    const argExprs = params.map((p) => ast.var(p.name));
+    const resultApp = () => ast.app(ast.var(functionName), argExprs);
+    const assertions: PropResult[] = [
+      {
+        kind: "assertion",
+        quantifiers: [] as OpaqueParam[],
+        body: ast.binop(
+          ast.opEq(),
+          ast.unop(ast.opCard(), resultApp()),
+          ast.litNat(localListBuilder.pushed.length),
+        ),
+      },
+      ...localListBuilder.pushed.map((value, idx): PropResult => {
+        const valueExpr = applyOpaqueAliases(lowerL1ToOpaque(value), supply);
+        return {
+          kind: "assertion",
+          quantifiers: [] as OpaqueParam[],
+          body: ast.binop(
+            ast.opEq(),
+            ast.app(resultApp(), [ast.litNat(idx + 1)]),
+            valueExpr,
+          ),
+        };
+      }),
+    ];
+    return [
+      ...localListBuilder.prelude.ruleDecls,
+      ...localListBuilder.loweredLets.propositions,
+      ...assertions,
+    ];
+  }
+
   const prelude = lowerPreludeBindings(
     extracted.bindings,
     checker,
@@ -1742,6 +1795,15 @@ function translatePureBody(
 interface ExtractedBody {
   bindings: PreludeStmt[];
   returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
+  guardStmts: readonly ts.Statement[];
+}
+
+interface LocalListBuilderResult {
+  returnedAccumulatorName: string;
+  pushed: IR1Expr[];
+  prelude: LoweredPreludeBindings;
+  loweredLets: IR1SsaBodyLowerResult;
+  diagnostics: PropResult[];
 }
 
 function tryBuildForOfComprehensionReturn(
@@ -1759,13 +1821,14 @@ function tryBuildForOfComprehensionReturn(
     }
   | { error: string }
   | null {
-  if (
-    !ts.isExpression(extracted.returnExpr) ||
-    !ts.isIdentifier(extracted.returnExpr)
-  ) {
+  if (!ts.isExpression(extracted.returnExpr)) {
     return null;
   }
-  const accName = extracted.returnExpr.text;
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return null;
+  }
+  const accName = returnedExpr.text;
   const forOfBindings = extracted.bindings.filter(
     (binding): binding is Extract<PreludeStmt, { kind: "forOf" }> =>
       binding.kind === "forOf" && binding.accName === accName,
@@ -1787,6 +1850,12 @@ function tryBuildForOfComprehensionReturn(
     return {
       error:
         "for-of build-list comprehension must return its empty-array accumulator",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error:
+        "for-of build-list comprehension guard may not read the accumulator",
     };
   }
   if (
@@ -1847,6 +1916,157 @@ function tryBuildForOfComprehensionReturn(
     prelude,
     loweredLets,
     each: ir1Each(forOf.binder, forOf.src, forOf.guards, forOf.proj),
+  };
+}
+
+function tryBuildLocalListBuilderReturn(
+  extracted: ExtractedBody,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  env: AssumptionEnv,
+): LocalListBuilderResult | { error: string } | null {
+  const builderPushes = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "builderPush" }> =>
+      binding.kind === "builderPush",
+  );
+  if (builderPushes.length === 0) {
+    return null;
+  }
+  if (!ts.isExpression(extracted.returnExpr)) {
+    return {
+      error: "list builder must return its local accumulator",
+    };
+  }
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return {
+      error: "list builder must return its local accumulator",
+    };
+  }
+  const accName = returnedExpr.text;
+  const accDecls = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
+      binding.kind === "const" &&
+      binding.tsName === accName &&
+      isEmptyArrayLiteral(binding.initializer),
+  );
+  if (accDecls.length !== 1) {
+    return {
+      error:
+        "list builder must return the same local empty-array accumulator it pushes",
+    };
+  }
+  if (builderPushes.some((push) => push.accName !== accName)) {
+    return {
+      error: "list builder may only push to the returned local accumulator",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error: "list builder guard may not read the accumulator",
+    };
+  }
+  const accNames = new Set([accName]);
+  let seenPush = false;
+  const preludeBindings: PreludeStmt[] = [];
+  for (const binding of extracted.bindings) {
+    if (binding === accDecls[0]) {
+      continue;
+    }
+    if (binding.kind === "builderPush") {
+      seenPush = true;
+      if (expressionReferencesNames(binding.valueExpr, accNames)) {
+        return {
+          error: "list builder push argument may not read the accumulator",
+        };
+      }
+      continue;
+    }
+    if (binding.kind === "const") {
+      if (seenPush) {
+        return {
+          error:
+            "list builder const bindings must appear before pushed expressions",
+        };
+      }
+      if (expressionReferencesNames(binding.initializer, accNames)) {
+        return {
+          error: "list builder accumulator alias or escape is not supported",
+        };
+      }
+      preludeBindings.push(binding);
+      continue;
+    }
+    return {
+      error:
+        "list builder only supports const bindings and direct accumulator.push calls before return",
+    };
+  }
+
+  const prelude = lowerPreludeBindings(
+    preludeBindings,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    undefined,
+  );
+  if ("error" in prelude) {
+    return prelude;
+  }
+  if (prelude.arms.length > 0) {
+    return {
+      error: "list builder with early returns is not supported",
+    };
+  }
+  const loweredLets =
+    prelude.letStmts.length === 0
+      ? ir1SsaBodyLowerSuccess()
+      : lowerL1BodyToSsaProps(
+          ir1Block(prelude.letStmts as [IR1Stmt, ...IR1Stmt[]]),
+          [],
+          {
+            applyConst: (e) => applyOpaqueAliases(e, supply),
+          },
+        );
+
+  const pushed: IR1Expr[] = [];
+  for (const push of builderPushes) {
+    if (expressionHasSideEffects(push.valueExpr, checker)) {
+      return {
+        error: "list builder push argument has side effects",
+      };
+    }
+    const value = buildPureL1OrNull(push.valueExpr, {
+      checker,
+      strategy,
+      paramNames: prelude.scopedParams,
+      state: undefined,
+      supply,
+      env,
+    });
+    if (value === null) {
+      return {
+        error: "unsupported pure expression in list builder push argument",
+      };
+    }
+    pushed.push(value);
+  }
+  if (pushed.length === 0) {
+    return {
+      error: "list builder must push at least one value",
+    };
+  }
+
+  return {
+    returnedAccumulatorName: accName,
+    pushed,
+    prelude,
+    loweredLets,
+    diagnostics: loweredLets.diagnostics,
   };
 }
 
@@ -2300,6 +2520,37 @@ function recognizePushStatement(
   return { accName, projExpr: expr.arguments[0]! };
 }
 
+function describeLocalListBuilderMutationRejection(
+  stmt: ts.ExpressionStatement,
+  accNames: ReadonlySet<string>,
+  aliases: ReadonlySet<string>,
+): string | null {
+  const expr = unwrapExpression(stmt.expression);
+  if (ts.isCallExpression(expr)) {
+    for (const arg of expr.arguments) {
+      if (expressionReferencesNames(arg, new Set([...accNames, ...aliases]))) {
+        return "list builder accumulator alias or escape is not supported";
+      }
+    }
+  }
+  if (
+    !ts.isCallExpression(expr) ||
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    !ts.isIdentifier(expr.expression.expression)
+  ) {
+    return null;
+  }
+  const receiver = expr.expression.expression.text;
+  const method = expr.expression.name.text;
+  if (aliases.has(receiver)) {
+    return "list builder accumulator alias or escape is not supported";
+  }
+  if (accNames.has(receiver) && method !== "push") {
+    return `list builder unknown mutation .${method} is not supported`;
+  }
+  return null;
+}
+
 function recognizeIfContinue(stmt: ts.Statement): ts.Expression | null {
   const ifStmt = unwrapSingleStatementBlock(stmt);
   if (
@@ -2334,6 +2585,9 @@ function extractReturnExpression(
 ): ExtractedBody | null {
   const { checker } = ctx;
   // Skip guard statements (if-throw patterns and assertion calls)
+  const guardStmts = body.statements.filter((s) =>
+    isGuardStatement(s, checker),
+  );
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
   if (stmts.length === 0) {
@@ -2380,6 +2634,17 @@ function extractReturnExpression(
 
     const stmt = stmts[i]!;
     if (ts.isExpressionStatement(stmt)) {
+      const push = recognizePushStatement(stmt, emptyArrayAccNames);
+      if (push !== null) {
+        bindings.push({
+          kind: "builderPush",
+          accName: push.accName,
+          valueExpr: push.projExpr,
+        });
+        i += 1;
+        lastLetDeclNames = new Set();
+        continue;
+      }
       const reassigned = reassignmentsFromExpressionStatement(stmt, letNames);
       if (reassigned === null) {
         return null;
@@ -2483,17 +2748,17 @@ function extractReturnExpression(
 
   const last = stmts[lastIdx]!;
   if (ts.isReturnStatement(last) && last.expression) {
-    return { bindings, returnExpr: last.expression };
+    return { bindings, returnExpr: last.expression, guardStmts };
   }
   if (ts.isIfStatement(last) && last.elseStatement) {
-    return { bindings, returnExpr: last };
+    return { bindings, returnExpr: last, guardStmts };
   }
   // Switch as a terminal — handled by the L1 conditional builder
   // (workstream M1). The L1 path requires a default that's last, every
   // case ending in `return EXPR`, and only literal case labels;
   // anything else surfaces as UNSUPPORTED at build time.
   if (ts.isSwitchStatement(last)) {
-    return { bindings, returnExpr: last };
+    return { bindings, returnExpr: last, guardStmts };
   }
 
   return null;
@@ -2545,6 +2810,14 @@ function nodeWritesName(node: ts.Node, name: string): boolean {
   return found;
 }
 
+function guardStatementsReadName(
+  guardStmts: readonly ts.Statement[],
+  name: string,
+): boolean {
+  const names = new Set([name]);
+  return guardStmts.some((stmt) => nodeReferencesNames(stmt, names));
+}
+
 function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
   if (stmts.length === 0) {
@@ -2556,6 +2829,8 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     // uses, so the reported reason matches the first pattern that actually
     // failed rather than a heuristic guess.
     let i = 0;
+    const emptyArrayAccNames = new Set<string>();
+    const listBuilderAliases = new Set<string>();
     while (i < lastIdx) {
       if (recognizeLetWhilePair(stmts, i, checker)) {
         i += 2;
@@ -2602,11 +2877,39 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           return VAR_BINDINGS_UNSUPPORTED;
         }
         if (constLikeBindingsFromVariableStatement(stmt, body) !== null) {
+          for (const binding of constLikeBindingsFromVariableStatement(
+            stmt,
+            body,
+          ) ?? []) {
+            if (
+              binding.kind === "const" &&
+              isEmptyArrayLiteral(binding.initializer)
+            ) {
+              emptyArrayAccNames.add(binding.tsName);
+            } else if (
+              binding.kind === "const" &&
+              expressionReferencesNames(binding.initializer, emptyArrayAccNames)
+            ) {
+              listBuilderAliases.add(binding.tsName);
+            }
+          }
           i += 1;
           continue;
         }
       }
       if (ts.isExpressionStatement(stmt)) {
+        if (recognizePushStatement(stmt, emptyArrayAccNames) !== null) {
+          i += 1;
+          continue;
+        }
+        const mutation = describeLocalListBuilderMutationRejection(
+          stmt,
+          emptyArrayAccNames,
+          listBuilderAliases,
+        );
+        if (mutation !== null) {
+          return mutation;
+        }
         return "expression statement before return (only const / μ-search / if-early-return allowed)";
       }
       return "local bindings or multiple statements before return";
@@ -3273,6 +3576,13 @@ function lowerPreludeBindings(
             "for-of loop is only supported as a build-list comprehension returned directly",
         };
       }
+      if (binding.kind === "builderPush") {
+        return {
+          tag: "error",
+          error:
+            "list builder push is only supported when returning its accumulator directly",
+        };
+      }
       const localName =
         binding.localName ??
         allocLocalBindingName(
@@ -3417,6 +3727,10 @@ function validatePreludeBindings(
         return { error: "while-loop predicate references a later binding" };
       }
     } else if (binding.kind === "forOf") {
+    } else if (binding.kind === "builderPush") {
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "list builder push references a later binding" };
+      }
     } else {
       // earlyReturn arm — predicate and value must be pure and may not refer
       // to bindings declared after this point. The arm itself binds nothing,
@@ -3593,6 +3907,9 @@ export function lowerNestedPureBlockReturnToL1(
   ) {
     return null;
   }
+  if (extracted.bindings.some((binding) => binding.kind === "builderPush")) {
+    return null;
+  }
   const validation = validatePreludeBindings(extracted.bindings, ctx.checker);
   if (validation !== null) {
     return null;
@@ -3615,6 +3932,7 @@ export function lowerNestedPureBlockReturnToL1(
   for (const binding of extracted.bindings) {
     if (
       binding.kind === "forOf" ||
+      binding.kind === "builderPush" ||
       binding.kind === "reassign" ||
       binding.kind === "stmt"
     ) {

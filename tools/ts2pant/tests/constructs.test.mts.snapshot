@@ -171,7 +171,7 @@ exports[`expressions-body-lowering-rd2.ts > rd2EffectfulBlockConstRejected 1`] =
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2LocalAccumulatorSequencing 1`] = `
-"module RD2_LOCAL_ACCUMULATOR_SEQUENCING.\\n\\nrd2-local-accumulator-sequencing seed: String => [String].\\n\\n---\\n\\n> UNSUPPORTED: rd2-local-accumulator-sequencing — expression statement before return (only const / μ-search / if-early-return allowed).\\n"
+"module RD2_LOCAL_ACCUMULATOR_SEQUENCING.\\n\\nrd2-local-accumulator-sequencing seed: String => [String].\\n\\n---\\n\\n#(rd2-local-accumulator-sequencing seed) = 1.\\n(rd2-local-accumulator-sequencing seed) 1 = seed.\\n"
 `;
 
 exports[`expressions-body-lowering-rd2.ts > rd2NestedBlockWithConstPrelude 1`] = `

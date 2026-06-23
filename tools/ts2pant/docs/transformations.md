@@ -90,8 +90,46 @@ bindings through `substituteIR1ExprSubtree()`.
 - Nested block locals never become Pant rule declarations or free variables.
 - Conservative refusal covers stateful expression statements, effectful const
   initializers, non-final returns, throws, breaks, and unsupported terminals.
-- Local accumulator sequencing such as `lines.push(...); return lines` is not
-  part of this transformation; it needs a separate collection-builder model.
+- Local accumulator sequencing such as `lines.push(...); return lines` is handled
+  by the separate collection-builder model below.
+
+## Local Collection Builder Recognition
+
+**Standard name:** A-normal-form local builder recognition / effect
+encapsulation.
+**Reference:** Flanagan et al., PLDI 1993; Dijkstra, CACM 1975.
+
+Some pure TypeScript functions are imperative internally but have a clear
+value-level target:
+
+```ts
+const out: T[] = [];
+out.push(e1);
+out.push(e2);
+return out;
+```
+
+The local list-builder recognizer treats this as a bounded ANF-like prelude
+with one private mutable accumulator. The implementation entry point is
+`tryBuildLocalListBuilderReturn()`. It does **not** lower `push` as a pure
+expression and does not synthesize a list literal. Instead it emits constraints
+over the declared return rule: one cardinality assertion for the result and one
+1-based positional list-application assertion per pushed value, written in
+Pantagruel as `(f args) i = value_i` where `i` is a 1-based `Nat` index.
+Ordinary const bindings before the pushes are lowered through the existing
+local-rule prelude machinery so pushed values can refer to hygienically scoped
+local names.
+
+**Invariants:**
+- The returned identifier is the same local empty-array accumulator that
+  receives all pushes.
+- Push order is source order; emitted positions are `1..N`.
+- The accumulator is not aliased, read by a guard or pushed expression, passed
+  to another call, reassigned, or mutated by any method other than `.push`.
+- Const bindings are allowed only before the first push; later consts are
+  rejected to keep the model straight-line and unambiguous.
+- Unsupported builder shapes remain diagnostics. General expression statements
+  still flow through the normal prelude rejection path.
 
 ## Uninterpreted Functions (General Function Calls)
 
