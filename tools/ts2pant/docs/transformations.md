@@ -110,12 +110,15 @@ return out;
 ```
 
 The local list-builder recognizer treats this as a bounded ANF-like prelude
-with one private mutable accumulator. It does **not** lower `push` as a pure
+with one private mutable accumulator. The implementation entry point is
+`tryBuildLocalListBuilderReturn()`. It does **not** lower `push` as a pure
 expression and does not synthesize a list literal. Instead it emits constraints
 over the declared return rule: one cardinality assertion for the result and one
-1-based positional list-application assertion per pushed value. Ordinary const
-bindings before the pushes are lowered through the existing local-rule prelude
-machinery so pushed values can refer to hygienically scoped local names.
+1-based positional list-application assertion per pushed value, written in
+Pantagruel as `(f args) i = value_i` where `i` is a 1-based `Nat` index.
+Ordinary const bindings before the pushes are lowered through the existing
+local-rule prelude machinery so pushed values can refer to hygienically scoped
+local names.
 
 **Invariants:**
 - The returned identifier is the same local empty-array accumulator that
