@@ -184,21 +184,36 @@ fresh residual ranking before committing to M2's exact fixture set.
 
 ---
 
-### Milestone 2: local-collection-builder-sequencing
+### Milestone 2: local-collection-builder-sequencing — PLANNED
+
+> Planned by
+> the M2 local-collection-builder-sequencing gameplan.
+> The M2 gameplan resolves the representation questions below: finite ordered
+> list builders emit cardinality plus 1-based positional assertions over the
+> declared return rule; straight-line Set `.add` builders emit membership
+> assertions over the Set-as-list return value; Map builders are deferred to a
+> Map-specific milestone.
 
 **Definition of Done**:
 - The pure-body prelude recognizes bounded local collection builders such as
-  `const xs = []; xs.push(e); return xs` and small straight-line variants with
-  const-bound projected values.
-- The lowering emits a Pantagruel list/set/map value using existing list
-  comprehensions or a small synthesized helper, not by treating `push` or
-  `set` as a pure expression.
-- Multiple pushes preserve source order when the target is an ordered list;
-  Set/Map builders preserve membership/lookup semantics consistent with the
-  existing Map/Set encoding.
+  `const xs = []; xs.push(e); return xs`, `const s = new Set<T>();
+  s.add(e); return s`, and small straight-line variants with const-bound
+  projected values.
+- Ordered list lowering emits assertions over the declared `[T]` return rule:
+  `#(f args) = N` plus one 1-based positional equation `(f args) i = value_i`
+  per pushed value. It does not use list literals, synthetic finite tuples, or
+  helper domains.
+- Set lowering emits assertions over the returned Set/list value: membership is
+  equivalent to the straight-line `.add` values, and empty Set builders emit
+  universal non-membership. It does not track insertion order or duplicate adds
+  beyond membership.
+- Map builder construction remains unsupported in M2. It is deferred because
+  Map construction must respect the guarded Stage A/Stage B membership/value
+  rule-pair contract.
 - Unsupported variants stay rejected: dynamic aliasing of the accumulator,
-  unknown mutating method calls, mutation after the accumulator escapes,
-  nested loops not handled by the milestone, and ambiguous element order.
+  unknown mutating method calls, mutation after the accumulator escapes, Set
+  `.delete` / `.clear` builders, Map builders, nested loops not handled by the
+  milestone, and ambiguous element order.
 - The targeted `expression statement before return` bucket moves down in the
   post-M2 corpus diagnostic.
 - Constructs and dogfood tests cover both positive local builder cases and
@@ -223,11 +238,10 @@ Follow-on iteration completeness: once straight-line builders are expressible,
   choose the largest family that reuses the M2 builder representation.
 
 **Open Questions**:
-- Should list builders with multiple straight-line `push` calls emit an
-  explicit concatenation form, a synthetic helper rule, or a comprehension over
-  a finite tuple? Resolve during the M2 gameplan.
-- Is Map builder construction in scope for M2, or does M2 only cover list/set
-  builders and leave Map initialization to a later Map-specific milestone?
+- Resolved by the M2 gameplan: finite ordered list builders use cardinality
+  plus 1-based positional assertions over the declared return rule.
+- Resolved by the M2 gameplan: M2 covers straight-line list and Set builders;
+  Map builders are deferred to a later Map-specific milestone.
 
 ---
 
