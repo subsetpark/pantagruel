@@ -19,6 +19,7 @@ import {
   ir1Binop,
   ir1Block,
   ir1Break,
+  ir1Cond,
   ir1Continue,
   ir1Each,
   ir1For,
@@ -2921,99 +2922,9 @@ function lowerPreludeBindings(
   state?: SymbolicState,
   expectedReturnSort?: string,
 ): LoweredPreludeBindings | { error: string } {
-  // Phase 1: TDZ validation — reject forward/self references on TS AST.
-  // For μ-search bindings, validate both the init and the predicate; the
-  // predicate may reference its own counter (that's the loop), so the
-  // counter is removed from the blocked set when checking the predicate.
-  // Side-effectful μ-search init/predicate and early-return predicate/value
-  // are also rejected here: translateBodyExpr has no explicit
-  // handler for ++/-- and silently falls through to `ast.var(getText())`,
-  // so without this screen a loop like `while (used.has(i++)) i++;`
-  // would lower to a Pant expression containing a bogus var `"i++"`.
-  for (const [idx, binding] of bindings.entries()) {
-    const blockedNames = new Set(
-      bindings.slice(idx).flatMap((b) => bindingNames(b) as string[]),
-    );
-    if (binding.kind === "const") {
-      if (expressionReferencesNames(binding.initializer, blockedNames)) {
-        return { error: "const initializer references a later binding" };
-      }
-    } else if (binding.kind === "reassign") {
-      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
-        return { error: "reassignment value references a later binding" };
-      }
-    } else if (binding.kind === "stmt") {
-      if (nodeReferencesNames(binding.stmt, blockedNames)) {
-        return { error: "statement before return references a later binding" };
-      }
-    } else if (binding.kind === "muSearch") {
-      if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
-        return { error: "while-loop init has side effects" };
-      }
-      if (
-        expressionHasSideEffects(binding.mu.predicateTsExpr, checker, {
-          admitForeignBoolPredicates: true,
-        })
-      ) {
-        return { error: "while-loop predicate has side effects" };
-      }
-      if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
-        return { error: "while-loop init references a later binding" };
-      }
-      const predBlocked = new Set(blockedNames);
-      predBlocked.delete(binding.mu.counterName);
-      if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
-        return { error: "while-loop predicate references a later binding" };
-      }
-    } else if (binding.kind === "forOf") {
-    } else {
-      // earlyReturn arm — predicate and value must be pure and may not refer
-      // to bindings declared after this point. The arm itself binds nothing,
-      // so `blockedNames` here just contains the names of later const /
-      // μ-search bindings (earlyReturn entries contribute nothing).
-      if (
-        expressionHasSideEffects(binding.predicateExpr, checker, {
-          admitForeignBoolPredicates: true,
-        })
-      ) {
-        return { error: "early-return predicate has side effects" };
-      }
-      for (const [blockIdx, blockBinding] of binding.blockBindings.entries()) {
-        if (expressionHasSideEffects(blockBinding.initializer, checker)) {
-          return { error: "early-return block const has side effects" };
-        }
-        const blockBlockedNames = new Set(
-          binding.blockBindings.slice(blockIdx).map((b) => b.tsName),
-        );
-        if (
-          expressionReferencesNames(blockBinding.initializer, blockBlockedNames)
-        ) {
-          return {
-            error:
-              "early-return block const initializer references a later binding",
-          };
-        }
-        if (expressionReferencesNames(blockBinding.initializer, blockedNames)) {
-          return {
-            error:
-              "early-return block const initializer references a later binding",
-          };
-        }
-      }
-      if (
-        expressionHasSideEffects(binding.valueExpr, checker, {
-          admitForeignBoolPredicates: true,
-        })
-      ) {
-        return { error: "early-return value has side effects" };
-      }
-      if (expressionReferencesNames(binding.predicateExpr, blockedNames)) {
-        return { error: "early-return predicate references a later binding" };
-      }
-      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
-        return { error: "early-return value references a later binding" };
-      }
-    }
+  const validation = validatePreludeBindings(bindings, checker);
+  if (validation !== null) {
+    return validation;
   }
 
   // Phase 2: translate initializers as a left fold, threading scopedParams
@@ -3286,6 +3197,107 @@ function lowerPreludeBindings(
   };
 }
 
+function validatePreludeBindings(
+  bindings: readonly PreludeStmt[],
+  checker: ts.TypeChecker,
+): { error: string } | null {
+  // Phase 1: TDZ validation — reject forward/self references on TS AST.
+  // For μ-search bindings, validate both the init and the predicate; the
+  // predicate may reference its own counter (that's the loop), so the
+  // counter is removed from the blocked set when checking the predicate.
+  // Side-effectful μ-search init/predicate and early-return predicate/value
+  // are also rejected here: translateBodyExpr has no explicit
+  // handler for ++/-- and silently falls through to `ast.var(getText())`,
+  // so without this screen a loop like `while (used.has(i++)) i++;`
+  // would lower to a Pant expression containing a bogus var `"i++"`.
+  for (const [idx, binding] of bindings.entries()) {
+    const blockedNames = new Set(
+      bindings.slice(idx).flatMap((b) => bindingNames(b) as string[]),
+    );
+    if (binding.kind === "const") {
+      if (expressionReferencesNames(binding.initializer, blockedNames)) {
+        return { error: "const initializer references a later binding" };
+      }
+    } else if (binding.kind === "reassign") {
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "reassignment value references a later binding" };
+      }
+    } else if (binding.kind === "stmt") {
+      if (nodeReferencesNames(binding.stmt, blockedNames)) {
+        return { error: "statement before return references a later binding" };
+      }
+    } else if (binding.kind === "muSearch") {
+      if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
+        return { error: "while-loop init has side effects" };
+      }
+      if (
+        expressionHasSideEffects(binding.mu.predicateTsExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
+        return { error: "while-loop predicate has side effects" };
+      }
+      if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
+        return { error: "while-loop init references a later binding" };
+      }
+      const predBlocked = new Set(blockedNames);
+      predBlocked.delete(binding.mu.counterName);
+      if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
+        return { error: "while-loop predicate references a later binding" };
+      }
+    } else if (binding.kind === "forOf") {
+    } else {
+      // earlyReturn arm — predicate and value must be pure and may not refer
+      // to bindings declared after this point. The arm itself binds nothing,
+      // so `blockedNames` here just contains the names of later const /
+      // μ-search bindings (earlyReturn entries contribute nothing).
+      if (
+        expressionHasSideEffects(binding.predicateExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
+        return { error: "early-return predicate has side effects" };
+      }
+      for (const [blockIdx, blockBinding] of binding.blockBindings.entries()) {
+        if (expressionHasSideEffects(blockBinding.initializer, checker)) {
+          return { error: "early-return block const has side effects" };
+        }
+        const blockBlockedNames = new Set(
+          binding.blockBindings.slice(blockIdx).map((b) => b.tsName),
+        );
+        if (
+          expressionReferencesNames(blockBinding.initializer, blockBlockedNames)
+        ) {
+          return {
+            error:
+              "early-return block const initializer references a later binding",
+          };
+        }
+        if (expressionReferencesNames(blockBinding.initializer, blockedNames)) {
+          return {
+            error:
+              "early-return block const initializer references a later binding",
+          };
+        }
+      }
+      if (
+        expressionHasSideEffects(binding.valueExpr, checker, {
+          admitForeignBoolPredicates: true,
+        })
+      ) {
+        return { error: "early-return value has side effects" };
+      }
+      if (expressionReferencesNames(binding.predicateExpr, blockedNames)) {
+        return { error: "early-return predicate references a later binding" };
+      }
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "early-return value references a later binding" };
+      }
+    }
+  }
+  return null;
+}
+
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
 
 function translateEarlyReturnBlockValue(
@@ -3344,6 +3356,268 @@ function translateEarlyReturnBlockValue(
     value,
   );
   return { value: applyOpaqueAliases(lowerL1ToOpaque(inlined), ctx.supply) };
+}
+
+export interface NestedPureBlockReturnContext {
+  checker: ts.TypeChecker;
+  strategy: NumericStrategy;
+  paramNames: ReadonlyMap<string, string>;
+  state?: SymbolicState;
+  supply: UniqueSupply;
+  env: AssumptionEnv;
+  expectedReturnSort?: string;
+}
+
+/**
+ * Lower a TS block as one nested pure return value.
+ *
+ * This is the recursive block-return primitive used by later branch,
+ * switch, and callback consumers. It shares `extractReturnExpression` for
+ * shape recognition, `validatePreludeBindings` for TDZ/side-effect refusal,
+ * L1 if-conversion for terminal control flow, and IR1 capture-avoiding
+ * substitution for local const/μ let-elimination. Unsupported statement
+ * sequencing returns `null` rather than leaking a partially lowered value.
+ */
+export function lowerNestedPureBlockReturn(
+  block: ts.Block,
+  ctx: NestedPureBlockReturnContext,
+): BodyResult | null {
+  const lowered = lowerNestedPureBlockReturnToL1(block, ctx);
+  if (lowered === null) {
+    return null;
+  }
+  return { expr: applyOpaqueAliases(lowerL1ToOpaque(lowered), ctx.supply) };
+}
+
+function lowerNestedPureBlockReturnToL1(
+  block: ts.Block,
+  ctx: NestedPureBlockReturnContext,
+): IR1Expr | null {
+  const extracted = extractReturnExpression(block, {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: ctx.paramNames,
+    state: ctx.state,
+    supply: ctx.supply,
+    env: ctx.env,
+    ...(ctx.expectedReturnSort === undefined
+      ? {}
+      : { expectedSort: ctx.expectedReturnSort }),
+  });
+  if (extracted === null) {
+    return null;
+  }
+  if (
+    extracted.bindings.some(
+      (binding) => binding.kind === "reassign" || binding.kind === "stmt",
+    )
+  ) {
+    return null;
+  }
+  const validation = validatePreludeBindings(extracted.bindings, ctx.checker);
+  if (validation !== null) {
+    return null;
+  }
+
+  let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
+  const fallthroughFacts: Fact[] = [];
+
+  for (const binding of extracted.bindings) {
+    if (
+      binding.kind === "forOf" ||
+      binding.kind === "reassign" ||
+      binding.kind === "stmt"
+    ) {
+      return null;
+    }
+    if (binding.kind === "earlyReturn") {
+      const currentFact = recognizeBranchFact(
+        binding.predicateExpr,
+        ctx.checker,
+      );
+      const guard = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
+        buildL1SubExpr(binding.predicateExpr, {
+          checker: ctx.checker,
+          strategy: ctx.strategy,
+          paramNames: scopedParams,
+          state: ctx.state ?? makeSymbolicState(),
+          supply: ctx.supply,
+          env: ctx.env,
+        }),
+      );
+      if (isUnsupported(guard) || isL1Unsupported(guard)) {
+        return null;
+      }
+      const value = withNestedFactFrame(
+        ctx.env,
+        [...fallthroughFacts, currentFact],
+        () =>
+          lowerEarlyReturnArmValueToL1(
+            binding.blockBindings,
+            binding.valueExpr,
+            {
+              checker: ctx.checker,
+              strategy: ctx.strategy,
+              paramNames: scopedParams,
+              state: ctx.state ?? makeSymbolicState(),
+              supply: ctx.supply,
+              env: ctx.env,
+              ...(ctx.expectedReturnSort === undefined
+                ? {}
+                : { expectedReturnSort: ctx.expectedReturnSort }),
+            },
+          ),
+      );
+      if (value === null) {
+        return null;
+      }
+      arms.push([guard, value] as const);
+      if (currentFact !== null) {
+        fallthroughFacts.push(negateFact(currentFact));
+      }
+      continue;
+    }
+
+    const localName = freshHygienicBinder(ctx.supply);
+    const value = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
+      binding.kind === "const"
+        ? buildL1SubExpr(binding.initializer, {
+            checker: ctx.checker,
+            strategy: ctx.strategy,
+            paramNames: scopedParams,
+            state: ctx.state ?? makeSymbolicState(),
+            supply: ctx.supply,
+            env: ctx.env,
+          })
+        : buildL1MuSearchCombTyped(binding.mu, {
+            checker: ctx.checker,
+            strategy: ctx.strategy,
+            paramNames: scopedParams,
+            state: ctx.state ?? makeSymbolicState(),
+            supply: ctx.supply,
+            env: ctx.env,
+          }),
+    );
+    if (isUnsupported(value) || isL1Unsupported(value)) {
+      return null;
+    }
+    substitutions.push({ localName, value });
+    scopedParams = withParam(scopedParams, binding.tsName, localName);
+  }
+
+  const terminal = withNestedFactFrame(ctx.env, fallthroughFacts, () =>
+    lowerNestedPureTerminalToL1(extracted.returnExpr, ctx, scopedParams),
+  );
+  if (terminal === null) {
+    return null;
+  }
+  const withArms =
+    arms.length === 0
+      ? terminal
+      : ir1Cond(
+          arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
+          terminal,
+        );
+  return substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    withArms,
+  );
+}
+
+function withNestedFactFrame<T>(
+  env: AssumptionEnv,
+  facts: ReadonlyArray<Fact | null>,
+  fn: () => T,
+): T {
+  enterFrame(env);
+  try {
+    for (const fact of facts) {
+      if (fact !== null) {
+        pushFact(env, fact);
+      }
+    }
+    return fn();
+  } finally {
+    exitFrame(env);
+  }
+}
+
+function lowerEarlyReturnArmValueToL1(
+  bindings: readonly ExtractedBlockConstBinding[],
+  valueExpr: ts.Expression,
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: ReadonlyMap<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+    env: AssumptionEnv;
+  } & { expectedReturnSort?: string },
+): IR1Expr | null {
+  let scopedParams: ReadonlyMap<string, string> = new Map(ctx.paramNames);
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  for (const binding of bindings) {
+    const localName = freshHygienicBinder(ctx.supply);
+    const value = buildL1SubExpr(binding.initializer, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: scopedParams,
+      state: ctx.state,
+      supply: ctx.supply,
+      env: ctx.env,
+    });
+    if (isUnsupported(value) || isL1Unsupported(value)) {
+      return null;
+    }
+    substitutions.push({ localName, value });
+    scopedParams = withParam(scopedParams, binding.tsName, localName);
+  }
+  const value = buildL1SubExpr(valueExpr, {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: scopedParams,
+    state: ctx.state,
+    supply: ctx.supply,
+    env: ctx.env,
+    ...(ctx.expectedReturnSort === undefined
+      ? {}
+      : { expectedSort: ctx.expectedReturnSort }),
+  });
+  if (isUnsupported(value) || isL1Unsupported(value)) {
+    return null;
+  }
+  return substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    value,
+  );
+}
+
+function lowerNestedPureTerminalToL1(
+  terminal: ts.Expression | ts.IfStatement | ts.SwitchStatement,
+  ctx: NestedPureBlockReturnContext,
+  scopedParams: ReadonlyMap<string, string>,
+): IR1Expr | null {
+  const l1Ctx = {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: scopedParams,
+    state: ctx.state ?? makeSymbolicState(),
+    supply: ctx.supply,
+    env: ctx.env,
+    ...(ctx.expectedReturnSort === undefined
+      ? {}
+      : { expectedSort: ctx.expectedReturnSort }),
+  };
+  if (ts.isIfStatement(terminal) || ts.isSwitchStatement(terminal)) {
+    const value = buildL1Conditional(terminal, l1Ctx);
+    return isL1Unsupported(value) ? null : value;
+  }
+  const value = buildL1SubExpr(terminal, l1Ctx);
+  return isUnsupported(value) || isL1Unsupported(value) ? null : value;
 }
 
 function translateBindingInit(

@@ -10,6 +10,7 @@ import {
   createSourceFile,
   createSourceFileFromSource,
 } from "../src/extract.js";
+import { createL1AssumptionEnv } from "../src/ir1-build.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import * as Supply from "../src/supply.js";
 import * as TB from "../src/translate-body.js";
@@ -255,10 +256,8 @@ it("generated body helpers preserve structural translations", () => {
 // exhaustive construct coverage).
 
 describe("unsupported patterns", () => {
-  it.skip(
-    "PENDING Patch 2: nested pure block-return lowers to one value with inlined bindings",
-    () => {
-      const source = `
+  it("nested pure block-return helper lowers to one value with inlined bindings", () => {
+    const source = `
         function nested(n: number): number {
           if (n < 0) {
             const magnitude = 0 - n;
@@ -270,11 +269,238 @@ describe("unsupported patterns", () => {
           return n;
         }
       `;
-      const sourceFile = createSourceFileFromSource(source);
-      const props = translateBodyWithSynth(sourceFile, "nested");
-      assert.equal(props.some((p) => p.kind === "unsupported"), false);
-    },
-  );
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond 0 - n > 10 => 0 - n, true => 0 - n + 1",
+    );
+  });
+
+  it("nested pure block-return helper rejects stateful statement sequencing", () => {
+    const source = `
+        function nested(n: number): number {
+          if (n < 0) {
+            const lines: number[] = [];
+            lines.push(n);
+            return lines.length;
+          }
+          return n;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.equal(result, null);
+  });
+
+  it("nested pure block-return helper lowers mu-search without caller state", () => {
+    const source = `
+        function nested(used: ReadonlySet<number>): number {
+          if (true) {
+            let i = 0;
+            while (used.has(i)) {
+              i++;
+            }
+            return i;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.match(getAst().strExpr(TB.bodyExpr(result)), /min over each/u);
+  });
+
+  it("nested pure block-return helper threads branch facts into terminal", () => {
+    const source = `
+        interface User { score: number; }
+        function nested(u: User | null): number {
+          if (true) {
+            if (u === null) {
+              return 0;
+            }
+            return u.score;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond #u = 0 => 0, true => user--score (u 1)",
+    );
+  });
+
+  it("nested pure block-return helper threads branch facts into arm values", () => {
+    const source = `
+        interface User { score: number; }
+        function nested(u: User | null): number {
+          if (true) {
+            if (u !== null) {
+              return u.score;
+            }
+            return 0;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond ~(#u = 0) => user--score (u 1), true => 0",
+    );
+  });
+
+  it("nested pure block-return helper threads facts into later guards and consts", () => {
+    const source = `
+        interface User { score: number; }
+        function nested(u: User | null): number {
+          if (true) {
+            if (u === null) {
+              return 0;
+            }
+            const score = u.score;
+            if (score > 10) {
+              return score;
+            }
+            return score + 1;
+          }
+          return 0;
+        }
+      `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+    const fn = sourceFile.getFunctionOrThrow("nested").compilerNode;
+    const first = fn.body?.statements[0];
+    assert.ok(first && ts.isIfStatement(first));
+    assert.ok(ts.isBlock(first.thenStatement));
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "nested",
+      IntStrategy,
+      synthCell,
+    );
+    const result = TB.lowerNestedPureBlockReturn(first.thenStatement, {
+      checker,
+      strategy: IntStrategy,
+      paramNames: paramNameMap,
+      supply: Supply.makeUniqueSupply(synthCell),
+      env: createL1AssumptionEnv(),
+      expectedReturnSort: "Int",
+    });
+    assert.ok(result);
+    assert.equal("unsupported" in result, false);
+    assert.equal(
+      getAst().strExpr(TB.bodyExpr(result)),
+      "cond #u = 0 => 0, user--score (u 1) > 10 => user--score (u 1), true => user--score (u 1) + 1",
+    );
+  });
 
   it.skip(
     "PENDING Patch 3: early-return arm block may contain nested early returns",

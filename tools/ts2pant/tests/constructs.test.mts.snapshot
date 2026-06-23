@@ -182,6 +182,14 @@ exports[`expressions-body-lowering-rd2.ts > rd2NestedEarlyReturnBlock 1`] = `
 "module RD2_NESTED_EARLY_RETURN_BLOCK.\\n\\nrd2-nested-early-return-block n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-nested-early-return-block — if-with-return block must contain only const bindings followed by a return.\\n"
 `;
 
+exports[`expressions-body-lowering-rd2.ts > rd2NullableNestedArm 1`] = `
+"module RD2_NULLABLE_NESTED_ARM.\\n\\nUser.\\nuser--active u1: User => Bool.\\nuser--score u1: User => Int.\\nuser--name u1: User => String.\\nrd2-nullable-nested-arm u: [User], flag: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-nullable-nested-arm — if-with-return block must contain only const bindings followed by a return.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2NullableNestedTerminal 1`] = `
+"module RD2_NULLABLE_NESTED_TERMINAL.\\n\\nUser.\\nuser--active u1: User => Bool.\\nuser--score u1: User => Int.\\nuser--name u1: User => String.\\nrd2-nullable-nested-terminal u: [User], flag: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-nullable-nested-terminal — if-with-return block must contain only const bindings followed by a return.\\n"
+`;
+
 exports[`expressions-body-lowering-rd2.ts > rd2RecordReturnConditional 1`] = `
 "module RD2_RECORD_RETURN_CONDITIONAL.\\n\\nPair.\\npair--x p: Pair => Int.\\npair--y p: Pair => Int.\\nrd2-record-return-conditional n: Int, flag: Bool => Pair.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-conditional — record return combined with early-return arms or if/else branches is not yet supported.\\n"
 `;

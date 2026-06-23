@@ -59,6 +59,40 @@ decomposition would require every arm value to be an object literal of the
 same shape, and is left as a follow-on to keep the if-conversion change
 self-contained.
 
+## Recursive Pure Block-Return Lowering
+
+**Standard name:** If-conversion plus let-elimination.
+**Reference:** Allen et al., POPL 1983; Peyton Jones & Marlow, JFP 2002.
+
+Nested value-position consumers such as branches, switch clauses, and array
+callbacks need to treat a TS block as one expression without leaking
+branch-local bindings. `lowerNestedPureBlockReturn()` is the shared helper for
+that shape:
+
+```ts
+{
+  const x = e1;
+  if (p) return e2;
+  return e3;
+}
+```
+
+The helper first reuses `extractReturnExpression()` to recognize the same pure
+body surface as the top-level translator. It then runs the common prelude
+validator used by `lowerPreludeBindings()` so TDZ, forward-reference, and
+side-effect checks stay aligned. Finally it lowers predicates and return
+values through L1, builds one conditional value, and right-folds the local
+bindings through `substituteIR1ExprSubtree()`.
+
+**Invariants:**
+- No partial output: unsupported statements return `null`.
+- Let-elimination is capture-avoiding and uses the IR1 substitution primitive.
+- Nested block locals never become Pant rule declarations or free variables.
+- Conservative refusal covers stateful expression statements, effectful const
+  initializers, non-final returns, throws, breaks, and unsupported terminals.
+- Local accumulator sequencing such as `lines.push(...); return lines` is not
+  part of this transformation; it needs a separate collection-builder model.
+
 ## Uninterpreted Functions (General Function Calls)
 
 **Standard name:** EUF (Equality with Uninterpreted Functions).
