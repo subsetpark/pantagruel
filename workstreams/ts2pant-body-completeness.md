@@ -187,7 +187,7 @@ fresh residual ranking before committing to M2's exact fixture set.
 ### Milestone 2: local-collection-builder-sequencing — PLANNED
 
 > Planned by
-> `/Users/zax/.local/share/onton/ts2pant-local-collection-builder-sequencing/artifacts/gameplan.json`.
+> the M2 local-collection-builder-sequencing gameplan.
 > The M2 gameplan resolves the representation questions below: finite ordered
 > list builders emit cardinality plus 1-based positional assertions over the
 > declared return rule; straight-line Set `.add` builders emit membership
