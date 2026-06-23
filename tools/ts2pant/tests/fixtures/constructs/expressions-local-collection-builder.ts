@@ -88,6 +88,36 @@ function setAddBuilder(first: string, second: string): Set<string> {
 }
 
 /**
+ * Empty Set builder.
+ * Target Pantagruel encoding: universal non-membership.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setEmptyBuilder(): Set<string> {
+  const out = new Set<string>();
+  return out;
+}
+
+/**
+ * Out-of-scope control: Set construction from an iterable is not a local
+ * straight-line add builder.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setIterableRejected(seed: Set<string>): Set<string> {
+  const out = new Set<string>(seed);
+  return out;
+}
+
+/**
+ * Out-of-scope control: non-add Set mutation is not a local builder.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setDeleteRejected(seed: string): Set<string> {
+  const out = new Set<string>();
+  out.delete(seed);
+  return out;
+}
+
+/**
  * Out-of-scope control: an alias escapes the local builder identity.
  * Target Pantagruel encoding: none (must keep refusing).
  */

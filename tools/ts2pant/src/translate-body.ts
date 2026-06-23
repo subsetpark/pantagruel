@@ -229,6 +229,7 @@ type PreludeStmt =
   | { kind: "muSearch"; tsName: string; mu: MuSearch; localName?: string }
   | ({ kind: "forOf" } & RecognizedForOfPush)
   | { kind: "builderPush"; accName: string; valueExpr: ts.Expression }
+  | { kind: "builderSetAdd"; accName: string; valueExpr: ts.Expression }
   | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
   | { kind: "stmt"; stmt: ts.Statement }
   | {
@@ -1351,6 +1352,71 @@ function translatePureBody(
     ];
   }
 
+  const localSetBuilder = tryBuildLocalSetBuilderReturn(
+    extracted,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+  );
+  if (localSetBuilder !== null) {
+    if ("error" in localSetBuilder) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${localSetBuilder.error}`,
+        },
+      ];
+    }
+    if (localSetBuilder.diagnostics.length > 0) {
+      return localSetBuilder.diagnostics;
+    }
+    const argExprs = params.map((p) => ast.var(p.name));
+    const resultApp = ast.app(ast.var(functionName), argExprs);
+    const binder = allocComprehensionBinder(supply, "x");
+    const binderVar = ast.var(binder);
+    const memberExpr = ast.binop(ast.opIn(), binderVar, resultApp);
+    const body =
+      localSetBuilder.added.length === 0
+        ? ast.unop(ast.opNot(), memberExpr)
+        : ast.binop(
+            ast.opIff(),
+            memberExpr,
+            localSetBuilder.added
+              .map((value) =>
+                ast.binop(
+                  ast.opEq(),
+                  binderVar,
+                  applyOpaqueAliases(lowerL1ToOpaque(value), supply),
+                ),
+              )
+              .reduce((acc, expr) => ast.binop(ast.opOr(), acc, expr)),
+          );
+    return [
+      ...localSetBuilder.prelude.ruleDecls,
+      ...localSetBuilder.loweredLets.propositions,
+      {
+        kind: "assertion",
+        quantifiers: [
+          ast.param(binder, ast.tName(localSetBuilder.elemType)),
+        ] as OpaqueParam[],
+        body,
+      },
+    ];
+  }
+
+  const unsupportedLocalCollectionConstructor =
+    describeUnsupportedLocalCollectionConstructorReturn(extracted);
+  if (unsupportedLocalCollectionConstructor !== null) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — ${unsupportedLocalCollectionConstructor}`,
+      },
+    ];
+  }
+
   const prelude = lowerPreludeBindings(
     extracted.bindings,
     checker,
@@ -1806,6 +1872,15 @@ interface LocalListBuilderResult {
   diagnostics: PropResult[];
 }
 
+interface LocalSetBuilderResult {
+  returnedAccumulatorName: string;
+  elemType: string;
+  added: IR1Expr[];
+  prelude: LoweredPreludeBindings;
+  loweredLets: IR1SsaBodyLowerResult;
+  diagnostics: PropResult[];
+}
+
 function tryBuildForOfComprehensionReturn(
   extracted: ExtractedBody,
   checker: ts.TypeChecker,
@@ -2068,6 +2143,191 @@ function tryBuildLocalListBuilderReturn(
     loweredLets,
     diagnostics: loweredLets.diagnostics,
   };
+}
+
+function tryBuildLocalSetBuilderReturn(
+  extracted: ExtractedBody,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  env: AssumptionEnv,
+): LocalSetBuilderResult | { error: string } | null {
+  if (
+    !ts.isExpression(extracted.returnExpr) ||
+    !ts.isIdentifier(extracted.returnExpr)
+  ) {
+    return null;
+  }
+  const accName = extracted.returnExpr.text;
+  const accDecls = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
+      binding.kind === "const" &&
+      binding.tsName === accName &&
+      isEmptySetConstructor(binding.initializer),
+  );
+  if (accDecls.length === 0) {
+    const setAdds = extracted.bindings.filter(
+      (binding): binding is Extract<PreludeStmt, { kind: "builderSetAdd" }> =>
+        binding.kind === "builderSetAdd",
+    );
+    return setAdds.length === 0
+      ? null
+      : {
+          error:
+            "Set builder must return the same local empty Set accumulator it adds to",
+        };
+  }
+  if (accDecls.length !== 1) {
+    return {
+      error: "Set builder must have exactly one returned empty Set accumulator",
+    };
+  }
+
+  const setAdds = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "builderSetAdd" }> =>
+      binding.kind === "builderSetAdd",
+  );
+  if (setAdds.some((add) => add.accName !== accName)) {
+    return {
+      error: "Set builder may only add to the returned local accumulator",
+    };
+  }
+
+  const elemType = setElementSort(
+    checker.getTypeAtLocation(extracted.returnExpr),
+    checker,
+    strategy,
+    supply.synthCell,
+  );
+  if (elemType === null) {
+    return {
+      error:
+        "Set builder return type must be Set<T> or ReadonlySet<T> with a supported element type",
+    };
+  }
+
+  const accNames = new Set([accName]);
+  let seenAdd = false;
+  const preludeBindings: PreludeStmt[] = [];
+  for (const binding of extracted.bindings) {
+    if (binding === accDecls[0]) {
+      continue;
+    }
+    if (binding.kind === "builderSetAdd") {
+      seenAdd = true;
+      if (expressionReferencesNames(binding.valueExpr, accNames)) {
+        return {
+          error: "Set builder add argument may not read the accumulator",
+        };
+      }
+      continue;
+    }
+    if (binding.kind === "const") {
+      if (seenAdd) {
+        return {
+          error: "Set builder const bindings must appear before added expressions",
+        };
+      }
+      if (expressionReferencesNames(binding.initializer, accNames)) {
+        return {
+          error: "Set builder accumulator alias or escape is not supported",
+        };
+      }
+      preludeBindings.push(binding);
+      continue;
+    }
+    return {
+      error:
+        "Set builder only supports const bindings and direct accumulator.add calls before return",
+    };
+  }
+
+  const prelude = lowerPreludeBindings(
+    preludeBindings,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    undefined,
+  );
+  if ("error" in prelude) {
+    return prelude;
+  }
+  if (prelude.arms.length > 0) {
+    return {
+      error: "Set builder with early returns is not supported",
+    };
+  }
+  const loweredLets =
+    prelude.letStmts.length === 0
+      ? ir1SsaBodyLowerSuccess()
+      : lowerL1BodyToSsaProps(
+          ir1Block(prelude.letStmts as [IR1Stmt, ...IR1Stmt[]]),
+          [],
+          {
+            applyConst: (e) => applyOpaqueAliases(e, supply),
+          },
+        );
+
+  const added: IR1Expr[] = [];
+  for (const add of setAdds) {
+    if (expressionHasSideEffects(add.valueExpr, checker)) {
+      return {
+        error: "Set builder add argument has side effects",
+      };
+    }
+    const value = buildPureL1OrNull(add.valueExpr, {
+      checker,
+      strategy,
+      paramNames: prelude.scopedParams,
+      state: undefined,
+      supply,
+      env,
+    });
+    if (value === null) {
+      return {
+        error: "unsupported pure expression in Set builder add argument",
+      };
+    }
+    added.push(value);
+  }
+
+  return {
+    returnedAccumulatorName: accName,
+    elemType,
+    added,
+    prelude,
+    loweredLets,
+    diagnostics: loweredLets.diagnostics,
+  };
+}
+
+function describeUnsupportedLocalCollectionConstructorReturn(
+  extracted: ExtractedBody,
+): string | null {
+  if (
+    !ts.isExpression(extracted.returnExpr) ||
+    !ts.isIdentifier(extracted.returnExpr)
+  ) {
+    return null;
+  }
+  const accName = extracted.returnExpr.text;
+  const accDecl = extracted.bindings.find(
+    (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
+      binding.kind === "const" && binding.tsName === accName,
+  );
+  if (accDecl === undefined) {
+    return null;
+  }
+  if (isSetConstructorWithIterable(accDecl.initializer)) {
+    return "Set builder from iterable is not supported";
+  }
+  if (isMapConstructor(accDecl.initializer)) {
+    return "Map builder construction is not supported in this milestone";
+  }
+  return null;
 }
 
 /**
@@ -2520,6 +2780,30 @@ function recognizePushStatement(
   return { accName, projExpr: expr.arguments[0]! };
 }
 
+function recognizeSetAddStatement(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+): { accName: string; valueExpr: ts.Expression } | null {
+  if (!ts.isExpressionStatement(stmt)) {
+    return null;
+  }
+  const expr = stmt.expression;
+  if (
+    !ts.isCallExpression(expr) ||
+    expr.arguments.length !== 1 ||
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    expr.expression.name.text !== "add" ||
+    !ts.isIdentifier(expr.expression.expression)
+  ) {
+    return null;
+  }
+  const accName = expr.expression.expression.text;
+  if (!accNames.has(accName)) {
+    return null;
+  }
+  return { accName, valueExpr: expr.arguments[0]! };
+}
+
 function describeLocalListBuilderMutationRejection(
   stmt: ts.ExpressionStatement,
   accNames: ReadonlySet<string>,
@@ -2547,6 +2831,111 @@ function describeLocalListBuilderMutationRejection(
   }
   if (accNames.has(receiver) && method !== "push") {
     return `list builder unknown mutation .${method} is not supported`;
+  }
+  return null;
+}
+
+function describeLocalSetBuilderMutationRejection(
+  stmt: ts.ExpressionStatement,
+  accNames: ReadonlySet<string>,
+  aliases: ReadonlySet<string>,
+): string | null {
+  const expr = unwrapExpression(stmt.expression);
+  if (ts.isCallExpression(expr)) {
+    for (const arg of expr.arguments) {
+      if (expressionReferencesNames(arg, new Set([...accNames, ...aliases]))) {
+        return "Set builder accumulator alias or escape is not supported";
+      }
+    }
+  }
+  if (
+    !ts.isCallExpression(expr) ||
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    !ts.isIdentifier(expr.expression.expression)
+  ) {
+    return null;
+  }
+  const receiver = expr.expression.expression.text;
+  const method = expr.expression.name.text;
+  if (aliases.has(receiver)) {
+    return "Set builder accumulator alias or escape is not supported";
+  }
+  if (accNames.has(receiver) && method !== "add") {
+    return `Set builder mutation .${method} is not supported`;
+  }
+  return null;
+}
+
+function describeLocalMapBuilderMutationRejection(
+  stmt: ts.ExpressionStatement,
+  accNames: ReadonlySet<string>,
+  aliases: ReadonlySet<string>,
+): string | null {
+  const expr = unwrapExpression(stmt.expression);
+  if (ts.isCallExpression(expr)) {
+    for (const arg of expr.arguments) {
+      if (expressionReferencesNames(arg, new Set([...accNames, ...aliases]))) {
+        return "Map builder accumulator alias or escape is not supported";
+      }
+    }
+  }
+  if (
+    !ts.isCallExpression(expr) ||
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    !ts.isIdentifier(expr.expression.expression)
+  ) {
+    return null;
+  }
+  const receiver = expr.expression.expression.text;
+  if (aliases.has(receiver)) {
+    return "Map builder accumulator alias or escape is not supported";
+  }
+  if (accNames.has(receiver)) {
+    return "Map builder construction is not supported in this milestone";
+  }
+  return null;
+}
+
+function describeLocalMapBuilderBodyRejection(
+  body: ts.Block,
+  checker: ts.TypeChecker,
+): string | null {
+  const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
+  if (stmts.length < 2) {
+    return null;
+  }
+
+  const mapAccNames = new Set<string>();
+  const aliases = new Set<string>();
+  for (const stmt of stmts.slice(0, -1)) {
+    if (ts.isVariableStatement(stmt)) {
+      const bindings = constLikeBindingsFromVariableStatement(stmt, body);
+      if (bindings === null) {
+        continue;
+      }
+      for (const binding of bindings) {
+        if (binding.kind !== "const") {
+          continue;
+        }
+        if (isMapConstructor(binding.initializer)) {
+          mapAccNames.add(binding.tsName);
+        } else if (expressionReferencesNames(binding.initializer, mapAccNames)) {
+          aliases.add(binding.tsName);
+        }
+      }
+      continue;
+    }
+    if (!ts.isExpressionStatement(stmt)) {
+      continue;
+    }
+    const rejection = describeLocalMapBuilderMutationRejection(
+      stmt,
+      mapAccNames,
+      aliases,
+    );
+    if (rejection !== null) {
+      return rejection;
+    }
   }
   return null;
 }
@@ -2597,6 +2986,7 @@ function extractReturnExpression(
   const bindings: PreludeStmt[] = [];
   const letNames = new Set<string>();
   const emptyArrayAccNames = new Set<string>();
+  const emptySetAccNames = new Set<string>();
   let scopedParams = ctx.paramNames;
   let lastLetDeclNames = new Set<string>();
 
@@ -2640,6 +3030,17 @@ function extractReturnExpression(
           kind: "builderPush",
           accName: push.accName,
           valueExpr: push.projExpr,
+        });
+        i += 1;
+        lastLetDeclNames = new Set();
+        continue;
+      }
+      const setAdd = recognizeSetAddStatement(stmt, emptySetAccNames);
+      if (setAdd !== null) {
+        bindings.push({
+          kind: "builderSetAdd",
+          accName: setAdd.accName,
+          valueExpr: setAdd.valueExpr,
         });
         i += 1;
         lastLetDeclNames = new Set();
@@ -2719,6 +3120,12 @@ function extractReturnExpression(
       ) {
         emptyArrayAccNames.add(binding.tsName);
       }
+      if (
+        binding.kind === "const" &&
+        isEmptySetConstructor(binding.initializer)
+      ) {
+        emptySetAccNames.add(binding.tsName);
+      }
       if (binding.kind === "const") {
         const localName = allocLocalBindingName(
           ctx.supply,
@@ -2778,6 +3185,63 @@ function isEmptyArrayLiteral(expr: ts.Expression): boolean {
   return ts.isArrayLiteralExpression(current) && current.elements.length === 0;
 }
 
+function isEmptySetConstructor(expr: ts.Expression): boolean {
+  const current = unwrapExpression(expr);
+  return (
+    ts.isNewExpression(current) &&
+    ts.isIdentifier(current.expression) &&
+    current.expression.text === "Set" &&
+    (current.arguments === undefined || current.arguments.length === 0)
+  );
+}
+
+function isSetConstructorWithIterable(expr: ts.Expression): boolean {
+  const current = unwrapExpression(expr);
+  return (
+    ts.isNewExpression(current) &&
+    ts.isIdentifier(current.expression) &&
+    current.expression.text === "Set" &&
+    current.arguments !== undefined &&
+    current.arguments.length > 0
+  );
+}
+
+function isEmptyMapConstructor(expr: ts.Expression): boolean {
+  const current = unwrapExpression(expr);
+  return (
+    ts.isNewExpression(current) &&
+    ts.isIdentifier(current.expression) &&
+    current.expression.text === "Map" &&
+    (current.arguments === undefined || current.arguments.length === 0)
+  );
+}
+
+function isMapConstructor(expr: ts.Expression): boolean {
+  const current = unwrapExpression(expr);
+  return (
+    ts.isNewExpression(current) &&
+    ts.isIdentifier(current.expression) &&
+    current.expression.text === "Map"
+  );
+}
+
+function setElementSort(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+): string | null {
+  if (!isSetType(type)) {
+    return null;
+  }
+  const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
+  if (typeArgs.length !== 1) {
+    return null;
+  }
+  const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+  return mapped.ok ? mapped.sort : null;
+}
+
 function nodeWritesName(node: ts.Node, name: string): boolean {
   let found = false;
   const visit = (current: ts.Node): void => {
@@ -2830,7 +3294,11 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     // failed rather than a heuristic guess.
     let i = 0;
     const emptyArrayAccNames = new Set<string>();
+    const emptySetAccNames = new Set<string>();
+    const emptyMapAccNames = new Set<string>();
     const listBuilderAliases = new Set<string>();
+    const setBuilderAliases = new Set<string>();
+    const mapBuilderAliases = new Set<string>();
     while (i < lastIdx) {
       if (recognizeLetWhilePair(stmts, i, checker)) {
         i += 2;
@@ -2888,9 +3356,39 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
               emptyArrayAccNames.add(binding.tsName);
             } else if (
               binding.kind === "const" &&
+              isEmptySetConstructor(binding.initializer)
+            ) {
+              emptySetAccNames.add(binding.tsName);
+            } else if (
+              binding.kind === "const" &&
+              isSetConstructorWithIterable(binding.initializer)
+            ) {
+              return "Set builder from iterable is not supported";
+            } else if (
+              binding.kind === "const" &&
+              isEmptyMapConstructor(binding.initializer)
+            ) {
+              emptyMapAccNames.add(binding.tsName);
+            } else if (
+              binding.kind === "const" &&
+              isMapConstructor(binding.initializer)
+            ) {
+              return "Map builder construction is not supported in this milestone";
+            } else if (
+              binding.kind === "const" &&
               expressionReferencesNames(binding.initializer, emptyArrayAccNames)
             ) {
               listBuilderAliases.add(binding.tsName);
+            } else if (
+              binding.kind === "const" &&
+              expressionReferencesNames(binding.initializer, emptySetAccNames)
+            ) {
+              setBuilderAliases.add(binding.tsName);
+            } else if (
+              binding.kind === "const" &&
+              expressionReferencesNames(binding.initializer, emptyMapAccNames)
+            ) {
+              mapBuilderAliases.add(binding.tsName);
             }
           }
           i += 1;
@@ -2902,6 +3400,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           i += 1;
           continue;
         }
+        if (recognizeSetAddStatement(stmt, emptySetAccNames) !== null) {
+          i += 1;
+          continue;
+        }
         const mutation = describeLocalListBuilderMutationRejection(
           stmt,
           emptyArrayAccNames,
@@ -2909,6 +3411,22 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         );
         if (mutation !== null) {
           return mutation;
+        }
+        const setMutation = describeLocalSetBuilderMutationRejection(
+          stmt,
+          emptySetAccNames,
+          setBuilderAliases,
+        );
+        if (setMutation !== null) {
+          return setMutation;
+        }
+        const mapMutation = describeLocalMapBuilderMutationRejection(
+          stmt,
+          emptyMapAccNames,
+          mapBuilderAliases,
+        );
+        if (mapMutation !== null) {
+          return mapMutation;
         }
         return "expression statement before return (only const / μ-search / if-early-return allowed)";
       }
@@ -3583,6 +4101,13 @@ function lowerPreludeBindings(
             "list builder push is only supported when returning its accumulator directly",
         };
       }
+      if (binding.kind === "builderSetAdd") {
+        return {
+          tag: "error",
+          error:
+            "Set builder add is only supported when returning its accumulator directly",
+        };
+      }
       const localName =
         binding.localName ??
         allocLocalBindingName(
@@ -3730,6 +4255,10 @@ function validatePreludeBindings(
     } else if (binding.kind === "builderPush") {
       if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
         return { error: "list builder push references a later binding" };
+      }
+    } else if (binding.kind === "builderSetAdd") {
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "Set builder add references a later binding" };
       }
     } else {
       // earlyReturn arm — predicate and value must be pure and may not refer
@@ -3907,7 +4436,12 @@ export function lowerNestedPureBlockReturnToL1(
   ) {
     return null;
   }
-  if (extracted.bindings.some((binding) => binding.kind === "builderPush")) {
+  if (
+    extracted.bindings.some(
+      (binding) =>
+        binding.kind === "builderPush" || binding.kind === "builderSetAdd",
+    )
+  ) {
     return null;
   }
   const validation = validatePreludeBindings(extracted.bindings, ctx.checker);
@@ -3933,6 +4467,7 @@ export function lowerNestedPureBlockReturnToL1(
     if (
       binding.kind === "forOf" ||
       binding.kind === "builderPush" ||
+      binding.kind === "builderSetAdd" ||
       binding.kind === "reassign" ||
       binding.kind === "stmt"
     ) {
@@ -6707,6 +7242,18 @@ function translateMutatingBody(
 ): PropResult[] {
   if (!node.body) {
     return [];
+  }
+  const localMapBuilderRejection = describeLocalMapBuilderBodyRejection(
+    node.body,
+    checker,
+  );
+  if (localMapBuilderRejection !== null) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — ${localMapBuilderRejection}`,
+      },
+    ];
   }
   const localRuleDecls: PropResult[] = [];
   const env = suppliedEnv ?? createL1AssumptionEnv();
