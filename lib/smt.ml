@@ -233,6 +233,22 @@ and translate_app config env func args =
         | Ok ty -> Some ty
         | Error _ -> None)
   in
+  let list_index =
+    match args with
+    | [ arg ] -> (
+        match[@warning "-4"] infer_with_unprime func with
+        | Some (TyList elem_ty) -> (
+            match[@warning "-4"] infer_with_unprime arg with
+            | Some arg_ty when is_subtype arg_ty TyNat || is_numeric arg_ty ->
+                let func_s = Ast.show_expr func in
+                let arg_s = Ast.show_expr arg in
+                Some
+                  (intern_list_index_symbol ~func_s ~arg_s
+                     ~sort:(sort_of_ty elem_ty))
+            | _ -> None)
+        | _ -> None)
+    | _ -> None
+  in
   let list_search =
     match args with
     | [ arg ] -> (
@@ -255,71 +271,76 @@ and translate_app config env func args =
         | _ -> None)
     | _ -> None
   in
-  match list_search with
+  match list_index with
   | Some name -> name
   | None -> (
-      match[@warning "-4"] func with
-      | EOverride (Lower name, pairs) ->
-          (* f[k |-> v] applied to args: inline ite chain. For arity-1 rules
+      match list_search with
+      | Some name -> name
+      | None -> (
+          match[@warning "-4"] func with
+          | EOverride (Lower name, pairs) ->
+              (* f[k |-> v] applied to args: inline ite chain. For arity-1 rules
              the key is a bare expression compared against the single arg;
              for arity-N rules the key is an N-tuple whose components are
              compared componentwise against the args, yielding a conjunctive
              guard — McCarthy's [store] extended to multi-index arrays
              (Kroening & Strichman Ch. 7). *)
-          let sname = smt_rule_name env name (List.length args) in
-          let args_str = List.map (translate_expr config env) args in
-          let applied_args = String.concat " " args_str in
-          (match args_str with
-          | [] -> failwith "SMT translation: override applied with 0 arguments"
-          | _ -> ());
-          let rec build_chain = function
-            | [] -> Printf.sprintf "(%s %s)" sname applied_args
-            | (k, v) :: rest ->
-                let guard_str =
-                  match args_str with
-                  | [ arg ] ->
-                      (* Arity-1: bare-expression key, even when the key is
+              let sname = smt_rule_name env name (List.length args) in
+              let args_str = List.map (translate_expr config env) args in
+              let applied_args = String.concat " " args_str in
+              (match args_str with
+              | [] ->
+                  failwith "SMT translation: override applied with 0 arguments"
+              | _ -> ());
+              let rec build_chain = function
+                | [] -> Printf.sprintf "(%s %s)" sname applied_args
+                | (k, v) :: rest ->
+                    let guard_str =
+                      match args_str with
+                      | [ arg ] ->
+                          (* Arity-1: bare-expression key, even when the key is
                          itself a tuple literal (e.g. a rule whose single
                          parameter has a product type). *)
-                      Printf.sprintf "(= %s %s)" arg
-                        (translate_expr config env k)
-                  | _ -> (
-                      match[@warning "-4"] k with
-                      | ETuple parts ->
-                          if List.length parts <> List.length args_str then
-                            failwith
-                              "SMT translation: override key arity does not \
-                               match application arity";
-                          let eqs =
-                            List.map2
-                              (fun part arg ->
-                                Printf.sprintf "(= %s %s)" arg
-                                  (translate_expr config env part))
-                              parts args_str
-                          in
-                          Printf.sprintf "(and %s)" (String.concat " " eqs)
-                      | _ ->
-                          failwith
-                            "SMT translation: override key arity does not \
-                             match application arity")
-                in
-                Printf.sprintf "(ite %s %s %s)" guard_str
-                  (translate_expr config env v)
-                  (build_chain rest)
-          in
-          build_chain pairs
-      | _ ->
-          let arity = List.length args in
-          let func_str =
-            match[@warning "-4"] func with
-            | EVar (Lower name) -> smt_rule_name env name arity
-            | EPrimed (Lower name) -> smt_rule_name env name arity ^ "_prime"
-            | EQualified (Upper mod_name, name) ->
-                smt_qualified_rule_name env mod_name name arity
-            | _ -> translate_expr config env func
-          in
-          let args_str = List.map (translate_expr config env) args in
-          Printf.sprintf "(%s %s)" func_str (String.concat " " args_str))
+                          Printf.sprintf "(= %s %s)" arg
+                            (translate_expr config env k)
+                      | _ -> (
+                          match[@warning "-4"] k with
+                          | ETuple parts ->
+                              if List.length parts <> List.length args_str then
+                                failwith
+                                  "SMT translation: override key arity does \
+                                   not match application arity";
+                              let eqs =
+                                List.map2
+                                  (fun part arg ->
+                                    Printf.sprintf "(= %s %s)" arg
+                                      (translate_expr config env part))
+                                  parts args_str
+                              in
+                              Printf.sprintf "(and %s)" (String.concat " " eqs)
+                          | _ ->
+                              failwith
+                                "SMT translation: override key arity does not \
+                                 match application arity")
+                    in
+                    Printf.sprintf "(ite %s %s %s)" guard_str
+                      (translate_expr config env v)
+                      (build_chain rest)
+              in
+              build_chain pairs
+          | _ ->
+              let arity = List.length args in
+              let func_str =
+                match[@warning "-4"] func with
+                | EVar (Lower name) -> smt_rule_name env name arity
+                | EPrimed (Lower name) ->
+                    smt_rule_name env name arity ^ "_prime"
+                | EQualified (Upper mod_name, name) ->
+                    smt_qualified_rule_name env mod_name name arity
+                | _ -> translate_expr config env func
+              in
+              let args_str = List.map (translate_expr config env) args in
+              Printf.sprintf "(%s %s)" func_str (String.concat " " args_str)))
 
 and translate_binop config env op e1 e2 =
   match op with
@@ -572,13 +593,13 @@ and translate_card config env e =
              fresh non-negative integer constant so the gap is visible to
              downstream tooling rather than silently constrained to 0. *)
           let _ = set_str in
-          let name = fresh_fallback ~kind:"card" ~sort:"Int" in
+          let name = intern_card_symbol ~expr_s:(Ast.show_expr e) in
           add_fallback_assert (Printf.sprintf "(>= %s 0)" name);
           name
       | _ ->
           (* Can't determine element type at all — same fallback. *)
           let _ = set_str in
-          let name = fresh_fallback ~kind:"card" ~sort:"Int" in
+          let name = intern_card_symbol ~expr_s:(Ast.show_expr e) in
           add_fallback_assert (Printf.sprintf "(>= %s 0)" name);
           name)
 
@@ -2616,6 +2637,67 @@ let generate_action_entailment_query config env ~all_invariants ~index
   }
 
 (** Generate all verification queries for a document *)
+let invariant_expensive_for_consistency env (inv : expr located) =
+  let rec unbounded_ty = function
+    | TyString | TyInt | TyReal -> true
+    | TyList ty -> unbounded_ty ty
+    | TyProduct tys | TySum tys -> List.exists unbounded_ty tys
+    | TyBool | TyNat | TyNat0 | TyNothing | TyDomain _ | TyFunc _ -> false
+  in
+  let param_ty env (p : param) =
+    Collect.resolve_type env p.param_type dummy_loc
+  in
+  let param_unbounded env p =
+    match param_ty env p with Ok ty -> unbounded_ty ty | Error _ -> false
+  in
+  let bind_param env p =
+    match param_ty env p with
+    | Ok ty -> Env.with_vars [ (Ast.lower_name p.param_name, ty) ] env
+    | Error _ -> env
+  in
+  let rec expr_expensive env = function
+    | EForall (mb, metas) | EExists (mb, metas) | EEach (mb, metas, _) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        let params_expensive = List.exists (param_unbounded env) params in
+        let env = List.fold_left bind_param env params in
+        let guards_expensive, env =
+          List.fold_left
+            (fun (expensive, env) guard ->
+              let guard_expensive, env = guard_expensive env guard in
+              (expensive || guard_expensive, env))
+            (false, env) guards
+        in
+        params_expensive || guards_expensive || expr_expensive env body
+    | EApp (func, args) -> List.exists (expr_expensive env) (func :: args)
+    | EBinop (_, e1, e2) -> expr_expensive env e1 || expr_expensive env e2
+    | EUnop (_, e) | EProj (e, _) | EInitially e -> expr_expensive env e
+    | ETuple es -> List.exists (expr_expensive env) es
+    | EOverride (_, pairs) ->
+        List.exists
+          (fun (k, v) -> expr_expensive env k || expr_expensive env v)
+          pairs
+    | ECond arms ->
+        List.exists
+          (fun (g, c) -> expr_expensive env g || expr_expensive env c)
+          arms
+    | EVar _ | EPrimed _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+    | ELitString _ | ELitBool _ ->
+        false
+  and guard_expensive env = function
+    | GParam p -> (param_unbounded env p, bind_param env p)
+    | GIn (Lower name, list_expr) -> (
+        match[@warning "-4"]
+          Check.infer_type { Check.env; loc = dummy_loc } list_expr
+        with
+        | Ok (TyList elem_ty) | Ok (TyDomain _ as elem_ty) ->
+            let rhs_expensive = expr_expensive env list_expr in
+            let env = Env.with_vars [ (name, elem_ty) ] env in
+            (unbounded_ty elem_ty || rhs_expensive, env)
+        | Ok _ | Error _ -> (expr_expensive env list_expr, env))
+    | GExpr e -> (expr_expensive env e, env)
+  in
+  expr_expensive env inv.value
+
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
   let invariants = collect_invariants chapters in
@@ -2624,8 +2706,14 @@ let generate_queries config env (doc : document) =
   let queries = ref [] in
   let add f = queries := with_cond_aux f :: !queries in
   (* Invariant consistency query *)
-  if invariants <> [] then
-    add (fun () -> generate_invariant_consistency_query config env invariants);
+  let consistency_invariants =
+    List.filter
+      (fun inv -> not (invariant_expensive_for_consistency env inv))
+      invariants
+  in
+  if consistency_invariants <> [] then
+    add (fun () ->
+        generate_invariant_consistency_query config env consistency_invariants);
   (* Init consistency query *)
   if init_props <> [] then
     add (fun () -> generate_init_consistency_query config env init_props);

@@ -413,6 +413,71 @@ let collect_chapter_head ~chapter ~doc_contexts env
 let recognize_rule_definition_eq
     (chapter_head : Ast.declaration Ast.located list) (e : Ast.expr) :
     (Ast.declaration * Ast.expr) option =
+  let module StringSet = Set.Make (String) in
+  let nullary_rule_names =
+    List.fold_left
+      (fun acc (decl : Ast.declaration Ast.located) ->
+        match[@warning "-4"] decl.value with
+        | DeclRule { name = Lower n; params = []; _ } -> StringSet.add n acc
+        | _ -> acc)
+      StringSet.empty chapter_head
+  in
+  let rec value_vars acc = function
+    | EVar (Lower n) | EPrimed (Lower n) -> StringSet.add n acc
+    | EApp (EVar _, args) -> List.fold_left value_vars acc args
+    | EApp (func, args) -> List.fold_left value_vars (value_vars acc func) args
+    | EBinop (_, e1, e2) -> value_vars (value_vars acc e1) e2
+    | EUnop (_, e) | EProj (e, _) | EInitially e -> value_vars acc e
+    | ETuple es -> List.fold_left value_vars acc es
+    | EOverride (_, pairs) ->
+        List.fold_left
+          (fun acc (k, v) -> value_vars (value_vars acc k) v)
+          acc pairs
+    | ECond arms ->
+        List.fold_left
+          (fun acc (g, c) -> value_vars (value_vars acc g) c)
+          acc arms
+    | EForall (mb, metas) | EExists (mb, metas) | EEach (mb, metas, _) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        let bound0 =
+          List.fold_left
+            (fun s (p : Ast.param) ->
+              StringSet.add (Ast.lower_name p.param_name) s)
+            StringSet.empty params
+        in
+        let rec collect_guards acc bound = function
+          | [] -> (acc, bound)
+          | GParam p :: rest ->
+              collect_guards acc
+                (StringSet.add (Ast.lower_name p.param_name) bound)
+                rest
+          | GIn (Lower n, list_expr) :: rest ->
+              let vars =
+                StringSet.diff (value_vars StringSet.empty list_expr) bound
+              in
+              collect_guards (StringSet.union acc vars) (StringSet.add n bound)
+                rest
+          | GExpr e :: rest ->
+              let vars = StringSet.diff (value_vars StringSet.empty e) bound in
+              collect_guards (StringSet.union acc vars) bound rest
+        in
+        let guard_vars, bound = collect_guards StringSet.empty bound0 guards in
+        StringSet.union acc
+          (StringSet.diff
+             (StringSet.union guard_vars (value_vars StringSet.empty body))
+             bound)
+    | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ | EDomain _
+    | EQualified _ ->
+        acc
+  in
+  let rhs_vars_bound_by_lhs rhs arg_names =
+    let allowed =
+      List.fold_left
+        (fun acc name -> StringSet.add name acc)
+        nullary_rule_names arg_names
+    in
+    StringSet.subset (value_vars StringSet.empty rhs) allowed
+  in
   let arg_to_name (e : Ast.expr) : string option =
     match[@warning "-4"] e with EVar (Lower an) -> Some an | _ -> None
   in
@@ -440,7 +505,8 @@ let recognize_rule_definition_eq
                           (List.map
                              (fun (p : Ast.param) ->
                                Ast.lower_name p.param_name)
-                             params) ->
+                             params)
+                     && rhs_vars_bound_by_lhs rhs arg_names ->
                   Some (decl.value, rhs)
               | _ -> None)
             chapter_head)

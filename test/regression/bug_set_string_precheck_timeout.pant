@@ -1,0 +1,13 @@
+module BUG_SET_STRING_PRECHECK_TIMEOUT.
+
+build first: String, second: String => [String].
+
+---
+
+all first: String, second: String |
+  all x: String | x in build first second <-> x = first or x = second.
+
+check
+
+all first: String, second: String |
+  all x: String | x in build first second <-> x = first or x = second.

@@ -21,6 +21,18 @@ let config_native =
   Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:Env.StringMap.empty
     ~inject_guards:true ~ground_quantifiers:false ()
 
+let contains s sub =
+  let slen = String.length s in
+  let sublen = String.length sub in
+  if sublen > slen then false
+  else
+    let rec check i =
+      if i > slen - sublen then false
+      else if String.sub s i sublen = sub then true
+      else check (i + 1)
+    in
+    check 0
+
 let test_lit_bool () =
   let env = Env.empty "" in
   check string "true" "true" (Smt.translate_expr config env (Ast.ELitBool true));
@@ -136,6 +148,35 @@ let test_app () =
     (Smt.translate_expr config env
        (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x"); EVar (Lower "y") ])))
 
+let test_list_index_fallback () =
+  let env =
+    Env.empty ""
+    |> Env.add_var "xs" (Types.TyList Types.TyString)
+    |> Env.add_var "i" Types.TyNat
+  in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let result =
+    Smt.translate_expr config env (Ast.EApp (EVar (Lower "xs"), [ ELitNat 1 ]))
+  in
+  check bool "is list-index fallback" true
+    (String.length result >= 21
+    && String.sub result 0 21 = "_list_index_fallback_");
+  let drained = Smt.drain_fallback_decls () in
+  check bool "declared with element sort" true
+    (contains drained (Printf.sprintf "(declare-const %s String)" result));
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let first =
+    Smt.translate_expr config env
+      (Ast.EApp (EVar (Lower "xs"), [ EVar (Lower "i") ]))
+  in
+  let second =
+    Smt.translate_expr config env
+      (Ast.EApp (EVar (Lower "xs"), [ EVar (Lower "i") ]))
+  in
+  check string "same list/index pair reuses fallback" first second
+
 let test_primed_app () =
   let env = Env.empty "" in
   check string "primed app" "(f_prime x)"
@@ -172,18 +213,6 @@ let test_sort_domain () =
     (Smt.sort_of_ty (Types.TyDomain "Account"))
 
 (* --- Integration tests --- *)
-
-let contains s sub =
-  let slen = String.length s in
-  let sublen = String.length sub in
-  if sublen > slen then false
-  else
-    let rec check i =
-      if i > slen - sublen then false
-      else if String.sub s i sublen = sub then true
-      else check (i + 1)
-    in
-    check 0
 
 let test_preamble_domains_simple () =
   let env = Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0 in
@@ -266,6 +295,39 @@ let test_duplicate_split_form_equation_kept_in_body () =
       fail
         (Printf.sprintf "expected retained x + 2 equation, got %s"
            (Ast.show_expr prop))
+
+let test_split_form_rejects_rhs_free_param () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Item.\n\
+       label i: Item => String.\n\
+       build i: Item => [String].\n\
+       projected => String.\n\
+       ---\n\
+       projected = label i.\n\
+       #(build i) = 1.\n\
+       (build i) 1 = projected.\n"
+  in
+  let env, doc = Collect.recognize_split_form_bodies env doc in
+  (match Env.lookup_rule_body_arity "projected" 0 env with
+  | Some _ -> fail "projected must not be attached as a nullary rule body"
+  | None -> ());
+  let chapter = List.hd doc.chapters in
+  check int "free-param equation remains in body" 3 (List.length chapter.body)
+
+let test_split_form_allows_rhs_guard_binder () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       ok xs: [String] => Bool.\n\
+       ---\n\
+       ok xs = (all x in xs | x = x).\n"
+  in
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
+  match Env.lookup_rule_body_arity "ok" 1 env with
+  | Some _ -> ()
+  | None -> fail "expected guard-bound RHS variable to attach rule body"
 
 let test_recursive_rule_emits_define_fun_rec () =
   let env, doc =
@@ -553,6 +615,20 @@ let test_card_non_domain_list () =
   (* The corresponding declaration is queued in fallback_decls. *)
   let drained = Smt.drain_fallback_decls () in
   check bool "declaration queued" true (contains drained "_card_fallback_")
+
+let test_card_non_domain_list_reuses_fallback () =
+  let env =
+    Env.empty ""
+    |> Env.add_rule "nums"
+         (Types.TyFunc ([], Some (Types.TyList Types.TyInt)))
+         Ast.dummy_loc ~chapter:0
+  in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let expr = Ast.EUnop (OpCard, EVar (Lower "nums")) in
+  let first = Smt.translate_expr config env expr in
+  let second = Smt.translate_expr config env expr in
+  check string "same card expression reuses fallback" first second
 
 let test_subset_domain_rhs () =
   (* Ensure OpSubset with EDomain on RHS doesn't trigger standalone failwith *)
@@ -1257,6 +1333,7 @@ let expression_tests =
     test_case "negation" `Quick test_unop_neg;
     test_case "application" `Quick test_app;
     test_case "primed application" `Quick test_primed_app;
+    test_case "list index fallback" `Quick test_list_index_fallback;
     test_case "domain membership" `Quick test_domain_in;
     test_case "list membership" `Quick test_in_list;
     test_case "projection" `Quick test_proj;
@@ -1270,6 +1347,8 @@ let expression_tests =
     test_case "subset" `Quick test_subset;
     test_case "domain standalone raises" `Quick test_domain_standalone;
     test_case "cardinality non-domain list" `Quick test_card_non_domain_list;
+    test_case "cardinality non-domain list reuses fallback" `Quick
+      test_card_non_domain_list_reuses_fallback;
     test_case "subset with domain RHS" `Quick test_subset_domain_rhs;
   ]
 
@@ -1379,6 +1458,50 @@ let test_invariant_query_content () =
   check bool "has domain sort" true
     (contains inv_con.smt2 "(declare-sort Account 0)")
 
+let test_expensive_string_quantifier_skips_consistency_only () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       f a: String, b: String => [String].\n\
+       ---\n\
+       all a: String, b: String | all x: String | x in f a b <-> x = a or x = b.\n\
+       check\n\
+       all a: String, b: String | all x: String | x in f a b <-> x = a or x = b.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  check bool "skips expensive invariant consistency" false
+    (List.exists
+       (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency)
+       queries);
+  check bool "keeps entailment query" true
+    (List.exists (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries)
+
+let test_expensive_composite_param_skips_consistency () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\nmarker => Bool.\n---\nall xs: [String] | xs = xs.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  check bool "skips list<string> invariant consistency" false
+    (List.exists
+       (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency)
+       queries)
+
+let test_expensive_gin_uses_quantifier_env () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Holder.\n\
+       strings h: Holder => [String].\n\
+       ---\n\
+       all h in Holder, x in strings h | x = x.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  check bool "skips GIn string element invariant consistency" false
+    (List.exists
+       (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency)
+       queries)
+
 let test_init_query_content () =
   let env, doc =
     parse_and_collect
@@ -1414,6 +1537,10 @@ let integration_tests =
       `Quick test_split_form_nullary_self_reference;
     test_case "duplicate split-form equation remains in chapter body" `Quick
       test_duplicate_split_form_equation_kept_in_body;
+    test_case "split-form rejects RHS free param" `Quick
+      test_split_form_rejects_rhs_free_param;
+    test_case "split-form allows RHS guard binder" `Quick
+      test_split_form_allows_rhs_guard_binder;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"
@@ -1437,6 +1564,12 @@ let integration_tests =
       test_list_with_params_element_constraint;
     test_case "list<Domain> no element constraint" `Quick
       test_list_domain_element_no_constraint;
+    test_case "expensive string quantifier skips consistency only" `Quick
+      test_expensive_string_quantifier_skips_consistency_only;
+    test_case "expensive composite param skips consistency" `Quick
+      test_expensive_composite_param_skips_consistency;
+    test_case "expensive GIn uses quantifier env" `Quick
+      test_expensive_gin_uses_quantifier_env;
     test_case "invariant query content" `Quick test_invariant_query_content;
     test_case "init query content" `Quick test_init_query_content;
   ]

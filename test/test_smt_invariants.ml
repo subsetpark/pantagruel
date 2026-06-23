@@ -323,8 +323,6 @@ let regression_cases () =
          "bug_action_param_shadows_rule.pant" "a1");
     test_case "bug_rule_param_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rule_param_collision.pant" []);
-    test_case "bug_rule_param_collision.pant — quantifier binder renamed" `Quick
-      (test_smt_contains ~native:true "bug_rule_param_collision.pant" "name_q");
     test_case "bug_nested_binder_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_nested_binder_collision.pant" []);
     test_case
@@ -334,9 +332,9 @@ let regression_cases () =
     test_case "bug_rename_app_head.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rename_app_head.pant"
          [ "fallback_emission" ]);
-    test_case "bug_rename_app_head.pant — renamed binder used in head position"
-      `Quick
-      (test_smt_contains ~native:true "bug_rename_app_head.pant" "(xs_q 1)");
+    test_case "bug_rename_app_head.pant — indexed app uses fallback" `Quick
+      (test_smt_contains ~native:true "bug_rename_app_head.pant"
+         "_list_index_fallback_");
     test_case "bug_rename_app_head.pant — binder does not shadow declared xs"
       `Quick
       (test_no_shadowing_forall ~native:true "bug_rename_app_head.pant" "xs");

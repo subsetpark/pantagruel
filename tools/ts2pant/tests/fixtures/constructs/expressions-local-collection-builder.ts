@@ -16,6 +16,9 @@ interface BuilderItem {
  * Straight-line single-push list builder:
  *   `const out = []; out.push(seed); return out;`
  * Target Pantagruel encoding: cardinality plus positional assertions.
+ *
+ * @pant #(list-single-push seed) = 1.
+ * @pant (list-single-push seed) 1 = seed.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function listSinglePush(seed: string): string[] {
@@ -28,6 +31,10 @@ function listSinglePush(seed: string): string[] {
  * Straight-line multi-push list builder.
  * Target Pantagruel encoding must preserve push order in positional
  * assertions over the returned rule.
+ *
+ * @pant #(list-multiple-pushes first second) = 2.
+ * @pant (list-multiple-pushes first second) 1 = first.
+ * @pant (list-multiple-pushes first second) 2 = second.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function listMultiplePushes(first: string, second: string): string[] {
@@ -41,6 +48,9 @@ function listMultiplePushes(first: string, second: string): string[] {
  * Push values through preceding pure const bindings and property projection.
  * Target Pantagruel encoding should inline or name the const-bound projection
  * without treating `push` as a pure expression.
+ *
+ * @pant #(list-push-const-projection item) = 1.
+ * @pant (list-push-const-projection item) 1 = builder-item--label item.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function listPushConstProjection(item: BuilderItem): string[] {
@@ -53,6 +63,9 @@ function listPushConstProjection(item: BuilderItem): string[] {
 /**
  * Transparent expression wrappers around the returned accumulator should not
  * hide the builder target.
+ *
+ * @pant #(list-parenthesized-return seed) = 1.
+ * @pant (list-parenthesized-return seed) 1 = seed.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function listParenthesizedReturn(seed: string): string[] {
@@ -78,6 +91,8 @@ function listGuardReadRejected(seed: string): string[] {
 /**
  * Straight-line Set add builder.
  * Target Pantagruel encoding: membership equivalence, not ordered positions.
+ *
+ * @pant all x: String | x in set-add-builder first second <-> x = first or x = second.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function setAddBuilder(first: string, second: string): Set<string> {
@@ -90,6 +105,8 @@ function setAddBuilder(first: string, second: string): Set<string> {
 /**
  * Set builder whose accumulator omits the constructor type argument.
  * Target type must come from the function return annotation.
+ *
+ * @pant all x: String | x in set-untyped-accumulator seed <-> x = seed.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function setUntypedAccumulator(seed: string): ReadonlySet<string> {
@@ -101,6 +118,8 @@ function setUntypedAccumulator(seed: string): ReadonlySet<string> {
 /**
  * Set builder whose parameter would collide with the default membership
  * binder if the binder allocator did not check free names.
+ *
+ * @pant all y: String | y in set-binder-collision x <-> y = x.
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function setBinderCollision(x: string): Set<string> {
@@ -112,6 +131,8 @@ function setBinderCollision(x: string): Set<string> {
 /**
  * Empty Set builder.
  * Target Pantagruel encoding: universal non-membership.
+ *
+ * @pant all x: String | ~(x in set-empty-builder).
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function setEmptyBuilder(): Set<string> {
