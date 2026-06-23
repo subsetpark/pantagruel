@@ -655,7 +655,7 @@ describe("unsupported patterns", () => {
 });
 
 describe("if-early-return prelude arms", () => {
-  it.skip("PENDING Patch 3: foreign bool call in early-return predicate lowers to its EUF rule", () => {
+  it("foreign bool call in early-return predicate lowers to its EUF rule", () => {
     const sourceFile = createSourceFile(
       resolve(
         import.meta.dirname,
@@ -663,13 +663,19 @@ describe("if-early-return prelude arms", () => {
       ),
     );
 
-    const admitted = translateBodyWithSynth(sourceFile, "foreignCallEarlyReturn");
+    const admitted = translateBodyWithSynth(
+      sourceFile,
+      "foreignCallEarlyReturn",
+    );
     assert.equal(
       getAst().strExpr(finalEquation(admitted).rhs),
       "cond is-labeled item => 1, true => 0",
     );
 
-    const rejected = translateBodyWithSynth(sourceFile, "foreignCallMutatingIf");
+    const rejected = translateBodyWithSynth(
+      sourceFile,
+      "foreignCallMutatingIf",
+    );
     assertUnsupportedReason(
       rejected,
       /impure if-condition in mutating body/u,

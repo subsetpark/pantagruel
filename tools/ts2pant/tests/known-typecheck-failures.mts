@@ -65,18 +65,6 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-boolean.ts > or", "$-binder-leak"],
   ["expressions-discriminated-union.ts > ambiguousOwner", "ambiguous-owner"],
   [
-    "expressions-foreign-call-predicate.ts > foreignCallEarlyReturn",
-    "foreign-call-predicate",
-  ],
-  [
-    "expressions-foreign-call-predicate.ts > foreignCallCompoundPredicate",
-    "foreign-call-predicate",
-  ],
-  [
-    "expressions-foreign-call-predicate.ts > foreignCallWhilePredicate",
-    "foreign-call-predicate",
-  ],
-  [
     "expressions-let-closure-captured.ts > letForEachCapturedTotal",
     "closure-captured-reassignment",
   ],

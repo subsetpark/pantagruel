@@ -8,9 +8,6 @@ interface Account {
 }
 
 /**
- * PENDING Patch 3: `item.isLabeled()` should lower as an uninterpreted Bool
- * rule head (`is-labeled item`) used as the cond antecedent.
- *
  * @pant foreign-call-early-return item = cond is-labeled item => 1, true => 0.
  */
 export function foreignCallEarlyReturn(item: DependencyItem): number {
@@ -21,9 +18,6 @@ export function foreignCallEarlyReturn(item: DependencyItem): number {
 }
 
 /**
- * PENDING Patch 3: both declaration-file Bool method calls should lower as
- * EUF Bool rule heads, with the disjunction used as the cond antecedent.
- *
  * @pant foreign-call-compound-predicate item = cond is-labeled item or has-ready-flag item => 1, true => 0.
  */
 export function foreignCallCompoundPredicate(item: DependencyItem): number {
@@ -34,8 +28,17 @@ export function foreignCallCompoundPredicate(item: DependencyItem): number {
 }
 
 /**
- * PENDING Patch 3: the counter-dependent declaration-file Bool method call
- * should be admitted at the pure μ-search predicate gate and lower as an EUF
+ * @pant foreign-call-bool-value item <-> (has-ready-flag item and is-labeled item).
+ */
+export function foreignCallBoolValue(item: DependencyItem): boolean {
+  if (item.hasReadyFlag()) {
+    return item.isLabeled();
+  }
+  return false;
+}
+
+/**
+ * The counter-dependent declaration-file Bool method call lowers as an EUF
  * Bool rule head inside the bounded-search guard.
  */
 export function foreignCallWhilePredicate(item: DependencyItem): number {

@@ -458,12 +458,16 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 "module TYPEOF_UNDEFINED_NEQ.\\n\\ntypeof-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-neq x = (~(#x = 0)).\\n"
 `;
 
+exports[`expressions-foreign-call-predicate.ts > foreignCallBoolValue 1`] = `
+"module FOREIGN_CALL_BOOL_VALUE.\\n\\nForeignDependencyItem.\\nhas-ready-flag receiver: ForeignDependencyItem => Bool.\\nis-labeled receiver1: ForeignDependencyItem => Bool.\\nforeign-call-bool-value item: ForeignDependencyItem => Bool.\\n\\n---\\n\\nforeign-call-bool-value item = (cond has-ready-flag item => is-labeled item, true => false).\\n\\ncheck\\n\\nforeign-call-bool-value item <-> has-ready-flag item and is-labeled item.\\n"
+`;
+
 exports[`expressions-foreign-call-predicate.ts > foreignCallCompoundPredicate 1`] = `
-"module FOREIGN_CALL_COMPOUND_PREDICATE.\\n\\nForeignDependencyItem.\\nforeign-call-compound-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-compound-predicate — early-return predicate has side effects.\\n\\ncheck\\n\\nforeign-call-compound-predicate item = (cond is-labeled item or has-ready-flag item => 1, true => 0).\\n"
+"module FOREIGN_CALL_COMPOUND_PREDICATE.\\n\\nForeignDependencyItem.\\nis-labeled receiver: ForeignDependencyItem => Bool.\\nhas-ready-flag receiver1: ForeignDependencyItem => Bool.\\nforeign-call-compound-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\nforeign-call-compound-predicate item = (cond is-labeled item or has-ready-flag item => 1, true => 0).\\n\\ncheck\\n\\nforeign-call-compound-predicate item = (cond is-labeled item or has-ready-flag item => 1, true => 0).\\n"
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignCallEarlyReturn 1`] = `
-"module FOREIGN_CALL_EARLY_RETURN.\\n\\nForeignDependencyItem.\\nforeign-call-early-return item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-early-return — early-return predicate has side effects.\\n\\ncheck\\n\\nforeign-call-early-return item = (cond is-labeled item => 1, true => 0).\\n"
+"module FOREIGN_CALL_EARLY_RETURN.\\n\\nForeignDependencyItem.\\nis-labeled receiver: ForeignDependencyItem => Bool.\\nforeign-call-early-return item: ForeignDependencyItem => Int.\\n\\n---\\n\\nforeign-call-early-return item = (cond is-labeled item => 1, true => 0).\\n\\ncheck\\n\\nforeign-call-early-return item = (cond is-labeled item => 1, true => 0).\\n"
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignCallMutatingIf 1`] = `
@@ -471,7 +475,7 @@ exports[`expressions-foreign-call-predicate.ts > foreignCallMutatingIf 1`] = `
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignCallWhilePredicate 1`] = `
-"module FOREIGN_CALL_WHILE_PREDICATE.\\n\\nForeignDependencyItem.\\nforeign-call-while-predicate item: ForeignDependencyItem => Int.\\n\\n---\\n\\n> UNSUPPORTED: foreign-call-while-predicate — while-loop predicate has side effects.\\n"
+"module FOREIGN_CALL_WHILE_PREDICATE.\\n\\nForeignDependencyItem.\\nhas-index receiver: ForeignDependencyItem, index: Int => Bool.\\nforeign-call-while-predicate item: ForeignDependencyItem => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 0, ~(has-index item j) | j).\\nforeign-call-while-predicate item = i.\\n"
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignNonBoolCallPredicate 1`] = `

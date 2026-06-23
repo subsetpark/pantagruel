@@ -6,6 +6,8 @@
 // constructs snapshot suite does not pick them up before the dedicated tests
 // land.
 
+import type { DependencyItem } from "../foreign-dependency/index.js";
+
 interface Item {
   active: boolean;
   label: string;
@@ -72,6 +74,21 @@ function filterContinueActive(xs: Item[]): Item[] {
       continue;
     }
     acc.push(x);
+  }
+  return acc;
+}
+
+/**
+ * Compound declaration-file Bool guard. The recursive effect oracle admits
+ * both EUF predicates as a pure comprehension guard.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function filterForeignCompound(items: DependencyItem[]): DependencyItem[] {
+  const acc: DependencyItem[] = [];
+  for (const item of items) {
+    if (item.isLabeled() || item.hasReadyFlag()) {
+      acc.push(item);
+    }
   }
   return acc;
 }

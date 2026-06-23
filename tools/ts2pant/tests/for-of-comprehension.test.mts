@@ -292,6 +292,25 @@ describe("for-of comprehension integration", () => {
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
+  it("compound foreign-bool build-list guard emits a guarded each", async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "filterForeignCompound"),
+    );
+    assert.match(
+      output,
+      /^is-labeled receiver: ForeignDependencyItem => Bool\.$/mu,
+    );
+    assert.match(
+      output,
+      /^has-ready-flag receiver1: ForeignDependencyItem => Bool\.$/mu,
+    );
+    assert.match(
+      output,
+      /filter-foreign-compound items = \(each item in items, \(is-labeled item or has-ready-flag item\) \| item\)\./u,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
   it("Set source build-list emits an each comprehension", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "collectSet"),
