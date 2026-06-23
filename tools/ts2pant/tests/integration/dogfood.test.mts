@@ -645,6 +645,46 @@ describe("dogfood: @pant annotations entail", () => {
       fn: "predicateValue",
       minChecks: 2,
     },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "listSinglePush",
+      minChecks: 2,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "listMultiplePushes",
+      minChecks: 3,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "listPushConstProjection",
+      minChecks: 2,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "listParenthesizedReturn",
+      minChecks: 2,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "setAddBuilder",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "setUntypedAccumulator",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "setBinderCollision",
+      minChecks: 1,
+    },
+    {
+      file: resolve(FIXTURES, "expressions-local-collection-builder.ts"),
+      fn: "setEmptyBuilder",
+      minChecks: 1,
+    },
   ];
 
   for (const { file, fn, minChecks } of annotated) {

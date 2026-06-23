@@ -1,0 +1,13 @@
+module BUG_LIST_INDEX_CHECK.
+
+build seed: String => [String].
+
+---
+
+#(build seed) = 1.
+(build seed) 1 = seed.
+
+check
+
+#(build seed) = 1.
+(build seed) 1 = seed.

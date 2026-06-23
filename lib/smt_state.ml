@@ -57,20 +57,33 @@ let fresh_fallback ~kind ~sort =
     Printf.sprintf "(declare-const %s %s)" name sort :: !fallback_decls;
   name
 
+let fallback_cache : (string * string * string, string) Hashtbl.t =
+  Hashtbl.create 16
+
+let reset_fallback_cache () = Hashtbl.clear fallback_cache
+
+let intern_fallback_symbol ~kind ~sort ~key =
+  match Hashtbl.find_opt fallback_cache (kind, sort, key) with
+  | Some name -> name
+  | None ->
+      let name = fresh_fallback ~kind ~sort in
+      Hashtbl.add fallback_cache (kind, sort, key) name;
+      name
+
 (** Query-local cache of list-search placeholder symbols. Identical
     [(func_s, arg_s)] keys reuse the same fresh constant so that [xs x = xs x]
     translates to a referentially stable equality. *)
-let list_search_cache : (string * string, string) Hashtbl.t = Hashtbl.create 8
-
-let reset_list_search_cache () = Hashtbl.clear list_search_cache
+let reset_list_search_cache () = reset_fallback_cache ()
 
 let intern_list_search_symbol ~func_s ~arg_s =
-  match Hashtbl.find_opt list_search_cache (func_s, arg_s) with
-  | Some name -> name
-  | None ->
-      let name = fresh_fallback ~kind:"list_search" ~sort:"Int" in
-      Hashtbl.add list_search_cache (func_s, arg_s) name;
-      name
+  intern_fallback_symbol ~kind:"list_search" ~sort:"Int"
+    ~key:(func_s ^ "\x00" ^ arg_s)
+
+let intern_list_index_symbol ~func_s ~arg_s ~sort =
+  intern_fallback_symbol ~kind:"list_index" ~sort ~key:(func_s ^ "\x00" ^ arg_s)
+
+let intern_card_symbol ~expr_s =
+  intern_fallback_symbol ~kind:"card" ~sort:"Int" ~key:expr_s
 
 (** Queue an additional [(assert ...)] alongside the most recently declared
     fallback constant — useful for soft constraints like non-negativity. *)

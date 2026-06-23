@@ -11,6 +11,11 @@ val reset_fallbacks : unit -> unit
 val fresh_fallback : kind:string -> sort:string -> string
 val reset_list_search_cache : unit -> unit
 val intern_list_search_symbol : func_s:string -> arg_s:string -> string
+
+val intern_list_index_symbol :
+  func_s:string -> arg_s:string -> sort:string -> string
+
+val intern_card_symbol : expr_s:string -> string
 val add_fallback_assert : string -> unit
 val drain_fallback_decls : unit -> string
 val insert_fallback_decls : string -> string
