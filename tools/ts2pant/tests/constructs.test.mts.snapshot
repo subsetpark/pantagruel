@@ -459,7 +459,7 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignCallBoolValue 1`] = `
-"module FOREIGN_CALL_BOOL_VALUE.\\n\\nForeignDependencyItem.\\nhas-ready-flag receiver: ForeignDependencyItem => Bool.\\nis-labeled receiver1: ForeignDependencyItem => Bool.\\nforeign-call-bool-value item: ForeignDependencyItem => Bool.\\n\\n---\\n\\nforeign-call-bool-value item = (cond has-ready-flag item => is-labeled item, true => false).\\n\\ncheck\\n\\nforeign-call-bool-value item <-> is-labeled item.\\n"
+"module FOREIGN_CALL_BOOL_VALUE.\\n\\nForeignDependencyItem.\\nhas-ready-flag receiver: ForeignDependencyItem => Bool.\\nis-labeled receiver1: ForeignDependencyItem => Bool.\\nforeign-call-bool-value item: ForeignDependencyItem => Bool.\\n\\n---\\n\\nforeign-call-bool-value item = (cond has-ready-flag item => is-labeled item, true => false).\\n\\ncheck\\n\\nforeign-call-bool-value item <-> has-ready-flag item and is-labeled item.\\n"
 `;
 
 exports[`expressions-foreign-call-predicate.ts > foreignCallCompoundPredicate 1`] = `

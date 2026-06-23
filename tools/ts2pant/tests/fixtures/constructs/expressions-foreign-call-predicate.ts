@@ -28,7 +28,7 @@ export function foreignCallCompoundPredicate(item: DependencyItem): number {
 }
 
 /**
- * @pant foreign-call-bool-value item <-> is-labeled item.
+ * @pant foreign-call-bool-value item <-> (has-ready-flag item and is-labeled item).
  */
 export function foreignCallBoolValue(item: DependencyItem): boolean {
   if (item.hasReadyFlag()) {
