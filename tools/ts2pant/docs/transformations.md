@@ -54,10 +54,10 @@ target for *complete-dispatch* `if/else` returning from both branches.
 Constraints (mirrored by `extractReturnFromBranch` for terminal-position
 branches): no else, single-return body, side-effect-free predicate and value,
 TDZ-clean (no reference to bindings declared after the arm). Arms combined
-with a record-typed return are not yet supported — per-field `cond`
-decomposition would require every arm value to be an object literal of the
-same shape, and is left as a follow-on to keep the if-conversion change
-self-contained.
+with a record-typed return use the product-field variant described in
+§ "Record Returns" below: every branch value must be an explicit object
+literal with the same accepted field set, and each field receives its own
+conditional equation.
 
 ## Recursive Pure Block-Return Lowering
 
@@ -382,6 +382,43 @@ reg (registerShape r s) = r.
 See `tests/fixtures/constructs/expressions-record-return.ts` for the
 supported shapes and `tests/dogfood.test.mts` for the self-translation
 baseline (`emptyNameRegistry`).
+
+**Fieldwise record conditionals.**
+
+**Standard name:** If-conversion over product fields.
+**Reference:** Allen et al., POPL 1983.
+
+When a pure function returns a record through early-return arms or a terminal
+`if/else` chain, ts2pant distributes the conditional over each record field:
+
+```ts
+if (flag) return { x: n, y: n + 1 };
+return { x: 0, y: 1 };
+```
+
+becomes:
+
+```text
+x (pair n flag) = cond flag => n, true => 0.
+y (pair n flag) = cond flag => n + 1, true => 1.
+```
+
+This is the product-field form of the same observational encoding used for
+plain record returns. Pantagruel still has no record-constructor expression;
+the conditional therefore appears only at accessor equations' RHS positions.
+
+**Invariants / restrictions:**
+- Every conditional arm and the default/fallthrough value must be an object
+  literal accepted by the same field policy as `translateRecordReturn`.
+- All arm literals must provide the declared field set exactly. Mismatches,
+  extra fields, spreads, computed keys, methods, and accessors are rejected.
+- Each scalar field initializer is translated through the normal pure body
+  expression path before being placed under `cond`.
+- Nested object-literal fields recurse fieldwise; mixed nested-record/scalar
+  field arms are rejected.
+- Empty `Set`/`Map` record initializers remain outside this conditional
+  lowering because the plain record path emits quantified emptiness
+  assertions, not RHS expressions that can be guarded by `cond`.
 
 ## Structured Iteration (for-of, forEach, reduce)
 

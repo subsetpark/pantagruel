@@ -59,184 +59,15 @@ export function translateRecordReturn(
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
 ): PropResult[] {
   const ast = getAst();
-
-  // Resolve return type. Use the signature's declared return rather than
-  // the object literal's inferred type (which would be
-  // `{ f1: SetLike, ... }` with contextual widening not applied).
-  const sig = checker.getSignatureFromDeclaration(fnNode);
-  const returnType = sig?.getReturnType();
-  if (!returnType) {
-    return [
-      {
-        kind: "unsupported",
-        reason: `${functionName} — cannot resolve return type for record return`,
-      },
-    ];
-  }
-  const returnSymbol = returnType.aliasSymbol ?? returnType.symbol;
-  const returnTypeName = returnSymbol?.getName();
-  if (!returnTypeName) {
-    return [
-      {
-        kind: "unsupported",
-        reason: `${functionName} — cannot resolve return type name for record return`,
-      },
-    ];
-  }
-  // Anonymous record return: the `mapTsType` branch during signature
-  // translation has already registered the shape with the synth cell,
-  // so the synthesized domain and its accessor rules are declared by
-  // the time the body is translated. The field-emission loop below
-  // works unchanged — it iterates `returnType.getProperties()` (which
-  // enumerates the anonymous shape's declared fields just as well as
-  // an interface's) and emits one equation per field, applying each
-  // accessor rule to the function application.
-  //
-  // `isAnonymousRecord` inspects the underlying structural symbol
-  // (`type.getSymbol()?.getName() === "__type"`), so it matches both
-  // bare anonymous returns and alias-backed ones (`type Point = {x, y}`)
-  // — the alias name doesn't correspond to a declared Pantagruel
-  // domain, so we must resolve through the synth even when `aliasSymbol`
-  // is set. Reject only when the cell is missing or upstream synth
-  // registration failed.
-  if (isAnonymousRecord(returnType)) {
-    if (!synthCell) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — anonymous record return requires a synth cell`,
-        },
-      ];
-    }
-    if (returnType.getCallSignatures().length > 0) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — callable anonymous return type`,
-        },
-      ];
-    }
-    if (returnType.getConstructSignatures().length > 0) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — constructible anonymous return type`,
-        },
-      ];
-    }
-    if (
-      returnType.getStringIndexType() !== undefined ||
-      returnType.getNumberIndexType() !== undefined
-    ) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — index-signature anonymous return type (unbounded dictionary, not a finite record)`,
-        },
-      ];
-    }
-    // Re-run the (idempotent) synth-mapping to confirm registration
-    // actually succeeded for this shape. If a field type is unmangleable
-    // the synth returns the failure sentinel rather than a domain name,
-    // and the body emission below would otherwise reference accessor
-    // rules that were never declared.
-    const mapped = mapTsType(returnType, checker, strategy, synthCell);
-    if (!mapped.ok) {
-      if (mapped.reason === UNSUPPORTED_ANONYMOUS_RECORD) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — anonymous record return shape could not be synthesized`,
-          },
-        ];
-      }
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName}: ${mapped.reason}`,
-        },
-      ];
-    }
-  }
-
-  // Collect declared fields. For named interfaces this is the declared
-  // property list; for anonymous records it's the same shape seen through
-  // the structural type's properties. Canonical order matches the synth's
-  // sorted order (by field name) so the emission stays deterministic.
-  const declaredFields = returnType
-    .getProperties()
-    .map((prop) => ({
-      name: prop.getName(),
-      type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  // Index literal properties by name. Reject unsupported property kinds
-  // and duplicate keys (the spec requires exactly one assignment per
-  // declared field).
-  const literalByName = new Map<string, ts.Expression>();
-  for (const prop of lit.properties) {
-    if (ts.isPropertyAssignment(prop)) {
-      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — record return with computed or non-simple key`,
-          },
-        ];
-      }
-      if (literalByName.has(prop.name.text)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — record return repeats field '${prop.name.text}'`,
-          },
-        ];
-      }
-      literalByName.set(prop.name.text, prop.initializer);
-    } else if (ts.isShorthandPropertyAssignment(prop)) {
-      if (literalByName.has(prop.name.text)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — record return repeats field '${prop.name.text}'`,
-          },
-        ];
-      }
-      literalByName.set(prop.name.text, prop.name);
-    } else {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — record return with spread/method/accessor property`,
-        },
-      ];
-    }
-  }
-
-  // Every declared field must be supplied. Extra fields on the literal
-  // are flagged separately below.
-  const missing = declaredFields
-    .filter((f) => !literalByName.has(f.name))
-    .map((f) => f.name);
-  if (missing.length > 0) {
-    return [
-      {
-        kind: "unsupported",
-        reason: `${functionName} — record return missing field(s): ${missing.join(", ")}`,
-      },
-    ];
-  }
-  const extras = [...literalByName.keys()].filter(
-    (n) => !declaredFields.some((f) => f.name === n),
+  const plan = planRecordReturn(
+    functionName,
+    fnNode,
+    checker,
+    strategy,
+    synthCell,
   );
-  if (extras.length > 0) {
-    return [
-      {
-        kind: "unsupported",
-        reason: `${functionName} — record return has extra field(s): ${extras.join(", ")}`,
-      },
-    ];
+  if ("unsupported" in plan) {
+    return [plan.unsupported];
   }
 
   const argExprs = params.map((p) => ast.var(p.name));
@@ -270,8 +101,8 @@ export function translateRecordReturn(
   return emitRecordEquations(
     lit,
     fnApp,
-    returnType,
-    declaredFields,
+    plan.returnType,
+    plan.declaredFields,
     functionName,
     checker,
     strategy,
@@ -281,6 +112,434 @@ export function translateRecordReturn(
     applyConst,
     allocEmittedBinder,
   );
+}
+
+export function translateRecordConditionalReturn(
+  arms: ReadonlyArray<readonly [OpaqueExpr, ts.ObjectLiteralExpression]>,
+  otherwise: ts.ObjectLiteralExpression,
+  functionName: string,
+  params: Array<{ name: string; type: string }>,
+  fnNode: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  synthCell: SynthCell | undefined,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+): PropResult[] {
+  const ast = getAst();
+  const plan = planRecordReturn(
+    functionName,
+    fnNode,
+    checker,
+    strategy,
+    synthCell,
+  );
+  if ("unsupported" in plan) {
+    return [plan.unsupported];
+  }
+  const argExprs = params.map((p) => ast.var(p.name));
+  const receiverExpr = ast.app(ast.var(functionName), argExprs);
+  return emitRecordConditionalEquations(
+    arms,
+    otherwise,
+    receiverExpr,
+    plan.returnType,
+    plan.declaredFields,
+    functionName,
+    checker,
+    strategy,
+    scopedParams,
+    supply,
+    synthCell,
+    applyConst,
+  );
+}
+
+function planRecordReturn(
+  functionName: string,
+  fnNode: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
+):
+  | {
+      returnType: ts.Type;
+      declaredFields: Array<{ name: string; type: ts.Type }>;
+    }
+  | { unsupported: PropResult } {
+  // Resolve return type. Use the signature's declared return rather than
+  // the object literal's inferred type (which would be
+  // `{ f1: SetLike, ... }` with contextual widening not applied).
+  const sig = checker.getSignatureFromDeclaration(fnNode);
+  const returnType = sig?.getReturnType();
+  if (!returnType) {
+    return {
+      unsupported: {
+        kind: "unsupported",
+        reason: `${functionName} — cannot resolve return type for record return`,
+      },
+    };
+  }
+  const returnSymbol = returnType.aliasSymbol ?? returnType.symbol;
+  const returnTypeName = returnSymbol?.getName();
+  if (!returnTypeName) {
+    return {
+      unsupported: {
+        kind: "unsupported",
+        reason: `${functionName} — cannot resolve return type name for record return`,
+      },
+    };
+  }
+  // Anonymous record return: the `mapTsType` branch during signature
+  // translation has already registered the shape with the synth cell,
+  // so the synthesized domain and its accessor rules are declared by
+  // the time the body is translated. The field-emission loop below
+  // works unchanged — it iterates `returnType.getProperties()` (which
+  // enumerates the anonymous shape's declared fields just as well as
+  // an interface's) and emits one equation per field, applying each
+  // accessor rule to the function application.
+  //
+  // `isAnonymousRecord` inspects the underlying structural symbol
+  // (`type.getSymbol()?.getName() === "__type"`), so it matches both
+  // bare anonymous returns and alias-backed ones (`type Point = {x, y}`)
+  // — the alias name doesn't correspond to a declared Pantagruel
+  // domain, so we must resolve through the synth even when `aliasSymbol`
+  // is set. Reject only when the cell is missing or upstream synth
+  // registration failed.
+  if (isAnonymousRecord(returnType)) {
+    if (!synthCell) {
+      return {
+        unsupported: {
+          kind: "unsupported",
+          reason: `${functionName} — anonymous record return requires a synth cell`,
+        },
+      };
+    }
+    if (returnType.getCallSignatures().length > 0) {
+      return {
+        unsupported: {
+          kind: "unsupported",
+          reason: `${functionName} — callable anonymous return type`,
+        },
+      };
+    }
+    if (returnType.getConstructSignatures().length > 0) {
+      return {
+        unsupported: {
+          kind: "unsupported",
+          reason: `${functionName} — constructible anonymous return type`,
+        },
+      };
+    }
+    if (
+      returnType.getStringIndexType() !== undefined ||
+      returnType.getNumberIndexType() !== undefined
+    ) {
+      return {
+        unsupported: {
+          kind: "unsupported",
+          reason: `${functionName} — index-signature anonymous return type (unbounded dictionary, not a finite record)`,
+        },
+      };
+    }
+    // Re-run the (idempotent) synth-mapping to confirm registration
+    // actually succeeded for this shape. If a field type is unmangleable
+    // the synth returns the failure sentinel rather than a domain name,
+    // and the body emission below would otherwise reference accessor
+    // rules that were never declared.
+    const mapped = mapTsType(returnType, checker, strategy, synthCell);
+    if (!mapped.ok) {
+      if (mapped.reason === UNSUPPORTED_ANONYMOUS_RECORD) {
+        return {
+          unsupported: {
+            kind: "unsupported",
+            reason: `${functionName} — anonymous record return shape could not be synthesized`,
+          },
+        };
+      }
+      return {
+        unsupported: {
+          kind: "unsupported",
+          reason: `${functionName}: ${mapped.reason}`,
+        },
+      };
+    }
+  }
+
+  // Collect declared fields. For named interfaces this is the declared
+  // property list; for anonymous records it's the same shape seen through
+  // the structural type's properties. Canonical order matches the synth's
+  // sorted order (by field name) so the emission stays deterministic.
+  const declaredFields = returnType
+    .getProperties()
+    .map((prop) => ({
+      name: prop.getName(),
+      type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { returnType, declaredFields };
+}
+
+function indexRecordLiteralFields(
+  lit: ts.ObjectLiteralExpression,
+  declaredFields: Array<{ name: string; type: ts.Type }>,
+  functionName: string,
+  context: string,
+): Map<string, ts.Expression> | PropResult {
+  const literalByName = new Map<string, ts.Expression>();
+  for (const prop of lit.properties) {
+    if (ts.isPropertyAssignment(prop)) {
+      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) {
+        return {
+          kind: "unsupported",
+          reason: `${functionName} — ${context} with computed or non-simple key`,
+        };
+      }
+      if (literalByName.has(prop.name.text)) {
+        return {
+          kind: "unsupported",
+          reason: `${functionName} — ${context} repeats field '${prop.name.text}'`,
+        };
+      }
+      literalByName.set(prop.name.text, prop.initializer);
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      if (literalByName.has(prop.name.text)) {
+        return {
+          kind: "unsupported",
+          reason: `${functionName} — ${context} repeats field '${prop.name.text}'`,
+        };
+      }
+      literalByName.set(prop.name.text, prop.name);
+    } else {
+      return {
+        kind: "unsupported",
+        reason: `${functionName} — ${context} with spread/method/accessor property`,
+      };
+    }
+  }
+
+  const missing = declaredFields
+    .filter((f) => !literalByName.has(f.name))
+    .map((f) => f.name);
+  if (missing.length > 0) {
+    return {
+      kind: "unsupported",
+      reason: `${functionName} — ${context} missing field(s): ${missing.join(", ")}`,
+    };
+  }
+  const extras = [...literalByName.keys()].filter(
+    (n) => !declaredFields.some((f) => f.name === n),
+  );
+  if (extras.length > 0) {
+    return {
+      kind: "unsupported",
+      reason: `${functionName} — ${context} has extra field(s): ${extras.join(", ")}`,
+    };
+  }
+  return literalByName;
+}
+
+function isUnsupportedProp(result: unknown): result is PropResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "kind" in result &&
+    (result as { kind: unknown }).kind === "unsupported"
+  );
+}
+
+function emitRecordConditionalEquations(
+  arms: ReadonlyArray<readonly [OpaqueExpr, ts.ObjectLiteralExpression]>,
+  otherwise: ts.ObjectLiteralExpression,
+  receiverExpr: OpaqueExpr,
+  receiverType: ts.Type,
+  declaredFields: Array<{ name: string; type: ts.Type }>,
+  functionName: string,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  synthCell: SynthCell | undefined,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+): PropResult[] {
+  const ast = getAst();
+  const ownerName = resolveRecordOwner(
+    receiverType,
+    checker,
+    strategy,
+    synthCell,
+  );
+  const ruleSymbol = (fieldName: string): string =>
+    ownerName ? fieldRuleName(ownerName, fieldName) : fieldName;
+
+  const indexedArms: Array<readonly [OpaqueExpr, Map<string, ts.Expression>]> =
+    [];
+  for (const [guard, lit] of arms) {
+    const indexed = indexRecordLiteralFields(
+      lit,
+      declaredFields,
+      functionName,
+      "record return branch",
+    );
+    if (isUnsupportedProp(indexed)) {
+      return [indexed];
+    }
+    indexedArms.push([guard, indexed] as const);
+  }
+  const indexedOtherwise = indexRecordLiteralFields(
+    otherwise,
+    declaredFields,
+    functionName,
+    "record return branch",
+  );
+  if (isUnsupportedProp(indexedOtherwise)) {
+    return [indexedOtherwise];
+  }
+
+  const results: PropResult[] = [];
+  for (const field of declaredFields) {
+    const fieldApp = ast.app(ast.var(ruleSymbol(field.name)), [receiverExpr]);
+    const branchInitializers = indexedArms.map(([guard, fields]) => {
+      const initializer = fields.get(field.name);
+      if (initializer === undefined) {
+        throw new Error("record literal validation lost a declared field");
+      }
+      return [guard, initializer] as const;
+    });
+    const otherwiseInitializer = indexedOtherwise.get(field.name);
+    if (otherwiseInitializer === undefined) {
+      throw new Error("record literal validation lost a declared field");
+    }
+
+    if (
+      branchInitializers.some(([, initializer]) =>
+        isEmptySetConstruction(initializer),
+      ) ||
+      isEmptySetConstruction(otherwiseInitializer) ||
+      branchInitializers.some(([, initializer]) =>
+        isEmptyMapConstruction(initializer),
+      ) ||
+      isEmptyMapConstruction(otherwiseInitializer)
+    ) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — conditional record field '${field.name}' uses empty Set/Map initializer`,
+        },
+      ];
+    }
+    if (isMapType(field.type)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — conditional Map-valued record field '${field.name}'`,
+        },
+      ];
+    }
+
+    if (
+      branchInitializers.every(([, initializer]) =>
+        ts.isObjectLiteralExpression(initializer),
+      ) &&
+      ts.isObjectLiteralExpression(otherwiseInitializer)
+    ) {
+      const subFields = field.type
+        .getProperties()
+        .map((prop) => ({
+          name: prop.getName(),
+          type: checker.getTypeOfSymbolAtLocation(prop, otherwiseInitializer),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const subResults = emitRecordConditionalEquations(
+        branchInitializers.map(
+          ([guard, initializer]) =>
+            [guard, initializer as ts.ObjectLiteralExpression] as const,
+        ),
+        otherwiseInitializer,
+        fieldApp,
+        field.type,
+        subFields,
+        `${functionName}.${field.name}`,
+        checker,
+        strategy,
+        scopedParams,
+        supply,
+        synthCell,
+        applyConst,
+      );
+      const subUnsupported = subResults.find((p) => p.kind === "unsupported");
+      if (subUnsupported) {
+        return [subUnsupported];
+      }
+      results.push(...subResults);
+      continue;
+    }
+    if (
+      branchInitializers.some(([, initializer]) =>
+        ts.isObjectLiteralExpression(initializer),
+      ) ||
+      ts.isObjectLiteralExpression(otherwiseInitializer)
+    ) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — conditional record field '${field.name}' mixes nested record and scalar initializers`,
+        },
+      ];
+    }
+
+    const lowerField = (
+      initializer: ts.Expression,
+      context: string,
+    ): OpaqueExpr | PropResult => {
+      const body = translateBodyExpr(
+        initializer,
+        checker,
+        strategy,
+        scopedParams,
+        undefined,
+        supply,
+        undefined,
+      );
+      if (isBodyUnsupported(body)) {
+        return {
+          kind: "unsupported",
+          reason: `${context} — ${body.unsupported}`,
+        };
+      }
+      if (isBodyEffect(body)) {
+        return {
+          kind: "unsupported",
+          reason: `${context} — effect outside statement position`,
+        };
+      }
+      return applyConst(bodyExpr(body));
+    };
+    const condArms: Array<[OpaqueExpr, OpaqueExpr]> = [];
+    for (const [guard, initializer] of branchInitializers) {
+      const value = lowerField(initializer, `${functionName}.${field.name}`);
+      if (isUnsupportedProp(value)) {
+        return [value];
+      }
+      condArms.push([guard, value]);
+    }
+    const otherwiseValue = lowerField(
+      otherwiseInitializer,
+      `${functionName}.${field.name}`,
+    );
+    if (isUnsupportedProp(otherwiseValue)) {
+      return [otherwiseValue];
+    }
+    condArms.push([ast.litBool(true), otherwiseValue]);
+    results.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs: fieldApp,
+      rhs: ast.cond(condArms),
+    });
+  }
+  return results;
 }
 
 /**
@@ -335,56 +594,14 @@ function emitRecordEquations(
   // calls each index their own literal. Apply the same exact-field
   // contract as the top-level record return: reject unsupported property
   // kinds, duplicate keys, missing fields, and extra fields.
-  const literalByName = new Map<string, ts.Expression>();
-  for (const prop of lit.properties) {
-    if (ts.isPropertyAssignment(prop)) {
-      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — nested record literal with computed or non-simple key`,
-          },
-        ];
-      }
-      if (literalByName.has(prop.name.text)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — nested record literal repeats field '${prop.name.text}'`,
-          },
-        ];
-      }
-      literalByName.set(prop.name.text, prop.initializer);
-    } else if (ts.isShorthandPropertyAssignment(prop)) {
-      if (literalByName.has(prop.name.text)) {
-        return [
-          {
-            kind: "unsupported",
-            reason: `${functionName} — nested record literal repeats field '${prop.name.text}'`,
-          },
-        ];
-      }
-      literalByName.set(prop.name.text, prop.name);
-    } else {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — nested record literal with spread/method/accessor property`,
-        },
-      ];
-    }
-  }
-
-  const extras = [...literalByName.keys()].filter(
-    (n) => !declaredFields.some((f) => f.name === n),
+  const literalByName = indexRecordLiteralFields(
+    lit,
+    declaredFields,
+    functionName,
+    "nested record literal",
   );
-  if (extras.length > 0) {
-    return [
-      {
-        kind: "unsupported",
-        reason: `${functionName} — nested record literal has extra field(s): ${extras.join(", ")}`,
-      },
-    ];
+  if (isUnsupportedProp(literalByName)) {
+    return [literalByName];
   }
 
   const results: PropResult[] = [];
