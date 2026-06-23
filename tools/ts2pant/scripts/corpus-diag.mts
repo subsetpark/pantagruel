@@ -111,7 +111,8 @@ for (const filePath of sourceFiles(SRC_DIR)) {
   }
 }
 
-const buckets = new Map<string, number>();
+const unsupportedBuckets = new Map<string, number>();
+const errorBuckets = new Map<string, number>();
 let clean = 0;
 let unsupported = 0;
 let errored = 0;
@@ -120,7 +121,7 @@ for (const result of results) {
   if (result.error !== undefined) {
     errored += 1;
     const bucket = `ERROR: ${result.error.split("\n", 1)[0]}`;
-    buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+    errorBuckets.set(bucket, (errorBuckets.get(bucket) ?? 0) + 1);
     continue;
   }
   if (result.unsupportedReasons.length === 0) {
@@ -130,7 +131,7 @@ for (const result of results) {
   unsupported += 1;
   for (const reason of result.unsupportedReasons) {
     const bucket = normalizeReason(reason);
-    buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+    unsupportedBuckets.set(bucket, (unsupportedBuckets.get(bucket) ?? 0) + 1);
   }
 }
 
@@ -140,8 +141,17 @@ console.log(`clean: ${clean}`);
 console.log(`unsupported: ${unsupported}`);
 console.log(`errors: ${errored}`);
 console.log("\nUNSUPPORTED buckets:");
-for (const [reason, count] of [...buckets.entries()].sort(
+for (const [reason, count] of [...unsupportedBuckets.entries()].sort(
   (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
 )) {
   console.log(`${count}\t${reason}`);
+}
+
+if (errorBuckets.size > 0) {
+  console.log("\nERROR buckets:");
+  for (const [reason, count] of [...errorBuckets.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )) {
+    console.log(`${count}\t${reason}`);
+  }
 }
