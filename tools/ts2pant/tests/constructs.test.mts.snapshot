@@ -162,6 +162,50 @@ exports[`expressions-block-early-return.ts > blockEarlyReturnSingleBinding 1`] =
 "module BLOCK_EARLY_RETURN_SINGLE_BINDING.\\n\\nblock-early-return-single-binding n: Int => Int.\\n\\n---\\n\\nblock-early-return-single-binding n = (cond n < 0 => 0 - n, true => n + 1).\\n"
 `;
 
+exports[`expressions-body-lowering-rd2.ts > rd2CallbackNestedBlock 1`] = `
+"module RD2_CALLBACK_NESTED_BLOCK.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nuser--name u: User => String.\\nrd2-callback-nested-block users: [User] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: array callback block body must be a single return.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2EffectfulBlockConstRejected 1`] = `
+"module RD2_EFFECTFUL_BLOCK_CONST_REJECTED.\\n\\ncompute n1: Int => Int.\\nrd2-effectful-block-const-rejected n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-effectful-block-const-rejected — if-with-return block must contain only const bindings followed by a return.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2LocalAccumulatorSequencing 1`] = `
+"module RD2_LOCAL_ACCUMULATOR_SEQUENCING.\\n\\nrd2-local-accumulator-sequencing seed: String => [String].\\n\\n---\\n\\n> UNSUPPORTED: rd2-local-accumulator-sequencing — expression statement before return (only const / μ-search / if-early-return allowed).\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2NestedBlockWithConstPrelude 1`] = `
+"module RD2_NESTED_BLOCK_WITH_CONST_PRELUDE.\\n\\nrd2-nested-block-with-const-prelude n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-nested-block-with-const-prelude — if-with-return block must contain only const bindings followed by a return.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2NestedEarlyReturnBlock 1`] = `
+"module RD2_NESTED_EARLY_RETURN_BLOCK.\\n\\nrd2-nested-early-return-block n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-nested-early-return-block — if-with-return block must contain only const bindings followed by a return.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2RecordReturnConditional 1`] = `
+"module RD2_RECORD_RETURN_CONDITIONAL.\\n\\nPair.\\npair--x p: Pair => Int.\\npair--y p: Pair => Int.\\nrd2-record-return-conditional n: Int, flag: Bool => Pair.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-conditional — record return combined with early-return arms or if/else branches is not yet supported.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2RecordReturnMismatchedFields 1`] = `
+"module RD2_RECORD_RETURN_MISMATCHED_FIELDS.\\n\\nXRec.\\nx-rec--x r: XRec => Int.\\nXYRec.\\nxy-rec--x r1: XYRec => Int.\\nxy-rec--y r1: XYRec => Int.\\nrd2-record-return-mismatched-fields n: Int, flag: Bool => XRec + XYRec.\\n\\n---\\n\\n> UNSUPPORTED: rd2-record-return-mismatched-fields — record return combined with early-return arms or if/else branches is not yet supported.\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2SwitchFallThrough 1`] = `
+"module RD2_SWITCH_FALL_THROUGH.\\n\\nrd2-switch-fall-through x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-switch-fall-through — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2SwitchNestedBlockClause 1`] = `
+"module RD2_SWITCH_NESTED_BLOCK_CLAUSE.\\n\\nrd2-switch-nested-block-clause x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-switch-nested-block-clause — switch case must end with \`return EXPR\` (no fall-through, no break/throw cases in M1).\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2SwitchNonLiteralLabel 1`] = `
+"module RD2_SWITCH_NON_LITERAL_LABEL.\\n\\nrd2-switch-non-literal-label x: Int, k: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-switch-non-literal-label — switch case label must be a literal (number/string/bool).\\n"
+`;
+
+exports[`expressions-body-lowering-rd2.ts > rd2TerminalIfElseBranchBlocks 1`] = `
+"module RD2_TERMINAL_IF_ELSE_BRANCH_BLOCKS.\\n\\nrd2-terminal-if-else-branch-blocks n: Int, flag: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: rd2-terminal-if-else-branch-blocks — if-then branch must contain a single return-with-value.\\n"
+`;
+
 exports[`expressions-boolean.ts > and 1`] = `
 "module AND.\\n\\nand a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand a b = (a and b).\\n"
 `;

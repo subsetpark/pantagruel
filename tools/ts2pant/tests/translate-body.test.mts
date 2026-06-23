@@ -255,6 +255,100 @@ it("generated body helpers preserve structural translations", () => {
 // exhaustive construct coverage).
 
 describe("unsupported patterns", () => {
+  it.skip(
+    "PENDING Patch 2: nested pure block-return lowers to one value with inlined bindings",
+    () => {
+      const source = `
+        function nested(n: number): number {
+          if (n < 0) {
+            const magnitude = 0 - n;
+            if (magnitude > 10) {
+              return magnitude;
+            }
+            return magnitude + 1;
+          }
+          return n;
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBodyWithSynth(sourceFile, "nested");
+      assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    },
+  );
+
+  it.skip(
+    "PENDING Patch 3: early-return arm block may contain nested early returns",
+    () => {
+      const source = `
+        function arm(n: number): number {
+          if (n < 0) {
+            if (n < -10) {
+              return 10;
+            }
+            return 0 - n;
+          }
+          return n;
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBodyWithSynth(sourceFile, "arm");
+      assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    },
+  );
+
+  it.skip(
+    "PENDING Patch 4: switch and callback block consumers reuse nested pure block lowering",
+    () => {
+      const source = `
+        interface User { active: boolean; score: number; }
+        function scores(users: User[]): number[] {
+          return users.map((u) => {
+            if (u.active) {
+              return u.score;
+            }
+            return 0;
+          });
+        }
+        function choose(x: number): number {
+          switch (x) {
+            case 0: {
+              if (x < 1) {
+                return x + 10;
+              }
+              return x;
+            }
+            default:
+              return x + 1;
+          }
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      for (const functionName of ["scores", "choose"]) {
+        const props = translateBodyWithSynth(sourceFile, functionName);
+        assert.equal(props.some((p) => p.kind === "unsupported"), false);
+      }
+    },
+  );
+
+  it.skip(
+    "PENDING Patch 5: record-return conditional lowers fieldwise",
+    () => {
+      const source = `
+        interface Pair { x: number; y: number; }
+        function pair(n: number, flag: boolean): Pair {
+          if (flag) {
+            return { x: n, y: n + 1 };
+          }
+          return { x: 0, y: 1 };
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBodyWithSynth(sourceFile, "pair");
+      assert.equal(props.some((p) => p.kind === "unsupported"), false);
+      assert.equal(props.filter((p) => p.kind === "equation").length, 2);
+    },
+  );
+
   it("returns empty for function with no body", () => {
     const source = `
       declare function external(x: number): number;
