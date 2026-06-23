@@ -6249,11 +6249,7 @@ function lowerNestedCallbackBlockReturnToL1(
         if (expressionReferencesNames(binding.initializer, blockedNames)) {
           return null;
         }
-        const localName = allocLocalBindingName(
-          ctx.supply,
-          toPantTermName(binding.tsName),
-          scopedParams,
-        );
+        const localName = freshHygienicBinder(ctx.supply);
         const value = buildL1SubExpr(binding.initializer, {
           checker: ctx.checker,
           strategy: ctx.strategy,
