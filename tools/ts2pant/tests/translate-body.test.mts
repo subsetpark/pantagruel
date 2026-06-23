@@ -552,8 +552,10 @@ describe("unsupported patterns", () => {
     );
   });
 
-  it.skip("PENDING Patch 4: switch and callback block consumers reuse nested pure block lowering", () => {
-    const source = `
+  it(
+    "switch and callback block consumers reuse nested pure block lowering",
+    () => {
+      const source = `
         interface User { active: boolean; score: number; }
         function scores(users: User[]): number[] {
           return users.map((u) => {

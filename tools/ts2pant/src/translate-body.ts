@@ -3566,7 +3566,7 @@ export function lowerNestedPureBlockReturn(
   return { expr: applyOpaqueAliases(lowerL1ToOpaque(lowered), ctx.supply) };
 }
 
-function lowerNestedPureBlockReturnToL1(
+export function lowerNestedPureBlockReturnToL1(
   block: ts.Block,
   ctx: NestedPureBlockReturnContext,
 ): IR1Expr | null {
@@ -6170,27 +6170,23 @@ function extractArrowBody(
   arrowParams.set((param.name as ts.Identifier).text, binderName);
 
   if (ts.isBlock(expr.body)) {
-    // Only allow a single return (after filtering guards), same rule as
-    // extractReturnExpression — blocks with locals or multiple statements
-    // would introduce free variables in the generated comprehension.
-    const nonGuard = expr.body.statements.filter(
-      (s) => !isGuardStatement(s, checker),
+    const lowered = lowerNestedPureBlockReturn(expr.body, {
+      checker,
+      strategy,
+      paramNames: arrowParams,
+      supply,
+      env,
+    });
+    return (
+      lowered ??
+      lowerNestedCallbackBlockReturn(expr.body, {
+        checker,
+        strategy,
+        paramNames: arrowParams,
+        supply,
+        env,
+      })
     );
-    if (nonGuard.length === 1) {
-      const s = nonGuard[0]!;
-      if (ts.isReturnStatement(s) && s.expression) {
-        return translateBodyExpr(
-          s.expression,
-          checker,
-          strategy,
-          arrowParams,
-          undefined,
-          supply,
-          env,
-        );
-      }
-    }
-    return null;
   }
 
   // Expression body
@@ -6203,6 +6199,180 @@ function extractArrowBody(
     supply,
     env,
   );
+}
+
+function lowerNestedCallbackBlockReturn(
+  block: ts.Block,
+  ctx: NestedPureBlockReturnContext,
+): BodyResult | null {
+  const lowered = lowerNestedCallbackBlockReturnToL1(block, ctx);
+  if (lowered === null) {
+    return null;
+  }
+  return { expr: applyOpaqueAliases(lowerL1ToOpaque(lowered), ctx.supply) };
+}
+
+function lowerNestedCallbackBlockReturnToL1(
+  block: ts.Block,
+  ctx: NestedPureBlockReturnContext,
+): IR1Expr | null {
+  const stmts = block.statements.filter(
+    (s) => !isGuardStatement(s, ctx.checker),
+  );
+  if (stmts.length === 0) {
+    return null;
+  }
+
+  let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
+  const lastIdx = stmts.length - 1;
+
+  for (let i = 0; i < lastIdx; i++) {
+    const stmt = stmts[i]!;
+    if (ts.isVariableStatement(stmt)) {
+      if (!(stmt.declarationList.flags & ts.NodeFlags.Const)) {
+        return null;
+      }
+      const bindings = constBindingsFromDeclarationList(stmt.declarationList);
+      if (bindings === null) {
+        return null;
+      }
+      for (const binding of bindings) {
+        if (binding.kind !== "const") {
+          return null;
+        }
+        const blockedNames = callbackConstNamesFrom(stmts, i);
+        if (expressionHasSideEffects(binding.initializer, ctx.checker)) {
+          return null;
+        }
+        if (expressionReferencesNames(binding.initializer, blockedNames)) {
+          return null;
+        }
+        const localName = allocLocalBindingName(
+          ctx.supply,
+          toPantTermName(binding.tsName),
+          scopedParams,
+        );
+        const value = buildL1SubExpr(binding.initializer, {
+          checker: ctx.checker,
+          strategy: ctx.strategy,
+          paramNames: scopedParams,
+          state: ctx.state ?? makeSymbolicState(),
+          supply: ctx.supply,
+          env: ctx.env,
+        });
+        if (isUnsupported(value) || isL1Unsupported(value)) {
+          return null;
+        }
+        substitutions.push({ localName, value });
+        scopedParams = withParam(scopedParams, binding.tsName, localName);
+      }
+      continue;
+    }
+
+    if (!ts.isIfStatement(stmt) || stmt.elseStatement) {
+      return null;
+    }
+    const blockedNames = callbackConstNamesFrom(stmts, i + 1);
+    if (
+      expressionReferencesNames(stmt.expression, blockedNames) ||
+      nodeReferencesNames(stmt.thenStatement, blockedNames)
+    ) {
+      return null;
+    }
+    const guard = buildL1SubExpr(stmt.expression, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: scopedParams,
+      state: ctx.state ?? makeSymbolicState(),
+      supply: ctx.supply,
+      env: ctx.env,
+    });
+    if (isUnsupported(guard) || isL1Unsupported(guard)) {
+      return null;
+    }
+    const value = lowerCallbackReturnArmToL1(stmt.thenStatement, {
+      ...ctx,
+      paramNames: scopedParams,
+    });
+    if (value === null) {
+      return null;
+    }
+    arms.push([guard, value] as const);
+  }
+
+  const terminal = lowerCallbackTerminalStatementToL1(stmts[lastIdx]!, {
+    ...ctx,
+    paramNames: scopedParams,
+  });
+  if (terminal === null) {
+    return null;
+  }
+  const withArms =
+    arms.length === 0
+      ? terminal
+      : ir1Cond(
+          arms as [readonly [IR1Expr, IR1Expr], ...typeof arms],
+          terminal,
+        );
+  return substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    withArms,
+  );
+}
+
+function lowerCallbackReturnArmToL1(
+  stmt: ts.Statement,
+  ctx: NestedPureBlockReturnContext,
+): IR1Expr | null {
+  if (ts.isReturnStatement(stmt) && stmt.expression !== undefined) {
+    const value = buildL1SubExpr(stmt.expression, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: ctx.paramNames,
+      state: ctx.state ?? makeSymbolicState(),
+      supply: ctx.supply,
+      env: ctx.env,
+    });
+    return isUnsupported(value) || isL1Unsupported(value) ? null : value;
+  }
+  return ts.isBlock(stmt)
+    ? lowerNestedCallbackBlockReturnToL1(stmt, ctx)
+    : null;
+}
+
+function lowerCallbackTerminalStatementToL1(
+  stmt: ts.Statement,
+  ctx: NestedPureBlockReturnContext,
+): IR1Expr | null {
+  if (ts.isReturnStatement(stmt) && stmt.expression !== undefined) {
+    return lowerNestedPureTerminalToL1(stmt.expression, ctx, ctx.paramNames);
+  }
+  if (ts.isIfStatement(stmt) && stmt.elseStatement !== undefined) {
+    return lowerNestedPureTerminalToL1(stmt, ctx, ctx.paramNames);
+  }
+  if (ts.isSwitchStatement(stmt)) {
+    return lowerNestedPureTerminalToL1(stmt, ctx, ctx.paramNames);
+  }
+  return null;
+}
+
+function callbackConstNamesFrom(
+  stmts: readonly ts.Statement[],
+  startIdx: number,
+): Set<string> {
+  const names = new Set<string>();
+  for (const stmt of stmts.slice(startIdx)) {
+    if (!ts.isVariableStatement(stmt)) {
+      continue;
+    }
+    for (const name of bindingNamesFromDeclarationList(stmt.declarationList)) {
+      names.add(name);
+    }
+  }
+  return names;
 }
 
 // --- Mutating function body translation ---
