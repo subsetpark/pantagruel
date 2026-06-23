@@ -1494,7 +1494,7 @@ let test_expensive_gin_uses_quantifier_env () =
        Holder.\n\
        strings h: Holder => [String].\n\
        ---\n\
-       all h: Holder, x in strings h | x = x.\n"
+       all h in Holder, x in strings h | x = x.\n"
   in
   let queries = Smt.generate_queries config env doc in
   check bool "skips GIn string element invariant consistency" false

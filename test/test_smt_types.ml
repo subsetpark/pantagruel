@@ -108,6 +108,16 @@ let public_api_properties =
 
 let state_interleaving_properties =
   [
+    test_case "reset_fallbacks clears intern cache" `Quick (fun () ->
+        Smt_state.reset_fallbacks ();
+        let first = Smt_state.intern_card_symbol ~expr_s:"xs" in
+        ignore (Smt_state.drain_fallback_decls ());
+        Smt_state.reset_fallbacks ();
+        let second = Smt_state.intern_card_symbol ~expr_s:"xs" in
+        let drained = Smt_state.drain_fallback_decls () in
+        check string "counter resets" first second;
+        check bool "declaration is re-queued" true
+          (String.length drained > 0 && String.contains drained '('));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make
          ~name:"state interleavings reset and drain auxiliary declarations"

@@ -2689,10 +2689,10 @@ let invariant_expensive_for_consistency env (inv : expr located) =
         match[@warning "-4"]
           Check.infer_type { Check.env; loc = dummy_loc } list_expr
         with
-        | Ok (TyList elem_ty) ->
-            let list_expensive = expr_expensive env list_expr in
+        | Ok (TyList elem_ty) | Ok (TyDomain _ as elem_ty) ->
+            let rhs_expensive = expr_expensive env list_expr in
             let env = Env.with_vars [ (name, elem_ty) ] env in
-            (unbounded_ty elem_ty || list_expensive, env)
+            (unbounded_ty elem_ty || rhs_expensive, env)
         | Ok _ | Error _ -> (expr_expensive env list_expr, env))
     | GExpr e -> (expr_expensive env e, env)
   in

@@ -45,9 +45,15 @@ let fallback_counter = ref 0
 
 let fallback_decls : string list ref = ref []
 
+let fallback_cache : (string * string * string, string) Hashtbl.t =
+  Hashtbl.create 16
+
+let reset_fallback_cache () = Hashtbl.clear fallback_cache
+
 let reset_fallbacks () =
   fallback_counter := 0;
-  fallback_decls := []
+  fallback_decls := [];
+  reset_fallback_cache ()
 
 let fresh_fallback ~kind ~sort =
   let n = !fallback_counter in
@@ -56,11 +62,6 @@ let fresh_fallback ~kind ~sort =
   fallback_decls :=
     Printf.sprintf "(declare-const %s %s)" name sort :: !fallback_decls;
   name
-
-let fallback_cache : (string * string * string, string) Hashtbl.t =
-  Hashtbl.create 16
-
-let reset_fallback_cache () = Hashtbl.clear fallback_cache
 
 let intern_fallback_symbol ~kind ~sort ~key =
   match Hashtbl.find_opt fallback_cache (kind, sort, key) with
