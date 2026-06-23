@@ -166,6 +166,8 @@ function isUndefinedStringLiteral(e: ts.Expression): boolean {
  * "operand" is itself a sentinel — folding such a comparison to
  * `IsNullish(sentinel)` lowers to `#null = 0` or `#undefined = 0`,
  * which is meaningless and ill-typed in Pant.
+ *
+ * @pant isNullishSentinel e checker <-> isNullKeyword e or isUndefinedIdentifier e checker.
  */
 function isNullishSentinel(e: ts.Expression, checker: ts.TypeChecker): boolean {
   return isNullKeyword(e) || isUndefinedIdentifier(e, checker);

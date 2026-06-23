@@ -1,0 +1,450 @@
+# Workstream: ts2pant Body Completeness
+
+## Vision
+
+Make ts2pant's TypeScript body lowering accept the common, unambiguous
+statement shapes that remain after the core IR, local-binding SSA, guard
+analysis, for-of comprehension, and foreign-call milestones. The end state is
+not "translate arbitrary JavaScript"; it is a disciplined expansion of
+structural body coverage for code that already has a clear Pantagruel target:
+nested pure block returns, callback blocks, record-return conditionals, local
+collection builders, and bounded switch/iteration sequencing. Each admitted
+shape lowers through named transformations already documented in
+`tools/ts2pant/docs/transformations.md`, and unsupported shapes continue to
+reject with precise diagnostics.
+
+## Current State
+
+The body-lowering work has been handled so far as standalone gameplans rather
+than as a parent workstream:
+
+- `gameplans/ts2pant-body-lowering-completeness.json` landed simple
+  block-bodied early-return arms and switch block clauses.
+- `gameplans/ts2pant-for-of-comprehension.json` landed the build-list
+  `for-of` comprehension shape.
+- `gameplans/ts2pant-foreign-accessor-body-lowering.json` and
+  `gameplans/ts2pant-foreign-call-guard-admission.json` reduced foreign
+  accessor/predicate rejection buckets.
+- `workstreams/ts2pant-local-binding-ssa.md` completed the local-binding SSA
+  substrate; `workstreams/ts2pant-guard-analysis.md` completed the guard and
+  narrowing track.
+
+After Milestone 1 landed, the read-only corpus diagnostic
+(`tools/ts2pant/scripts/corpus-diag.mts --summary-only`) over
+`tools/ts2pant/src` reports 829 top-level functions, 166 clean translations,
+658 functions with UNSUPPORTED output, and 5 build errors. The top residual
+buckets are heterogeneous:
+
+- 76 discriminated-union registration failures — owned by the DU workstream,
+  not this one.
+- 59 `for-of loop is not a recognized build-list comprehension`.
+- 57 `early-return predicate has side effects` and 33
+  `early-return value has side effects` — guard/foreign-call follow-ons, not
+  this workstream's core.
+- 49 `expression statement before return`, usually local collection builders
+  such as `lines.push(...); return lines`.
+- 42 nested pure block-return failures:
+  `if-with-return block must contain only const bindings followed by a return`.
+- 22 `local bindings or multiple statements before return`.
+- 19/14 switch default/case body-ending failures.
+- 14 `statement is not supported by unified SSA body lowering`.
+- 11 `branch call is not a recognized Map/Set effect`.
+- Record-return conditionals moved down to residual split buckets:
+  5 `record return branches must all return object literals with the same field
+  set` and 2 legacy
+  `record return combined with early-return arms or if/else branches`.
+
+This workstream owns the structural body-lowering subset of those residuals:
+the remaining nested block-return bucket, the local collection/sequencing buckets, and
+bounded switch/iteration/record cleanup. It explicitly does not own DU
+self-registration, foreign method synthesis, guard purity, or non-discriminated
+union field access.
+
+## Key Challenges
+
+- **The buckets are not one feature.** Several high-count labels are symptoms
+  of different transformations: nested if-conversion, local collection-builder
+  recognition, loop/iterator lowering, switch value semantics, and record
+  fieldwise conditionals. Trying to fold all of them into one gameplan would
+  violate gameplan atomicity.
+
+- **Local collection builders are stateful even in pure functions.**
+  `const lines = []; lines.push(x); return lines` is pure at the function
+  boundary but imperative internally. It cannot be admitted by pretending the
+  expression statement is pure; it needs a local collection-builder model that
+  lowers mutation into a list/set/map value.
+
+- **Switch and iteration shapes have real semantic traps.** Fall-through,
+  `break`, `continue`, `throw`, non-literal labels, and default-not-last cases
+  are not equivalent to a simple `cond`. The workstream must admit only the
+  subset with a clear value target, and it must keep unsupported cases visibly
+  rejected.
+
+- **Snapshot churn can hide regressions.** Many milestones change emitted Pant
+  text for newly-supported fixtures. Existing successful fixtures should remain
+  byte-identical unless a milestone explicitly owns a broader normalization
+  change.
+
+- **Body completeness overlaps other workstreams at the edges.** DU,
+  guard/foreign-call, opaque narrowing, and local-binding SSA can all surface as
+  body rejections. This workstream needs strong ownership boundaries so it does
+  not absorb unrelated type-system or foreign-API work.
+
+## Established Precedents
+
+- **paper — Allen et al. 1983 if-conversion** —
+  https://dl.acm.org/doi/10.1145/567067.567085
+  Nested early returns, terminal branch blocks, and switch cases all reduce
+  control dependence to data dependence when each branch has a value-position
+  target. Milestones that turn statement control flow into `cond` values
+  inherit this precedent.
+
+- **paper — Flanagan et al. 1993 A-normal form / compiling with continuations** —
+  https://dl.acm.org/doi/10.1145/155090.155113
+  The body prelude scanner is effectively operating over ANF-like TypeScript:
+  local bindings and simple statements before a terminal value. This precedent
+  shapes the separation between pure value-producing preludes and stateful
+  local collection builders.
+
+- **algorithm — Capture-avoiding substitution** — null
+  Local binding inlining and block-local substitution must use the existing
+  hygienic substitution primitives (`substituteIR1ExprSubtree`,
+  `substituteIR1StmtSubtree`, and the Pant wasm substitution API), never
+  textual replacement. This applies to nested block returns, callback blocks,
+  and any single-use optimization in later milestones.
+
+- **paper — Cytron et al. 1991 SSA construction** —
+  https://doi.org/10.1145/115372.115320
+  Local sequencing and local collection builders should reuse the existing IR1
+  SSA discipline rather than inventing a parallel state model. This precedent
+  applies whenever the body path versions local scalar or collection state
+  before emitting a final value.
+
+- **pattern — Conservative recognizer with precise refusal** — null
+  This is the project-level steering principle documented in
+  `tools/ts2pant/AGENTS.md`: admit unambiguous TypeScript forms when there is a
+  clear Pant target, and reject ambiguous forms with a diagnostic that explains
+  the boundary. Every milestone in this workstream must preserve that behavior.
+
+## Milestones
+
+### Milestone 1: body-lowering-completeness-rd2 — COMPLETE (PRs #351–#355)
+
+> Landed on master through commits `a61c356`, `2c4ba68`/follow-up Patch 2
+> fixes, `9507077`, `29a6510`, and `3e28c3f` / PRs #351–#355. Post-landing
+> diagnostic (`--summary-only`) shows the targeted nested block-return bucket
+> dropped from 64 to 42, while record-return conditionals moved from the
+> original 8-count legacy bucket to smaller, sharper residual buckets.
+
+**Definition of Done**:
+- `gameplans/ts2pant-body-lowering-completeness-rd2.json` is implemented.
+- `tools/ts2pant/scripts/corpus-diag.mts` is committed as a read-only
+  measurement tool.
+- Nested pure block-return lowering exists as a shared helper around the
+  current pure prelude machinery.
+- Early-return arms, terminal if/else branch blocks, switch case/default
+  blocks, and array callback block bodies can reuse the nested pure block
+  lowering when their nested body is supported.
+- Record-return conditionals whose arms all return object literals with the
+  same explicit field set lower to fieldwise conditional equations.
+- Negative fixtures for stateful local accumulator sequencing, fall-through
+  switches, non-literal labels, effectful block consts, non-final returns, and
+  mismatched record shapes remain unsupported.
+- `just ts2pant-test-unit`, `just ts2pant-test-integration`, and the corpus
+  diagnostic pass.
+
+**Why this is a safe pause point**:
+The milestone only admits shapes that already reduce to existing `cond`,
+let-elimination, and record-return machinery. Unsupported stateful sequencing
+continues to reject, so the translator gains coverage without pretending local
+mutation is pure. If the workstream pauses here, the codebase has a strictly
+more capable pure block-return recognizer and a committed measurement harness.
+
+**Unlocks**:
+The next milestone can focus on local collection-builder sequencing without
+also carrying nested branch/callback cleanup. The post-M1 diagnostic gives a
+fresh residual ranking before committing to M2's exact fixture set.
+
+**Operator Actions Before Next Milestone**:
+- Done: run `NODE_OPTIONS=--max-old-space-size=6144 npx tsx tools/ts2pant/scripts/corpus-diag.mts --summary-only`.
+- Done: record post-M1 baseline: 829 functions, 166 clean, 658 unsupported, 5
+  errors. Top structural body buckets: for-of non-comprehension 59,
+  expression statement before return 49, nested block-return 42,
+  local/multiple statements before return 22, switch default/case 19/14.
+- Done: confirm the `if-with-return block...` and record-return buckets moved down.
+- Before writing the M2 gameplan, run a focused shape survey over the 59 for-of
+  and 49 expression-statement examples. If the for-of bucket is mostly local
+  collection builders, keep M2 as planned and make it the shared builder target
+  that M3 consumes; if it is dominated by a non-builder loop family, swap M2/M3
+  or split out a measurement milestone.
+
+**Open Questions**:
+- Resolved by the existing rd2 gameplan: local accumulator sequencing is
+  deferred out of M1.
+
+---
+
+### Milestone 2: local-collection-builder-sequencing
+
+**Definition of Done**:
+- The pure-body prelude recognizes bounded local collection builders such as
+  `const xs = []; xs.push(e); return xs` and small straight-line variants with
+  const-bound projected values.
+- The lowering emits a Pantagruel list/set/map value using existing list
+  comprehensions or a small synthesized helper, not by treating `push` or
+  `set` as a pure expression.
+- Multiple pushes preserve source order when the target is an ordered list;
+  Set/Map builders preserve membership/lookup semantics consistent with the
+  existing Map/Set encoding.
+- Unsupported variants stay rejected: dynamic aliasing of the accumulator,
+  unknown mutating method calls, mutation after the accumulator escapes,
+  nested loops not handled by the milestone, and ambiguous element order.
+- The targeted `expression statement before return` bucket moves down in the
+  post-M2 corpus diagnostic.
+- Constructs and dogfood tests cover both positive local builder cases and
+  preserved negative cases.
+
+**Why this is a safe pause point**:
+The milestone turns one coherent stateful pure-body idiom into an explicit
+value construction model. It does not relax the general expression-statement
+gate; any statement that is not a recognized local builder remains rejected.
+The codebase remains consistent because supported builders emit checkable
+Pant values, while unsupported local mutation remains visible.
+
+**Unlocks**:
+Follow-on iteration completeness: once straight-line builders are expressible,
+`for-of` and `forEach` variants can target the same builder representation.
+
+**Operator Actions Before Next Milestone**:
+- Re-run the corpus diagnostic and split the remaining 53 for-of and 21 local
+  multi-statement buckets by shape: build-list, scalar fold, Set/Map builder,
+  early-exit loop, or unsupported control flow.
+- Decide M3's exact first loop family from that split. Default preference:
+  choose the largest family that reuses the M2 builder representation.
+
+**Open Questions**:
+- Should list builders with multiple straight-line `push` calls emit an
+  explicit concatenation form, a synthetic helper rule, or a comprehension over
+  a finite tuple? Resolve during the M2 gameplan.
+- Is Map builder construction in scope for M2, or does M2 only cover list/set
+  builders and leave Map initialization to a later Map-specific milestone?
+
+---
+
+### Milestone 3: iteration-builder-completeness
+
+**Definition of Done**:
+- Additional `for-of` / `forEach` bodies that build a local collection through
+  the M2 builder representation translate instead of rejecting as
+  `for-of loop is not a recognized build-list comprehension`.
+- Supported loop bodies may include simple guards, const-bound projections,
+  and accumulator writes whose target is the recognized local builder.
+- Loop bodies with `break`, `continue`, `throw`, nested unsupported loops,
+  accumulator aliasing, or order-dependent mutation outside the builder remain
+  rejected.
+- The targeted for-of residual bucket moves down in the post-M3 corpus
+  diagnostic.
+- Existing `expressions-for-of-comprehension.ts` behavior remains
+  byte-identical unless M3 explicitly owns a more general canonical output.
+
+**Why this is a safe pause point**:
+M3 builds on an already-verified local builder target. It admits more loop
+surface forms only when they lower to that target, and it leaves general loop
+control flow to the completed general-loop SSA machinery or future milestones.
+
+**Unlocks**:
+Switch/statement-position cleanup can proceed with fewer loop-shaped false
+positives in the diagnostic output.
+
+**Operator Actions Before Next Milestone**:
+- Re-run the corpus diagnostic and inspect the remaining switch buckets:
+  `switch default must end with return`, `switch case must end with return`,
+  `switch case label must be a literal`, and
+  `statement is not supported by unified SSA body lowering: SwitchStatement`.
+- Decide whether M4 should admit a bounded switch value shape or remain a
+  measurement-only milestone if switch residuals are dominated by fall-through
+  and non-literal labels.
+
+**Open Questions**:
+- Whether scalar folds such as `let total = 0; for (...) total += f(x);
+  return total` belong in M3 or a separate scalar-fold milestone depends on
+  the M2/M3 diagnostic split.
+
+---
+
+### Milestone 4: switch-body-completeness
+
+**Definition of Done**:
+- Switch bodies in value position support every bounded no-fall-through shape
+  with a clear `cond` target: terminal return, block-return, and nested pure
+  block-return case/default bodies.
+- Switch statements in supported pure-body preludes and supported unified SSA
+  body positions lower through the same switch-to-cond contract where the
+  semantics are equivalent.
+- Non-literal labels, default-not-last, fall-through-by-empty-case,
+  break-only/throw-only value cases, and side-effectful discriminants remain
+  rejected with existing or sharper diagnostics.
+- The switch case/default residual buckets move down in the post-M4 corpus
+  diagnostic.
+
+**Why this is a safe pause point**:
+The milestone extends the existing switch-to-cond contract without changing
+the rejection policy for semantically ambiguous switch forms. Stopping here
+leaves the translator with a stronger value-position switch lowering but no
+unsound fall-through modeling.
+
+**Unlocks**:
+Final body-completeness cleanup can target the residual structural buckets
+that remain after nested blocks, builders, loops, and switches have been
+removed from the top ranking.
+
+**Operator Actions Before Next Milestone**:
+- Re-run the corpus diagnostic and classify the remaining structural buckets
+  into: body-completeness owned, other-workstream owned, and intentionally
+  unsupported.
+- If body-completeness-owned residuals are no longer among the top buckets,
+  skip M5 and mark the workstream complete after reconciling the acceptance
+  suite.
+
+---
+
+### Milestone 5: residual-body-diagnostic-cleanup
+
+**Definition of Done**:
+- Every remaining structural body-lowering bucket above a small threshold
+  chosen during M4 planning is either implemented, reclassified to another
+  workstream, or documented as intentionally unsupported with a precise
+  diagnostic.
+- `tools/ts2pant/docs/transformations.md` and `tools/ts2pant/AGENTS.md`
+  describe all body transformations added by this workstream.
+- `tools/ts2pant/scripts/corpus-diag.mts` output clearly separates
+  body-completeness residuals from DU, guard/foreign, opaque/type-mapping, and
+  other-workstream residuals.
+- The final corpus diagnostic no longer has a structural body-lowering bucket
+  above the threshold that lacks an owner.
+
+**Why this is a safe pause point**:
+This is the terminal reconciliation milestone. It does not need to close every
+possible TypeScript body shape; it needs to ensure every remaining rejection is
+either small, intentional, or assigned to the right future workstream.
+
+**Unlocks**:
+The body-completeness workstream can be closed, and future dogfood expansion
+can focus on DU registration, foreign method synthesis, guard effects, and
+type/opaque precision rather than structural body sequencing.
+
+## Dependency Graph
+
+```text
+1 (body-lowering-completeness-rd2) -> []
+2 (local-collection-builder-sequencing) -> [1]
+3 (iteration-builder-completeness) -> [2]
+4 (switch-body-completeness) -> [3]
+5 (residual-body-diagnostic-cleanup) -> [4]
+```
+
+## Open Questions
+
+| Question | Notes | Resolve By |
+|----------|-------|------------|
+| What post-M1 bucket threshold defines "workstream complete"? | Suggested threshold: no body-completeness-owned normalized bucket above 10 functions, but this should be confirmed after M1/M2 because bucket normalization may split or merge shapes. | M4 operator review |
+| Should scalar local folds be part of `iteration-builder-completeness`? | They are adjacent to collection builders but may require a different scalar-fold encoding. Include only if the post-M2 corpus split shows a coherent high-count family. | M3 gameplan |
+| Should Map builder construction be part of M2? | Map construction touches the guarded Map encoding and may deserve a Map-specific milestone. | M2 gameplan |
+| Is `forEach` callback `return` behavior in scope? | `forEach` callbacks do not return from the outer function, so support is only sound for local builder effects, not early outer returns. | M3 gameplan |
+
+## Decisions Made
+
+| Decision | Rationale |
+|----------|-----------|
+| Scope is structural body lowering only. | DU registration, guard/foreign-call admission, opaque narrowing, and non-discriminated-union field access have their own workstreams or follow-ons. Mixing them here would make bucket movement hard to interpret and milestones too broad. |
+| Measurement gates milestone boundaries. | Each milestone ends with a corpus diagnostic run. Later milestones are intentionally thinner because the residual ranking changes after each landing. |
+| Local accumulator sequencing is not part of M1. | It is stateful local mutation with a pure function boundary. It needs a collection-builder model, not a larger pure block-return helper. |
+| Conservative refusal remains the steering policy. | The goal is not arbitrary JS support; it is accepting idiomatic, unambiguous TS only when Pantagruel has a faithful target. |
+
+## Definition of Done (Acceptance Suite)
+
+The terminal acceptance suite is command-based because ts2pant is a local
+translator. Assertions are black-box over fixture translation, emitted
+Pantagruel text, snapshot output, and the corpus diagnostic; a verifier does
+not need to read source to decide pass/fail.
+
+- **DoD-1 — Nested pure block bodies translate**
+  - **Assert**: A fixture function whose early-return arm contains a nested
+    supported pure block, and a fixture function whose terminal if/else branch
+    contains a nested supported pure block, emit Pantagruel `cond` values
+    rather than `> UNSUPPORTED: if-with-return block must contain only const
+    bindings followed by a return`.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the
+    `expressions-body-lowering-rd2.ts` constructs snapshot entries.
+  - **Expected**: The targeted fixture snapshots contain equations with `cond`
+    and no matching UNSUPPORTED line for the targeted functions.
+  - **Traces to**: Milestone 1 — `tools/ts2pant/src/translate-body.ts`
+    nested pure block-return lowering.
+
+- **DoD-2 — Record-return conditionals lower fieldwise**
+  - **Assert**: A record-return fixture with conditional arms returning the
+    same object-literal field set emits one equation per record field with
+    conditional RHS values.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the
+    `expressions-body-lowering-rd2.ts` snapshot entry for the record-return
+    conditional fixture.
+  - **Expected**: The snapshot contains field equations and no
+    `record return combined with early-return arms or if/else branches`
+    UNSUPPORTED line for the targeted fixture.
+  - **Traces to**: Milestone 1 — `tools/ts2pant/src/translate-body.ts` and
+    `tools/ts2pant/src/translate-record.ts`.
+
+- **DoD-3 — Local collection builders translate without general expression-statement admission**
+  - **Assert**: A fixture using a recognized local collection builder before
+    return emits a Pantagruel list/set/map value, while an unrecognized
+    expression statement before return still emits UNSUPPORTED.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the local
+    collection builder fixture snapshots.
+  - **Expected**: Positive builder fixtures typecheck and negative expression
+    statement fixtures retain an UNSUPPORTED diagnostic.
+  - **Traces to**: Milestone 2 — local collection builder lowering in
+    `tools/ts2pant/src/translate-body.ts` and supporting IR1 modules.
+
+- **DoD-4 — Builder-backed for-of variants translate**
+  - **Assert**: A fixture whose `for-of` body builds a recognized local
+    collection through the M2 builder target emits a Pantagruel value rather
+    than `for-of loop is not a recognized build-list comprehension`.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the
+    iteration builder fixture snapshots.
+  - **Expected**: Positive iteration-builder fixtures typecheck; negative
+    loop-control fixtures with break/continue/throw or aliasing remain
+    unsupported.
+  - **Traces to**: Milestone 3 — iteration builder lowering in
+    `tools/ts2pant/src/translate-body.ts` and `tools/ts2pant/src/ir1-build-body.ts`.
+
+- **DoD-5 — Switch value bodies preserve conservative switch semantics**
+  - **Assert**: Supported no-fall-through switch value fixtures emit `cond`
+    output, while fall-through, non-literal labels, side-effectful
+    discriminants, and default-not-last cases remain unsupported.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect switch body
+    fixture snapshots.
+  - **Expected**: Positive switch fixtures contain `cond`; negative switch
+    fixtures retain their precise UNSUPPORTED diagnostics.
+  - **Traces to**: Milestone 4 — switch body lowering in
+    `tools/ts2pant/src/ir1-build.ts`.
+
+- **DoD-6 — Body-completeness residuals are measured and owned**
+  - **Assert**: The final corpus diagnostic has no structural
+    body-completeness-owned bucket above the workstream threshold that lacks an
+    owner or intentional-unsupported note.
+  - **Verify by** `cmd`: Run
+    `NODE_OPTIONS=--max-old-space-size=6144 npx tsx tools/ts2pant/scripts/corpus-diag.mts`
+    and compare the top buckets against the owner table documented by M5.
+  - **Expected**: Every structural body bucket above threshold is either
+    absent, below threshold, implemented, or explicitly assigned/documented;
+    DU, guard/foreign, and type/opaque buckets are not counted against this
+    workstream.
+  - **Traces to**: Milestone 5 — `tools/ts2pant/scripts/corpus-diag.mts` and
+    body residual documentation.
+
+- **DoD-7 — Workspace-level verification passes**
+  - **Assert**: The final body-completeness state passes the ts2pant unit and
+    integration suites through the workspace-level task runner.
+  - **Verify by** `cmd`: Run `just ts2pant-test`.
+  - **Expected**: Exit code 0.
+  - **Traces to**: Milestones 1-5 — all body-completeness translator changes.

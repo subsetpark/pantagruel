@@ -1135,10 +1135,16 @@ function initialVersionFor(
   return initial;
 }
 
+/**
+ * @pant scalarPropertyKey prop receiver = prop + "::" + receiver.
+ */
 function scalarPropertyKey(prop: string, receiver: string): string {
   return `${prop}::${receiver}`;
 }
 
+/**
+ * @pant scalarLocalBindingKey name = "local-binding::" + name.
+ */
 function scalarLocalBindingKey(name: string): string {
   return `local-binding::${name}`;
 }

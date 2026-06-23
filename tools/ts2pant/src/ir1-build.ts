@@ -1573,11 +1573,16 @@ function tryBuildL1TemplateExpression(
  * True when `t` is a TS type whose cardinality is exposed via `length`
  * (arrays) or `size` (sets, maps). Centralizes the predicate so the
  * cardinality dispatch and the Member fallback agree on coverage.
+ *
+ * @pant isLengthCardinalityType t checker <-> isArrayType checker t.
  */
 function isLengthCardinalityType(t: ts.Type, checker: ts.TypeChecker): boolean {
   return checker.isArrayType(t);
 }
 
+/**
+ * @pant isSizeCardinalityType t <-> isSetType t or isMapType t.
+ */
 function isSizeCardinalityType(t: ts.Type): boolean {
   return isSetType(t) || isMapType(t);
 }
@@ -3767,6 +3772,9 @@ function explicitOpToBinop(kind: ts.SyntaxKind): IR1Binop | null {
   }
 }
 
+/**
+ * @pant isCommutativeBinop op <-> op = "add" or op = "mul".
+ */
 function isCommutativeBinop(op: IR1Binop): boolean {
   return op === "add" || op === "mul";
 }
