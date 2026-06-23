@@ -1795,6 +1795,7 @@ function translatePureBody(
 interface ExtractedBody {
   bindings: PreludeStmt[];
   returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
+  guardStmts: readonly ts.Statement[];
 }
 
 interface LocalListBuilderResult {
@@ -1820,13 +1821,14 @@ function tryBuildForOfComprehensionReturn(
     }
   | { error: string }
   | null {
-  if (
-    !ts.isExpression(extracted.returnExpr) ||
-    !ts.isIdentifier(extracted.returnExpr)
-  ) {
+  if (!ts.isExpression(extracted.returnExpr)) {
     return null;
   }
-  const accName = extracted.returnExpr.text;
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return null;
+  }
+  const accName = returnedExpr.text;
   const forOfBindings = extracted.bindings.filter(
     (binding): binding is Extract<PreludeStmt, { kind: "forOf" }> =>
       binding.kind === "forOf" && binding.accName === accName,
@@ -1848,6 +1850,12 @@ function tryBuildForOfComprehensionReturn(
     return {
       error:
         "for-of build-list comprehension must return its empty-array accumulator",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error:
+        "for-of build-list comprehension guard may not read the accumulator",
     };
   }
   if (
@@ -1926,15 +1934,18 @@ function tryBuildLocalListBuilderReturn(
   if (builderPushes.length === 0) {
     return null;
   }
-  if (
-    !ts.isExpression(extracted.returnExpr) ||
-    !ts.isIdentifier(extracted.returnExpr)
-  ) {
+  if (!ts.isExpression(extracted.returnExpr)) {
     return {
       error: "list builder must return its local accumulator",
     };
   }
-  const accName = extracted.returnExpr.text;
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return {
+      error: "list builder must return its local accumulator",
+    };
+  }
+  const accName = returnedExpr.text;
   const accDecls = extracted.bindings.filter(
     (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
       binding.kind === "const" &&
@@ -1950,6 +1961,11 @@ function tryBuildLocalListBuilderReturn(
   if (builderPushes.some((push) => push.accName !== accName)) {
     return {
       error: "list builder may only push to the returned local accumulator",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error: "list builder guard may not read the accumulator",
     };
   }
   const accNames = new Set([accName]);
@@ -2569,6 +2585,9 @@ function extractReturnExpression(
 ): ExtractedBody | null {
   const { checker } = ctx;
   // Skip guard statements (if-throw patterns and assertion calls)
+  const guardStmts = body.statements.filter((s) =>
+    isGuardStatement(s, checker),
+  );
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
   if (stmts.length === 0) {
@@ -2729,17 +2748,17 @@ function extractReturnExpression(
 
   const last = stmts[lastIdx]!;
   if (ts.isReturnStatement(last) && last.expression) {
-    return { bindings, returnExpr: last.expression };
+    return { bindings, returnExpr: last.expression, guardStmts };
   }
   if (ts.isIfStatement(last) && last.elseStatement) {
-    return { bindings, returnExpr: last };
+    return { bindings, returnExpr: last, guardStmts };
   }
   // Switch as a terminal — handled by the L1 conditional builder
   // (workstream M1). The L1 path requires a default that's last, every
   // case ending in `return EXPR`, and only literal case labels;
   // anything else surfaces as UNSUPPORTED at build time.
   if (ts.isSwitchStatement(last)) {
-    return { bindings, returnExpr: last };
+    return { bindings, returnExpr: last, guardStmts };
   }
 
   return null;
@@ -2789,6 +2808,14 @@ function nodeWritesName(node: ts.Node, name: string): boolean {
   };
   visit(node);
   return found;
+}
+
+function guardStatementsReadName(
+  guardStmts: readonly ts.Statement[],
+  name: string,
+): boolean {
+  const names = new Set([name]);
+  return guardStmts.some((stmt) => nodeReferencesNames(stmt, names));
 }
 
 function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {

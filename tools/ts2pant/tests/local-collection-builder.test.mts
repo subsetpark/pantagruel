@@ -48,6 +48,13 @@ describe("local collection builder", () => {
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
+  it("listParenthesizedReturn unwraps the returned accumulator", async () => {
+    const output = await emitFixture("listParenthesizedReturn");
+    assert.match(output, /^#\(list-parenthesized-return seed\) = 1\.$/mu);
+    assert.match(output, /^\(list-parenthesized-return seed\) 1 = seed\.$/mu);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
   it("setAddBuilder emits membership equivalence", {
     skip: "Patch 3 will unskip after Set add builder lowering lands",
   }, async () => {
@@ -70,6 +77,12 @@ describe("local collection builder", () => {
     const output = await emitFixture("listUnknownMutationRejected");
     assert.match(output, /^> UNSUPPORTED: list-unknown-mutation-rejected/mu);
     assert.match(output, /unknown|mutation|builder|unshift/u);
+  });
+
+  it("listGuardReadRejected remains unsupported", async () => {
+    const output = await emitFixture("listGuardReadRejected");
+    assert.match(output, /^> UNSUPPORTED: list-guard-read-rejected/mu);
+    assert.match(output, /guard|read|accumulator|builder/u);
   });
 
   it("mapBuilderRejected remains unsupported", {

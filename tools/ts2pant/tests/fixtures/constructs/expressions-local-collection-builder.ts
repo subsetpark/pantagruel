@@ -51,6 +51,31 @@ function listPushConstProjection(item: BuilderItem): string[] {
 }
 
 /**
+ * Transparent expression wrappers around the returned accumulator should not
+ * hide the builder target.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function listParenthesizedReturn(seed: string): string[] {
+  const out: string[] = [];
+  out.push(seed);
+  return (out);
+}
+
+/**
+ * Out-of-scope control: guard reads of the accumulator observe builder state
+ * before the final return and must not be stripped as ordinary preconditions.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function listGuardReadRejected(seed: string): string[] {
+  const out: string[] = [];
+  if (out.length === 0) {
+    throw new Error("empty");
+  }
+  out.push(seed);
+  return out;
+}
+
+/**
  * Straight-line Set add builder.
  * Target Pantagruel encoding: membership equivalence, not ordered positions.
  */
