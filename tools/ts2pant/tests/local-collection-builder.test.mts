@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import { buildDocument, emitAndCheck, runCheck } from "./helpers.mjs";
+import { buildDocument, emitAndCheck } from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
@@ -55,16 +55,52 @@ describe("local collection builder", () => {
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
-  it("setAddBuilder emits membership equivalence", {
-    skip: "Patch 3 will unskip after Set add builder lowering lands",
-  }, async () => {
+  it("setAddBuilder emits membership equivalence", async () => {
     const output = await emitFixture("setAddBuilder");
     assert.match(
       output,
-      /x in set-add-builder first second <-> \(x = first or x = second\)/u,
+      /x in set-add-builder first second <-> x = first or x = second/u,
     );
     assert.doesNotMatch(output, /UNSUPPORTED/u);
-    assert.ok(runCheck(output).passed);
+  });
+
+  it("setUntypedAccumulator uses the function return element type", async () => {
+    const output = await emitFixture("setUntypedAccumulator");
+    assert.match(output, /all x: String \|/u);
+    assert.match(output, /x in set-untyped-accumulator seed <-> x = seed/u);
+    assert.doesNotMatch(output, /all x: Opaque/u);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
+  it("setBinderCollision avoids capturing parameter names", async () => {
+    const output = await emitFixture("setBinderCollision");
+    assert.match(
+      output,
+      /all x[0-9]+: String \| x[0-9]+ in set-binder-collision x <-> x[0-9]+ = x/u,
+    );
+    assert.doesNotMatch(
+      output,
+      /all x: String \| x in set-binder-collision x <-> x = x/u,
+    );
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
+  it("setEmptyBuilder emits empty membership assertion", async () => {
+    const output = await emitFixture("setEmptyBuilder");
+    assert.match(output, /all x: String \| ~\(x in set-empty-builder\)\./u);
+    assert.doesNotMatch(output, /UNSUPPORTED/u);
+  });
+
+  it("setIterableRejected remains unsupported", async () => {
+    const output = await emitFixture("setIterableRejected");
+    assert.match(output, /^> UNSUPPORTED: set-iterable-rejected/mu);
+    assert.match(output, /Set builder from iterable/u);
+  });
+
+  it("setDeleteRejected remains unsupported", async () => {
+    const output = await emitFixture("setDeleteRejected");
+    assert.match(output, /^> UNSUPPORTED: set-delete-rejected/mu);
+    assert.match(output, /Set builder mutation \.delete/u);
   });
 
   it("listAliasEscapeRejected remains unsupported", async () => {
@@ -85,11 +121,18 @@ describe("local collection builder", () => {
     assert.match(output, /guard|read|accumulator|builder/u);
   });
 
-  it("mapBuilderRejected remains unsupported", {
-    skip: "Patch 3 will unskip after Map builder rejection is preserved",
-  }, async () => {
+  it("mapBuilderRejected remains unsupported", async () => {
     const output = await emitFixture("mapBuilderRejected");
     assert.match(output, /^> UNSUPPORTED: map-builder-rejected/mu);
     assert.match(output, /Map|map|builder/u);
+  });
+
+  it("mapFinalMutationRejected remains unsupported", async () => {
+    const output = await emitFixture("mapFinalMutationRejected");
+    assert.match(output, /^> UNSUPPORTED: map-final-mutation-rejected/mu);
+    assert.match(
+      output,
+      /Map builder construction is not supported in this milestone/u,
+    );
   });
 });
