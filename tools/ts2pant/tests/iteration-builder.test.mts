@@ -58,7 +58,6 @@ describe("iteration builder", () => {
   // Patch 3 unskips this Set-builder case.
   it(
     "setAddForOf emits membership equivalence over a some-comprehension",
-    { skip: "Patch 3 implements for-of Set add builders" },
     async () => {
       const output = await emitFixture("setAddForOf");
       assert.match(
@@ -154,7 +153,6 @@ describe("iteration builder", () => {
   // Patch 3 unskips this preserved Map-builder rejection.
   it(
     "mapBuilderForOfRejected remains unsupported",
-    { skip: "Patch 3 verifies Map builder rejection" },
     async () => {
       const output = await emitFixture("mapBuilderForOfRejected");
       assert.match(output, /^> UNSUPPORTED: map-builder-for-of-rejected/mu);
@@ -165,7 +163,6 @@ describe("iteration builder", () => {
   // Patch 3 unskips this preserved Set-builder rejection.
   it(
     "setDeleteForOfRejected remains unsupported",
-    { skip: "Patch 3 verifies Set delete rejection" },
     async () => {
       const output = await emitFixture("setDeleteForOfRejected");
       assert.match(output, /^> UNSUPPORTED: set-delete-for-of-rejected/mu);

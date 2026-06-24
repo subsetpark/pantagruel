@@ -228,6 +228,7 @@ type PreludeStmt =
     }
   | { kind: "muSearch"; tsName: string; mu: MuSearch; localName?: string }
   | ({ kind: "forOf" } & RecognizedForOfPush)
+  | ({ kind: "forOfSet" } & RecognizedForOfSetAdd)
   | { kind: "builderPush"; accName: string; valueExpr: ts.Expression }
   | { kind: "builderSetAdd"; accName: string; valueExpr: ts.Expression }
   | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
@@ -241,6 +242,14 @@ type PreludeStmt =
     };
 
 export interface RecognizedForOfPush {
+  binder: string;
+  src: IR1Expr;
+  proj: IR1Expr;
+  guards: IR1Expr[];
+  accName: string;
+}
+
+export interface RecognizedForOfSetAdd {
   binder: string;
   src: IR1Expr;
   proj: IR1Expr;
@@ -1300,6 +1309,74 @@ function translatePureBody(
     ];
   }
 
+  const forOfSetComprehension = tryBuildForOfSetComprehensionReturn(
+    node,
+    extracted,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+  );
+  if (forOfSetComprehension !== null) {
+    if ("error" in forOfSetComprehension) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${forOfSetComprehension.error}`,
+        },
+      ];
+    }
+    if (forOfSetComprehension.diagnostics.length > 0) {
+      return forOfSetComprehension.diagnostics;
+    }
+    const argExprs = params.map((p) => ast.var(p.name));
+    const resultApp = ast.app(ast.var(functionName), argExprs);
+    const binder = allocSetMembershipBinder(supply, params, {
+      prelude: forOfSetComprehension.prelude,
+      added: [
+        forOfSetComprehension.forOf.src,
+        ...forOfSetComprehension.forOf.guards,
+        forOfSetComprehension.forOf.proj,
+      ],
+      extraUsedNames: [forOfSetComprehension.forOf.binder],
+    });
+    const binderVar = ast.var(binder);
+    const memberExpr = ast.binop(ast.opIn(), binderVar, resultApp);
+    const someBody = ast.binop(
+      ast.opEq(),
+      binderVar,
+      applyOpaqueAliases(
+        lowerL1ToOpaque(forOfSetComprehension.forOf.proj),
+        supply,
+      ),
+    );
+    const someExpr = ast.exists(
+      [],
+      [
+        ast.gIn(
+          forOfSetComprehension.forOf.binder,
+          lowerL1ToOpaque(forOfSetComprehension.forOf.src),
+        ),
+        ...forOfSetComprehension.forOf.guards.map((guard) =>
+          ast.gExpr(lowerL1ToOpaque(guard)),
+        ),
+      ],
+      someBody,
+    );
+    return [
+      ...forOfSetComprehension.prelude.ruleDecls,
+      ...forOfSetComprehension.loweredLets.propositions,
+      {
+        kind: "assertion",
+        quantifiers: [
+          ast.param(binder, ast.tName(forOfSetComprehension.elemType)),
+        ] as OpaqueParam[],
+        body: ast.binop(ast.opIff(), memberExpr, someExpr),
+      },
+    ];
+  }
+
   const localListBuilder = tryBuildLocalListBuilderReturn(
     extracted,
     checker,
@@ -1882,6 +1959,14 @@ interface LocalSetBuilderResult {
   diagnostics: PropResult[];
 }
 
+interface ForOfSetBuilderResult {
+  elemType: string;
+  forOf: RecognizedForOfSetAdd;
+  prelude: LoweredPreludeBindings;
+  loweredLets: IR1SsaBodyLowerResult;
+  diagnostics: PropResult[];
+}
+
 function tryBuildForOfComprehensionReturn(
   extracted: ExtractedBody,
   checker: ts.TypeChecker,
@@ -1992,6 +2077,130 @@ function tryBuildForOfComprehensionReturn(
     prelude,
     loweredLets,
     each: ir1Each(forOf.binder, forOf.src, forOf.guards, forOf.proj),
+  };
+}
+
+function tryBuildForOfSetComprehensionReturn(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  extracted: ExtractedBody,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  env: AssumptionEnv,
+): ForOfSetBuilderResult | { error: string } | null {
+  if (!ts.isExpression(extracted.returnExpr)) {
+    return null;
+  }
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return null;
+  }
+  const accName = returnedExpr.text;
+  const forOfBindings = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "forOfSet" }> =>
+      binding.kind === "forOfSet" && binding.accName === accName,
+  );
+  if (forOfBindings.length === 0) {
+    return null;
+  }
+  if (forOfBindings.length !== 1) {
+    return { error: "for-of Set builder must have one loop" };
+  }
+
+  const accDecls = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
+      binding.kind === "const" &&
+      binding.tsName === accName &&
+      isEmptySetConstructor(binding.initializer),
+  );
+  if (accDecls.length !== 1) {
+    return {
+      error: "for-of Set builder must return its empty Set accumulator",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error: "for-of Set builder guard may not read the accumulator",
+    };
+  }
+  if (
+    extracted.bindings.some(
+      (binding) =>
+        (binding.kind === "reassign" && binding.tsName === accName) ||
+        (binding.kind === "stmt" && nodeWritesName(binding.stmt, accName)),
+    )
+  ) {
+    return {
+      error: "for-of Set builder accumulator has unsupported writes",
+    };
+  }
+
+  const sig = checker.getSignatureFromDeclaration(node);
+  const returnType =
+    sig === undefined
+      ? checker.getTypeAtLocation(returnedExpr)
+      : checker.getReturnTypeOfSignature(sig);
+  const elemType = setElementSort(
+    returnType,
+    checker,
+    strategy,
+    supply.synthCell,
+  );
+  if (elemType === null) {
+    return {
+      error:
+        "for-of Set builder return type must be Set<T> or ReadonlySet<T> with a supported element type",
+    };
+  }
+
+  const forOf = forOfBindings[0]!;
+  const otherBindings = extracted.bindings.filter(
+    (binding) => binding !== forOf && binding !== accDecls[0],
+  );
+  const prelude = lowerPreludeBindings(
+    otherBindings,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    undefined,
+  );
+  if ("error" in prelude) {
+    return prelude;
+  }
+  if (prelude.arms.length > 0) {
+    return {
+      error: "for-of Set builder with early returns is not supported",
+    };
+  }
+  const loweredLets =
+    prelude.letStmts.length === 0
+      ? ir1SsaBodyLowerSuccess()
+      : lowerL1BodyToSsaProps(
+          ir1Block(prelude.letStmts as [IR1Stmt, ...IR1Stmt[]]),
+          [],
+          {
+            applyConst: (e) => applyOpaqueAliases(e, supply),
+          },
+        );
+  if (loweredLets.diagnostics.length > 0) {
+    const first = loweredLets.diagnostics[0];
+    return {
+      error:
+        first?.kind === "unsupported"
+          ? first.reason
+          : "for-of Set builder prelude did not lower",
+    };
+  }
+
+  return {
+    elemType,
+    forOf,
+    prelude,
+    loweredLets,
+    diagnostics: loweredLets.diagnostics,
   };
 }
 
@@ -2315,10 +2524,17 @@ function tryBuildLocalSetBuilderReturn(
 function allocSetMembershipBinder(
   supply: UniqueSupply,
   params: Array<{ name: string; type: string }>,
-  builder: LocalSetBuilderResult,
+  builder: {
+    prelude: LoweredPreludeBindings;
+    added: IR1Expr[];
+    extraUsedNames?: readonly string[];
+  },
 ): string {
   const usedNames = new Set<string>(params.map((p) => p.name));
   for (const name of builder.prelude.scopedParams.values()) {
+    usedNames.add(name);
+  }
+  for (const name of builder.extraUsedNames ?? []) {
     usedNames.add(name);
   }
   for (const expr of builder.added) {
@@ -2618,6 +2834,36 @@ export function recognizeForOfPush(
   accNames: ReadonlySet<string>,
   ctx: L1BuildContext,
 ): RecognizedForOfPush | null {
+  return recognizeForOfAccumulatorWrite(
+    stmt,
+    accNames,
+    ctx,
+    recognizePushStatement,
+  );
+}
+
+export function recognizeForOfSetAdd(
+  stmt: ts.ForOfStatement,
+  accNames: ReadonlySet<string>,
+  ctx: L1BuildContext,
+): RecognizedForOfSetAdd | null {
+  return recognizeForOfAccumulatorWrite(
+    stmt,
+    accNames,
+    ctx,
+    recognizeSetAddStatement,
+  );
+}
+
+function recognizeForOfAccumulatorWrite(
+  stmt: ts.ForOfStatement,
+  accNames: ReadonlySet<string>,
+  ctx: L1BuildContext,
+  recognizeWrite: (
+    stmt: ts.Statement,
+    accNames: ReadonlySet<string>,
+  ) => { accName: string; valueExpr: ts.Expression } | null,
+): RecognizedForOfPush | null {
   const init = stmt.initializer;
   if (
     !ts.isVariableDeclarationList(init) ||
@@ -2646,7 +2892,11 @@ export function recognizeForOfPush(
     return null;
   }
 
-  const push = recognizeForOfPushBody(stmt.statement, accNames);
+  const push = recognizeForOfWriteBody(
+    stmt.statement,
+    accNames,
+    recognizeWrite,
+  );
   if (push === null) {
     return null;
   }
@@ -2658,14 +2908,14 @@ export function recognizeForOfPush(
   if (localBindings === null) {
     return null;
   }
-  if (expressionHasSideEffects(push.projExpr, ctx.checker)) {
+  if (expressionHasSideEffects(push.valueExpr, ctx.checker)) {
     return null;
   }
   const accNameSet = new Set(accNames);
-  if (expressionReferencesNames(push.projExpr, accNameSet)) {
+  if (expressionReferencesNames(push.valueExpr, accNameSet)) {
     return null;
   }
-  const proj = buildPureL1OrNull(push.projExpr, localBindings.scopedCtx);
+  const proj = buildPureL1OrNull(push.valueExpr, localBindings.scopedCtx);
   if (proj === null) {
     return null;
   }
@@ -2793,7 +3043,7 @@ function buildPureL1OrNull(
 
 interface RecognizedPushBody {
   accName: string;
-  projExpr: ts.Expression;
+  valueExpr: ts.Expression;
   guardExprs: ts.Expression[];
   localBindings: Array<{
     tsName: string;
@@ -2804,6 +3054,17 @@ interface RecognizedPushBody {
 function recognizeForOfPushBody(
   stmt: ts.Statement,
   accNames: ReadonlySet<string>,
+): RecognizedPushBody | null {
+  return recognizeForOfWriteBody(stmt, accNames, recognizePushStatement);
+}
+
+function recognizeForOfWriteBody(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+  recognizeWrite: (
+    stmt: ts.Statement,
+    accNames: ReadonlySet<string>,
+  ) => { accName: string; valueExpr: ts.Expression } | null,
 ): RecognizedPushBody | null {
   if (ts.isBlock(stmt)) {
     const localBindings: RecognizedPushBody["localBindings"] = [];
@@ -2836,7 +3097,11 @@ function recognizeForOfPushBody(
 
     const remaining = stmt.statements.slice(idx);
     if (remaining.length === 1) {
-      const body = recognizeForOfPushBody(remaining[0]!, accNames);
+      const body = recognizeForOfWriteBody(
+        remaining[0]!,
+        accNames,
+        recognizeWrite,
+      );
       return body === null
         ? null
         : {
@@ -2851,7 +3116,7 @@ function recognizeForOfPushBody(
     if (guard === null) {
       return null;
     }
-    const push = recognizePushStatement(remaining[1]!, accNames);
+    const push = recognizeWrite(remaining[1]!, accNames);
     if (push === null) {
       return null;
     }
@@ -2867,7 +3132,7 @@ function recognizeForOfPushBody(
     return null;
   }
 
-  const direct = recognizePushStatement(bodyStmt, accNames);
+  const direct = recognizeWrite(bodyStmt, accNames);
   if (direct !== null) {
     return { ...direct, guardExprs: [], localBindings: [] };
   }
@@ -2876,9 +3141,10 @@ function recognizeForOfPushBody(
     if (bodyStmt.elseStatement !== undefined) {
       return null;
     }
-    const guardedPush = recognizeForOfPushBody(
+    const guardedPush = recognizeForOfWriteBody(
       bodyStmt.thenStatement,
       accNames,
+      recognizeWrite,
     );
     if (guardedPush === null) {
       return null;
@@ -2919,7 +3185,7 @@ function unwrapSingleStatementBlock(stmt: ts.Statement): ts.Statement | null {
 function recognizePushStatement(
   stmt: ts.Statement,
   accNames: ReadonlySet<string>,
-): Omit<RecognizedPushBody, "guardExprs" | "localBindings"> | null {
+): { accName: string; valueExpr: ts.Expression } | null {
   if (!ts.isExpressionStatement(stmt)) {
     return null;
   }
@@ -2937,7 +3203,7 @@ function recognizePushStatement(
   if (!accNames.has(accName)) {
     return null;
   }
-  return { accName, projExpr: expr.arguments[0]! };
+  return { accName, valueExpr: expr.arguments[0]! };
 }
 
 function recognizeSetAddStatement(
@@ -3065,7 +3331,9 @@ function describeLocalMapBuilderBodyRejection(
     return null;
   }
 
+  const setAccNames = new Set<string>();
   const mapAccNames = new Set<string>();
+  const setAliases = new Set<string>();
   const aliases = new Set<string>();
   const last = stmts[stmts.length - 1]!;
   const scanStmts = ts.isReturnStatement(last) ? stmts.slice(0, -1) : stmts;
@@ -3079,13 +3347,32 @@ function describeLocalMapBuilderBodyRejection(
         if (binding.kind !== "const") {
           continue;
         }
-        if (isMapConstructor(binding.initializer)) {
+        if (isEmptySetConstructor(binding.initializer)) {
+          setAccNames.add(binding.tsName);
+        } else if (isMapConstructor(binding.initializer)) {
           mapAccNames.add(binding.tsName);
+        } else if (
+          expressionReferencesNames(binding.initializer, setAccNames)
+        ) {
+          setAliases.add(binding.tsName);
         } else if (
           expressionReferencesNames(binding.initializer, mapAccNames)
         ) {
           aliases.add(binding.tsName);
         }
+      }
+      continue;
+    }
+    if (ts.isForOfStatement(stmt)) {
+      const rejection = describeForOfCollectionBuilderRejection(
+        stmt,
+        setAccNames,
+        setAliases,
+        mapAccNames,
+        aliases,
+      );
+      if (rejection !== null) {
+        return rejection;
       }
       continue;
     }
@@ -3100,6 +3387,75 @@ function describeLocalMapBuilderBodyRejection(
     if (rejection !== null) {
       return rejection;
     }
+  }
+  return null;
+}
+
+function describeForOfCollectionBuilderRejection(
+  stmt: ts.ForOfStatement,
+  setAccNames: ReadonlySet<string>,
+  setAliases: ReadonlySet<string>,
+  mapAccNames: ReadonlySet<string>,
+  mapAliases: ReadonlySet<string>,
+): string | null {
+  const setNames = new Set([...setAccNames, ...setAliases]);
+  const mapNames = new Set([...mapAccNames, ...mapAliases]);
+  let reason: string | null = null;
+
+  const visit = (node: ts.Node): void => {
+    if (reason !== null) {
+      return;
+    }
+    if (
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node)
+    ) {
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      for (const arg of node.arguments) {
+        if (
+          expressionReferencesNames(arg, setNames) ||
+          expressionReferencesNames(arg, mapNames)
+        ) {
+          reason =
+            "collection builder accumulator alias or escape is not supported";
+          return;
+        }
+      }
+      const callee = node.expression;
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression)
+      ) {
+        const receiver = callee.expression.text;
+        const method = callee.name.text;
+        if (mapNames.has(receiver)) {
+          reason = "Map builder construction is not supported in this milestone";
+          return;
+        }
+        if (setNames.has(receiver) && method !== "add") {
+          reason = `Set builder mutation .${method} is not supported`;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(stmt.statement);
+  if (reason !== null) {
+    return reason;
+  }
+  if (nodeReferencesNames(stmt.statement, setNames)) {
+    return "Set builder may not read the accumulator inside the loop";
+  }
+  if (nodeReferencesNames(stmt.statement, mapNames)) {
+    return "Map builder construction is not supported in this milestone";
   }
   return null;
 }
@@ -3193,7 +3549,7 @@ function extractReturnExpression(
         bindings.push({
           kind: "builderPush",
           accName: push.accName,
-          valueExpr: push.projExpr,
+          valueExpr: push.valueExpr,
         });
         i += 1;
         lastLetDeclNames = new Set();
@@ -3224,10 +3580,20 @@ function extractReturnExpression(
         ...ctx,
         paramNames: scopedParams,
       });
-      if (recognized === null) {
+      if (recognized !== null) {
+        bindings.push({ kind: "forOf", ...recognized });
+        i += 1;
+        lastLetDeclNames = new Set();
+        continue;
+      }
+      const setRecognized = recognizeForOfSetAdd(stmt, emptySetAccNames, {
+        ...ctx,
+        paramNames: scopedParams,
+      });
+      if (setRecognized === null) {
         return null;
       }
-      bindings.push({ kind: "forOf", ...recognized });
+      bindings.push({ kind: "forOfSet", ...setRecognized });
       i += 1;
       lastLetDeclNames = new Set();
       continue;
@@ -3474,6 +3840,16 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         continue;
       }
       if (ts.isForOfStatement(stmt)) {
+        const collectionRejection = describeForOfCollectionBuilderRejection(
+          stmt,
+          emptySetAccNames,
+          setBuilderAliases,
+          emptyMapAccNames,
+          mapBuilderAliases,
+        );
+        if (collectionRejection !== null) {
+          return collectionRejection;
+        }
         return "for-of loop is not a recognized build-list comprehension";
       }
       // An if-shaped statement that didn't match recognizeEarlyReturnArm:
@@ -4258,6 +4634,13 @@ function lowerPreludeBindings(
             "for-of loop is only supported as a build-list comprehension returned directly",
         };
       }
+      if (binding.kind === "forOfSet") {
+        return {
+          tag: "error",
+          error:
+            "for-of Set builder is only supported when returning its accumulator directly",
+        };
+      }
       if (binding.kind === "builderPush") {
         return {
           tag: "error",
@@ -4415,7 +4798,7 @@ function validatePreludeBindings(
       if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
         return { error: "while-loop predicate references a later binding" };
       }
-    } else if (binding.kind === "forOf") {
+    } else if (binding.kind === "forOf" || binding.kind === "forOfSet") {
     } else if (binding.kind === "builderPush") {
       if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
         return { error: "list builder push references a later binding" };
@@ -4630,6 +5013,7 @@ export function lowerNestedPureBlockReturnToL1(
   for (const binding of extracted.bindings) {
     if (
       binding.kind === "forOf" ||
+      binding.kind === "forOfSet" ||
       binding.kind === "builderPush" ||
       binding.kind === "builderSetAdd" ||
       binding.kind === "reassign" ||

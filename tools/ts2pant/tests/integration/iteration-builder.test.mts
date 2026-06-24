@@ -42,7 +42,6 @@ describe("iteration builder integration", () => {
   // Patch 3 unskips this Set-builder checker stub.
   it(
     "setAddForOf passes pant --check",
-    { skip: "Patch 3 implements for-of Set add builders" },
     async () => {
       await checkFixture("setAddForOf");
     },
