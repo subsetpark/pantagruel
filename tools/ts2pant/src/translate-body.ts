@@ -2661,7 +2661,8 @@ export function recognizeForOfPush(
   if (expressionHasSideEffects(push.projExpr, ctx.checker)) {
     return null;
   }
-  if (expressionReferencesNames(push.projExpr, accNames)) {
+  const accNameSet = new Set(accNames);
+  if (expressionReferencesNames(push.projExpr, accNameSet)) {
     return null;
   }
   const proj = buildPureL1OrNull(push.projExpr, localBindings.scopedCtx);
@@ -2671,7 +2672,7 @@ export function recognizeForOfPush(
 
   const guards: IR1Expr[] = [];
   for (const guardExpr of push.guardExprs) {
-    if (expressionReferencesNames(guardExpr, accNames)) {
+    if (expressionReferencesNames(guardExpr, accNameSet)) {
       return null;
     }
     if (!isStaticallyBoolTyped(guardExpr, ctx.checker)) {
@@ -2701,7 +2702,7 @@ export function recognizeForOfPush(
 }
 
 function lowerForOfLoopLocalConstBindings(
-  bindings: readonly Array<{ tsName: string; initializer: ts.Expression }>,
+  bindings: ReadonlyArray<{ tsName: string; initializer: ts.Expression }>,
   ctx: L1BuildContext,
   accNames: ReadonlySet<string>,
 ): {
@@ -2710,6 +2711,7 @@ function lowerForOfLoopLocalConstBindings(
 } | null {
   let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
   const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  const accNameSet = new Set(accNames);
 
   for (const [idx, binding] of bindings.entries()) {
     const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
@@ -2717,7 +2719,7 @@ function lowerForOfLoopLocalConstBindings(
       return null;
     }
     if (
-      expressionReferencesNames(binding.initializer, accNames) ||
+      expressionReferencesNames(binding.initializer, accNameSet) ||
       expressionReferencesNames(binding.initializer, blockedNames)
     ) {
       return null;
