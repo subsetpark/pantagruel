@@ -15,7 +15,7 @@ jobs:
             artifact: pant-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
@@ -77,7 +77,7 @@ jobs:
           echo "macos_arm64=$(shasum -a 256 pant-macos-arm64.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "linux_x86_64=$(shasum -a 256 pant-linux-x86_64.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Generate and commit formula
         run: |
