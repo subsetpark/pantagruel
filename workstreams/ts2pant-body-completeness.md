@@ -126,6 +126,16 @@ union field access.
   clear Pant target, and reject ambiguous forms with a diagnostic that explains
   the boundary. Every milestone in this workstream must preserve that behavior.
 
+- **paper — Meijer, Fokkinga & Paterson 1991, Functional Programming with
+  Bananas, Lenses, Envelopes and Barbed Wire** —
+  https://maartenfokkinga.github.io/utwente/mmf91m.pdf
+  Collection builders are catamorphisms over the source list: a for-of/forEach
+  build-list is `map`/`filter`, a Set builder is the same recursion scheme
+  observed by membership, and a commutative identity-bearing scalar fold is
+  `foldr` with a monoid combiner (whose unit is the elided init). This frames
+  M2's straight-line builders, M3's loop-backed builders and scalar folds, and
+  the existing Structured Iteration Shape A/B/C lowerings under one scheme.
+
 ## Milestones
 
 ### Milestone 1: body-lowering-completeness-rd2 — COMPLETE (PRs #351–#355)
@@ -184,15 +194,25 @@ fresh residual ranking before committing to M2's exact fixture set.
 
 ---
 
-### Milestone 2: local-collection-builder-sequencing — PLANNED
+### Milestone 2: local-collection-builder-sequencing — COMPLETE (PRs #357–#360)
 
-> Planned by
-> the M2 local-collection-builder-sequencing gameplan.
-> The M2 gameplan resolves the representation questions below: finite ordered
-> list builders emit cardinality plus 1-based positional assertions over the
-> declared return rule; straight-line Set `.add` builders emit membership
-> assertions over the Set-as-list return value; Map builders are deferred to a
-> Map-specific milestone.
+> Landed on master via `gameplans/ts2pant-local-collection-builder-sequencing.json`
+> (PRs #357–#360). Finite ordered list builders emit cardinality plus 1-based
+> positional assertions over the declared return rule; straight-line Set `.add`
+> builders emit membership assertions over the Set-as-list return value; Map
+> builders are deferred to a Map-specific milestone.
+>
+> Post-M2 corpus diagnostic baseline (`--summary-only`): 844 top-level
+> functions, 170 clean, 669 unsupported, 5 errors. Top structural
+> body-completeness buckets: `for-of loop is not a recognized build-list
+> comprehension` 52, `if-with-return block...` 43, `expression statement before
+> return` 41, `local bindings or multiple statements before return` 22, switch
+> default/case 19/14. (The 79-count `alias IR1ForeachCondStmt` and 59/33
+> early-return-side-effects buckets are DU-encoding artifacts and guard/foreign
+> follow-ons, not body-completeness-owned.) A shape survey of the 52 for-of
+> failures: list-push-extended 30 (dominant), set-add 1, scalar-fold 3,
+> control-flow 7, multi-collection 3, no-for-of/other 7 — which set M3's first
+> loop family.
 
 **Definition of Done**:
 - The pure-body prelude recognizes bounded local collection builders such as
@@ -231,11 +251,12 @@ Follow-on iteration completeness: once straight-line builders are expressible,
 `for-of` and `forEach` variants can target the same builder representation.
 
 **Operator Actions Before Next Milestone**:
-- Re-run the corpus diagnostic and split the remaining 53 for-of and 21 local
-  multi-statement buckets by shape: build-list, scalar fold, Set/Map builder,
-  early-exit loop, or unsupported control flow.
-- Decide M3's exact first loop family from that split. Default preference:
-  choose the largest family that reuses the M2 builder representation.
+- Done: re-ran the corpus diagnostic (post-M2 baseline recorded above) and split
+  the 52 for-of failures by shape: list-push-extended 30, set-add 1,
+  scalar-fold 3, control-flow 7, multi-collection 3, no-for-of/other 7.
+- Done: M3's first loop family is the for-of list-build widening (largest family
+  reusing the for-of `each` comprehension target); Set builders and commutative
+  scalar folds added as adjacent reuse, no-identity reduces and forEach deferred.
 
 **Open Questions**:
 - Resolved by the M2 gameplan: finite ordered list builders use cardinality
@@ -245,19 +266,39 @@ Follow-on iteration completeness: once straight-line builders are expressible,
 
 ---
 
-### Milestone 3: iteration-builder-completeness
+### Milestone 3: iteration-builder-completeness — PLANNED
+
+> Planned by `gameplans/ts2pant-iteration-builder-completeness.json` (5 patches:
+> 2 INFRA + 3 BEHAVIOR chained 2→3→4). Concrete scope, fixed by the post-M2
+> survey: (a) widen the for-of build-list recognizer to admit pure loop-local
+> `const` bindings before the push and compound/nested guards, reusing the
+> existing `each binder in src, guards | proj` comprehension; (b) for-of Set
+> builders via a membership-equivalence assertion over a `some` comprehension
+> (`all e: T | e in (f args) <-> some n in src, guards | e = proj n`), sound
+> under deduplication; (c) pure-body scalar accumulator folds for commutative
+> identity-bearing OP ∈ {+, *, &&, ||} (and `count++`), reusing the Shape-C
+> `combOP over each` reduce with identity-elision. No-identity / nullable
+> reduces (conjoin/disjoin) and `forEach` callbacks are deferred (see Decisions
+> Made and Open Questions).
 
 **Definition of Done**:
-- Additional `for-of` / `forEach` bodies that build a local collection through
-  the M2 builder representation translate instead of rejecting as
+- For-of list builders whose loop body has pure loop-local `const` bindings
+  before the (optionally guarded) push, or compound/nested guards, translate to
+  the `each binder in src, guards | proj` comprehension instead of rejecting as
   `for-of loop is not a recognized build-list comprehension`.
-- Supported loop bodies may include simple guards, const-bound projections,
-  and accumulator writes whose target is the recognized local builder.
-- Loop bodies with `break`, `continue`, `throw`, nested unsupported loops,
-  accumulator aliasing, or order-dependent mutation outside the builder remain
-  rejected.
-- The targeted for-of residual bucket moves down in the post-M3 corpus
-  diagnostic.
+- For-of Set builders (`const s = new Set<T>(); for (const x of xs) [if (g)]
+  s.add(proj(x)); return s`) translate to the membership-equivalence assertion
+  over a `some` comprehension (never to a list-equality `each`).
+- Pure-body scalar accumulator folds with a commutative identity-bearing
+  combiner translate to `init OP (combOP over each n in src[, g] | f n)` with
+  `init` elided at the combiner identity.
+- Loop bodies with `break`, `continue` beyond the single leading-guard form,
+  early `return`, `throw`, nested unsupported loops, accumulator aliasing/escape,
+  no-identity/nullable reduces, non-commutative accumulations, Map builders, Set
+  `.delete`/`.clear`, and multi-collection loops remain rejected.
+- The targeted `for-of loop is not a recognized build-list comprehension`
+  bucket moves down in the post-M3 corpus diagnostic (movement driven primarily
+  by the list-build widening, the dominant family).
 - Existing `expressions-for-of-comprehension.ts` behavior remains
   byte-identical unless M3 explicitly owns a more general canonical output.
 
@@ -280,9 +321,10 @@ positives in the diagnostic output.
   and non-literal labels.
 
 **Open Questions**:
-- Whether scalar folds such as `let total = 0; for (...) total += f(x);
-  return total` belong in M3 or a separate scalar-fold milestone depends on
-  the M2/M3 diagnostic split.
+- Resolved by the M3 gameplan: commutative identity-bearing scalar folds
+  (`+`, `*`, `&&`, `||`, `count++`) are in M3, lowering to the Shape-C
+  `combOP over each` reduce. No-identity / nullable reduces (conjoin/disjoin),
+  which need an option-typed fold, are deferred to a later milestone.
 
 ---
 
@@ -362,8 +404,8 @@ type/opaque precision rather than structural body sequencing.
 | Question | Notes | Resolve By |
 |----------|-------|------------|
 | What post-M1 bucket threshold defines "workstream complete"? | Suggested threshold: no body-completeness-owned normalized bucket above 10 functions, but this should be confirmed after M1/M2 because bucket normalization may split or merge shapes. | M4 operator review |
-| Should scalar local folds be part of `iteration-builder-completeness`? | They are adjacent to collection builders but may require a different scalar-fold encoding. Include only if the post-M2 corpus split shows a coherent high-count family. | M3 gameplan |
-| Is `forEach` callback `return` behavior in scope? | `forEach` callbacks do not return from the outer function, so support is only sound for local builder effects, not early outer returns. | M3 gameplan |
+| ~~Should scalar local folds be part of `iteration-builder-completeness`?~~ | RESOLVED (M3 gameplan): yes for commutative identity-bearing folds (`+`, `*`, `&&`, `||`, `count++`) via the Shape-C `combOP over each` reduce; no-identity/nullable reduces (conjoin/disjoin) deferred to a later option-typed-fold milestone. The post-M2 survey found only 3 scalar folds in the for-of bucket, all no-identity. | Resolved |
+| ~~Is `forEach` callback `return` behavior in scope?~~ | RESOLVED (M3 gameplan): deferred. No `forEach` instances in the for-of bucket; `forEach` routes through the mutating Shape A/B machinery, and callback `return` only exits the callback. Revisit once the for-of widening is the established target. | Resolved |
 
 ## Decisions Made
 
@@ -375,6 +417,9 @@ type/opaque precision rather than structural body sequencing.
 | Conservative refusal remains the steering policy. | The goal is not arbitrary JS support; it is accepting idiomatic, unambiguous TS only when Pantagruel has a faithful target. |
 | M2 ordered list builders use finite positional assertions. | Pantagruel has no list literal, and comprehensions over synthetic finite tuples would introduce unnecessary helper domains. Cardinality plus 1-based list-application equations preserves push order while constraining the declared return rule directly. |
 | M2 includes Set `.add` builders but defers Map builders. | Set lowers to the existing `[T]` membership encoding, so membership equivalence is a faithful target. Map construction touches the guarded Stage A/Stage B partial-rule pair and needs a Map-specific milestone rather than being bundled into local builder sequencing. |
+| M3's first loop family is the for-of list-build widening (loop-local consts + compound/nested guards). | The post-M2 survey of the 52 for-of failures found list-push-extended dominant (30); the M2 operator action mandated choosing the largest family that reuses the established builder target, and this reuses the for-of `each` comprehension with no new target-language construct. |
+| M3 includes for-of Set builders, lowered to membership-equivalence over a `some` comprehension, not list equality. | A Set deduplicates and is order-agnostic; equating it to `each n in src | proj n` over-constrains the result when two distinct elements project equal. `all e: T | e in (f args) <-> some n in src, guards | e = proj n` is the faithful, checker-supported encoding and matches M2's Set-as-list membership philosophy. |
+| M3 includes commutative identity-bearing scalar folds but defers no-identity reduces and forEach. | `+`/`*`/`&&`/`||` (and `count++`) form monoids whose unit is the elided init, mapping cleanly onto the Shape-C `combOP over each` reduce. conjoin/disjoin are null-seeded no-identity reduces needing an option-typed fold target; forEach routes through the mutating Shape A/B path. Both are deferred to keep M3 a clean, atomic extension of the comprehension target. |
 
 ## Definition of Done (Acceptance Suite)
 
@@ -426,17 +471,28 @@ not need to read source to decide pass/fail.
   - **Traces to**: Milestone 2 — local collection builder lowering in
     `tools/ts2pant/src/translate-body.ts`.
 
-- **DoD-4 — Builder-backed for-of variants translate**
-  - **Assert**: A fixture whose `for-of` body builds a recognized local
-    collection through the M2 builder target emits a Pantagruel value rather
-    than `for-of loop is not a recognized build-list comprehension`.
-  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect the
-    iteration builder fixture snapshots.
-  - **Expected**: Positive iteration-builder fixtures typecheck; negative
-    loop-control fixtures with break/continue/throw or aliasing remain
-    unsupported.
+- **DoD-4 — Builder-backed for-of variants and scalar folds translate**
+  - **Assert**: In `tools/ts2pant/tests/iteration-builder.test.mts` over
+    `tools/ts2pant/tests/fixtures/constructs/expressions-iteration-builder.ts`:
+    (a) a for-of list builder with a loop-local const projection and one with a
+    compound/nested guard emit an `each binder in src, guards | proj`
+    comprehension; (b) a for-of Set builder emits
+    `all e: T | e in (f args) <-> some n in src, guards | e = proj n`;
+    (c) a scalar fold (`let total = 0; for (...) total += f(x); return total`)
+    emits `(f args) = (+ over each n in src[, g] | f n)` (init elided), and an
+    `&&` fold emits `and over each`. None emit
+    `for-of loop is not a recognized build-list comprehension`.
+  - **Verify by** `cmd`: Run `just ts2pant-test-unit` (and
+    `just ts2pant-test-integration` for entailment) and inspect the
+    iteration-builder test assertions.
+  - **Expected**: Positive list/Set/scalar-fold fixtures typecheck and emit the
+    forms above; negative fixtures (break, continue-beyond-guard, early return,
+    throw, nested loop, accumulator alias/escape, Map builder, Set
+    `.delete`/`.clear`, no-identity reduce, non-commutative accumulation) remain
+    unsupported with precise diagnostics.
   - **Traces to**: Milestone 3 — iteration builder lowering in
-    `tools/ts2pant/src/translate-body.ts` and `tools/ts2pant/src/ir1-build-body.ts`.
+    `tools/ts2pant/src/translate-body.ts` (`recognizeForOfPush`/`recognizeForOfPushBody`,
+    `tryBuildForOfSetComprehensionReturn`, `tryBuildForOfScalarFoldReturn`).
 
 - **DoD-5 — Switch value bodies preserve conservative switch semantics**
   - **Assert**: Supported no-fall-through switch value fixtures emit `cond`
