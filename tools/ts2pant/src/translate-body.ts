@@ -2650,16 +2650,31 @@ export function recognizeForOfPush(
   if (push === null) {
     return null;
   }
+  const localBindings = lowerForOfLoopLocalConstBindings(
+    push.localBindings,
+    scopedCtx,
+    accNames,
+  );
+  if (localBindings === null) {
+    return null;
+  }
   if (expressionHasSideEffects(push.projExpr, ctx.checker)) {
     return null;
   }
-  const proj = buildPureL1OrNull(push.projExpr, scopedCtx);
+  const accNameSet = new Set(accNames);
+  if (expressionReferencesNames(push.projExpr, accNameSet)) {
+    return null;
+  }
+  const proj = buildPureL1OrNull(push.projExpr, localBindings.scopedCtx);
   if (proj === null) {
     return null;
   }
 
   const guards: IR1Expr[] = [];
   for (const guardExpr of push.guardExprs) {
+    if (expressionReferencesNames(guardExpr, accNameSet)) {
+      return null;
+    }
     if (!isStaticallyBoolTyped(guardExpr, ctx.checker)) {
       return null;
     }
@@ -2670,20 +2685,72 @@ export function recognizeForOfPush(
     ) {
       return null;
     }
-    const guard = buildPureL1OrNull(guardExpr, scopedCtx);
+    const guard = buildPureL1OrNull(guardExpr, localBindings.scopedCtx);
     if (guard === null) {
       return null;
     }
-    guards.push(guard);
+    guards.push(inlineForOfLoopLocalConstBindings(guard, localBindings));
   }
 
   return {
     binder,
     src,
-    proj,
+    proj: inlineForOfLoopLocalConstBindings(proj, localBindings),
     guards,
     accName: push.accName,
   };
+}
+
+function lowerForOfLoopLocalConstBindings(
+  bindings: ReadonlyArray<{ tsName: string; initializer: ts.Expression }>,
+  ctx: L1BuildContext,
+  accNames: ReadonlySet<string>,
+): {
+  scopedCtx: L1BuildContext;
+  substitutions: Array<{ localName: string; value: IR1Expr }>;
+} | null {
+  let scopedParams: ReadonlyMap<string, string> = ctx.paramNames;
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  const accNameSet = new Set(accNames);
+
+  for (const [idx, binding] of bindings.entries()) {
+    const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
+    if (expressionHasSideEffects(binding.initializer, ctx.checker)) {
+      return null;
+    }
+    if (
+      expressionReferencesNames(binding.initializer, accNameSet) ||
+      expressionReferencesNames(binding.initializer, blockedNames)
+    ) {
+      return null;
+    }
+    const localName = freshHygienicBinder(ctx.supply);
+    const value = buildPureL1OrNull(binding.initializer, {
+      ...ctx,
+      paramNames: scopedParams,
+    });
+    if (value === null) {
+      return null;
+    }
+    substitutions.push({ localName, value });
+    scopedParams = withParam(scopedParams, binding.tsName, localName);
+  }
+
+  return {
+    scopedCtx: { ...ctx, paramNames: scopedParams },
+    substitutions,
+  };
+}
+
+function inlineForOfLoopLocalConstBindings(
+  expr: IR1Expr,
+  bindings: { substitutions: Array<{ localName: string; value: IR1Expr }> },
+): IR1Expr {
+  return bindings.substitutions.reduceRight(
+    (acc, binding) =>
+      substituteIR1ExprSubtree(acc, ir1Var(binding.localName), binding.value),
+    expr,
+  );
 }
 
 function forOfSourceIsExpressible(
@@ -2728,24 +2795,70 @@ interface RecognizedPushBody {
   accName: string;
   projExpr: ts.Expression;
   guardExprs: ts.Expression[];
+  localBindings: Array<{
+    tsName: string;
+    initializer: ts.Expression;
+  }>;
 }
 
 function recognizeForOfPushBody(
   stmt: ts.Statement,
   accNames: ReadonlySet<string>,
 ): RecognizedPushBody | null {
-  if (ts.isBlock(stmt) && stmt.statements.length === 2) {
-    const guard = recognizeIfContinue(stmt.statements[0]!);
+  if (ts.isBlock(stmt)) {
+    const localBindings: RecognizedPushBody["localBindings"] = [];
+    let idx = 0;
+    while (idx < stmt.statements.length) {
+      const current = stmt.statements[idx]!;
+      if (!ts.isVariableStatement(current)) {
+        break;
+      }
+      if (!(current.declarationList.flags & ts.NodeFlags.Const)) {
+        return null;
+      }
+      const bindings = constBindingsFromDeclarationList(
+        current.declarationList,
+      );
+      if (bindings === null) {
+        return null;
+      }
+      for (const binding of bindings) {
+        if (binding.kind !== "const") {
+          return null;
+        }
+        localBindings.push({
+          tsName: binding.tsName,
+          initializer: binding.initializer,
+        });
+      }
+      idx += 1;
+    }
+
+    const remaining = stmt.statements.slice(idx);
+    if (remaining.length === 1) {
+      const body = recognizeForOfPushBody(remaining[0]!, accNames);
+      return body === null
+        ? null
+        : {
+            ...body,
+            localBindings: [...localBindings, ...body.localBindings],
+          };
+    }
+    if (remaining.length !== 2) {
+      return null;
+    }
+    const guard = recognizeIfContinue(remaining[0]!);
     if (guard === null) {
       return null;
     }
-    const push = recognizePushStatement(stmt.statements[1]!, accNames);
+    const push = recognizePushStatement(remaining[1]!, accNames);
     if (push === null) {
       return null;
     }
     return {
       ...push,
-      guardExprs: [guard],
+      guardExprs: flattenConjunctiveGuards(guard),
+      localBindings,
     };
   }
 
@@ -2756,7 +2869,7 @@ function recognizeForOfPushBody(
 
   const direct = recognizePushStatement(bodyStmt, accNames);
   if (direct !== null) {
-    return { ...direct, guardExprs: [] };
+    return { ...direct, guardExprs: [], localBindings: [] };
   }
 
   if (ts.isIfStatement(bodyStmt)) {
@@ -2767,16 +2880,33 @@ function recognizeForOfPushBody(
       bodyStmt.thenStatement,
       accNames,
     );
-    if (guardedPush === null || guardedPush.guardExprs.length !== 0) {
+    if (guardedPush === null) {
       return null;
     }
     return {
       ...guardedPush,
-      guardExprs: [bodyStmt.expression],
+      guardExprs: [
+        ...flattenConjunctiveGuards(bodyStmt.expression),
+        ...guardedPush.guardExprs,
+      ],
     };
   }
 
   return null;
+}
+
+function flattenConjunctiveGuards(expr: ts.Expression): ts.Expression[] {
+  const unwrapped = unwrapExpression(expr);
+  if (
+    ts.isBinaryExpression(unwrapped) &&
+    unwrapped.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+  ) {
+    return [
+      ...flattenConjunctiveGuards(unwrapped.left),
+      ...flattenConjunctiveGuards(unwrapped.right),
+    ];
+  }
+  return [expr];
 }
 
 function unwrapSingleStatementBlock(stmt: ts.Statement): ts.Statement | null {
@@ -2789,7 +2919,7 @@ function unwrapSingleStatementBlock(stmt: ts.Statement): ts.Statement | null {
 function recognizePushStatement(
   stmt: ts.Statement,
   accNames: ReadonlySet<string>,
-): Omit<RecognizedPushBody, "guardExprs"> | null {
+): Omit<RecognizedPushBody, "guardExprs" | "localBindings"> | null {
   if (!ts.isExpressionStatement(stmt)) {
     return null;
   }

@@ -19,7 +19,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this list-builder widening case.
   it(
     "listConstProjection inlines loop-local const into the comprehension",
-    { skip: "Patch 2 implements for-of list builders with loop-local consts" },
     async () => {
       const output = await emitFixture("listConstProjection");
       assert.match(
@@ -33,7 +32,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this list-builder widening case.
   it(
     "listCompoundGuard folds both conjuncts into guards",
-    { skip: "Patch 2 implements compound for-of list-builder guards" },
     async () => {
       const output = await emitFixture("listCompoundGuard");
       assert.match(
@@ -47,7 +45,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this list-builder widening case.
   it(
     "listNestedGuard folds nested if guards into the comprehension",
-    { skip: "Patch 2 implements nested for-of list-builder guards" },
     async () => {
       const output = await emitFixture("listNestedGuard");
       assert.match(
@@ -117,7 +114,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this preserved list-builder rejection.
   it(
     "listEarlyReturnInLoopRejected remains unsupported",
-    { skip: "Patch 2 verifies early-return loop rejection" },
     async () => {
       const output = await emitFixture("listEarlyReturnInLoopRejected");
       assert.match(output, /^> UNSUPPORTED: list-early-return-in-loop-rejected/mu);
@@ -128,7 +124,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this preserved list-builder rejection.
   it(
     "listBreakRejected remains unsupported",
-    { skip: "Patch 2 verifies break loop rejection" },
     async () => {
       const output = await emitFixture("listBreakRejected");
       assert.match(output, /^> UNSUPPORTED: list-break-rejected/mu);
@@ -139,7 +134,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this preserved list-builder rejection.
   it(
     "listNestedLoopRejected remains unsupported",
-    { skip: "Patch 2 verifies nested loop rejection" },
     async () => {
       const output = await emitFixture("listNestedLoopRejected");
       assert.match(output, /^> UNSUPPORTED: list-nested-loop-rejected/mu);
@@ -150,7 +144,6 @@ describe("iteration builder", () => {
   // Patch 2 unskips this preserved list-builder rejection.
   it(
     "listAccumulatorAliasRejected remains unsupported",
-    { skip: "Patch 2 verifies accumulator alias rejection" },
     async () => {
       const output = await emitFixture("listAccumulatorAliasRejected");
       assert.match(output, /^> UNSUPPORTED: list-accumulator-alias-rejected/mu);
