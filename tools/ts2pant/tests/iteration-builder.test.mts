@@ -4,30 +4,15 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import {
-  buildDocument,
-  emitAndCheck,
-  runCheck,
-  solverAvailable,
-} from "./helpers.mjs";
+import { buildDocument, emitAndCheck } from "./helpers.mjs";
 
 const FIXTURE = resolve(
   import.meta.dirname,
   "fixtures/constructs/expressions-iteration-builder.ts",
 );
 
-const hasSolver = solverAvailable();
-
 async function emitFixture(functionName: string): Promise<string> {
   return emitAndCheck(await buildDocument(FIXTURE, functionName));
-}
-
-function assertCheckerPasses(output: string): void {
-  if (!hasSolver) {
-    return;
-  }
-  const result = runCheck(output);
-  assert.ok(result.passed, `pant --check failed:\n${result.output}`);
 }
 
 describe("iteration builder", () => {
@@ -42,7 +27,6 @@ describe("iteration builder", () => {
         /^list-const-projection items = \(each item in items \| iteration-item--label item\)\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -57,7 +41,6 @@ describe("iteration builder", () => {
         /^list-compound-guard items = \(each item in items, iteration-item--active item, iteration-item--ready item \| item\)\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -72,7 +55,6 @@ describe("iteration builder", () => {
         /^list-nested-guard items = \(each item in items, iteration-item--active item, iteration-item--ready item \| iteration-item--id item\)\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -87,7 +69,6 @@ describe("iteration builder", () => {
         /x in set-add-for-of items <-> \(some item in items \| x = iteration-item--id item\)/u,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -102,7 +83,6 @@ describe("iteration builder", () => {
         /^sum-int-fold items = \+ over each item in items \| iteration-item--count item\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -117,7 +97,6 @@ describe("iteration builder", () => {
         /^count-guarded-fold items = \+ over each item in items, iteration-item--active item \| 1\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
@@ -132,7 +111,6 @@ describe("iteration builder", () => {
         /^all-active-fold items = and over each item in items \| iteration-item--active item\.$/mu,
       );
       assert.doesNotMatch(output, /UNSUPPORTED/u);
-      assertCheckerPasses(output);
     },
   );
 
