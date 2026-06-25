@@ -228,6 +228,19 @@ function setAccumulatorAliasForOfRejected(items: IterationItem[]): Set<string> {
 }
 
 /**
+ * Out-of-scope control: Set builder projections may not read the accumulator
+ * they are defining.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setAccumulatorReadForOfRejected(items: IterationItem[]): Set<number> {
+  const out = new Set<number>();
+  for (const _item of items) {
+    out.add(out.size);
+  }
+  return out;
+}
+
+/**
  * Out-of-scope control: recognized for-of builder pieces may not reference a
  * binding declared later in the prelude.
  */

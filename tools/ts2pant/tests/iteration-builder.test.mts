@@ -51,7 +51,7 @@ describe("iteration builder", () => {
     const output = await emitFixture("setAddForOf");
     assert.match(
       output,
-      /x in set-add-for-of items <-> \(some n[0-9]* in items \| x = iteration-item--id n[0-9]*\)/u,
+      /x in set-add-for-of items <-> \(some (n[0-9]*) in items \| x = iteration-item--id \1\)/u,
     );
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
@@ -146,10 +146,19 @@ describe("iteration builder", () => {
     assert.match(output, /alias|escape|accumulator|builder/u);
   });
 
+  it("setAccumulatorReadForOfRejected remains unsupported", async () => {
+    const output = await emitFixture("setAccumulatorReadForOfRejected");
+    assert.match(
+      output,
+      /^> UNSUPPORTED: set-accumulator-read-for-of-rejected/mu,
+    );
+    assert.match(output, /read the accumulator/u);
+  });
+
   it("setTdzSourceForOfRejected remains unsupported", async () => {
     const output = await emitFixture("setTdzSourceForOfRejected");
     assert.match(output, /^> UNSUPPORTED: set-tdz-source-for-of-rejected/mu);
-    assert.match(output, /later binding|for-of/u);
+    assert.match(output, /later binding/u);
   });
 
   // Patch 4 unskips this preserved scalar-fold rejection.

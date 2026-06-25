@@ -1369,8 +1369,16 @@ function translatePureBody(
     const someExpr = ast.exists(
       [],
       [
-        ast.gIn(someBinder, lowerL1ToOpaque(forOfSetComprehension.forOf.src)),
-        ...someGuards.map((guard) => ast.gExpr(lowerL1ToOpaque(guard))),
+        ast.gIn(
+          someBinder,
+          applyOpaqueAliases(
+            lowerL1ToOpaque(forOfSetComprehension.forOf.src),
+            supply,
+          ),
+        ),
+        ...someGuards.map((guard) =>
+          ast.gExpr(applyOpaqueAliases(lowerL1ToOpaque(guard), supply)),
+        ),
       ],
       someBody,
     );
@@ -2043,6 +2051,16 @@ function tryBuildForOfComprehensionReturn(
   }
 
   const forOf = forOfBindings[0]!;
+  const accIr1Names = blockedNamesForIR1(accDecls);
+  if (
+    [forOf.src, forOf.proj, ...forOf.guards].some((expr) =>
+      ir1ExprReferencesAnyName(expr, accIr1Names),
+    )
+  ) {
+    return {
+      error: "for-of Set builder may not read the accumulator inside the loop",
+    };
+  }
   const otherBindings = extracted.bindings.filter(
     (binding) => binding !== forOf && binding !== accDecls[0],
   );
@@ -3477,16 +3495,6 @@ function describeForOfCollectionBuilderRejection(
       }
     }
     if (ts.isCallExpression(node)) {
-      for (const arg of node.arguments) {
-        if (
-          expressionReferencesNames(arg, setNames) ||
-          expressionReferencesNames(arg, mapNames)
-        ) {
-          reason =
-            "collection builder accumulator alias or escape is not supported";
-          return;
-        }
-      }
       const callee = node.expression;
       if (
         ts.isPropertyAccessExpression(callee) &&
@@ -3501,6 +3509,23 @@ function describeForOfCollectionBuilderRejection(
         }
         if (setNames.has(receiver) && method !== "add") {
           reason = `Set builder mutation .${method} is not supported`;
+          return;
+        }
+        if (
+          setNames.has(receiver) &&
+          node.arguments.some((arg) => expressionReferencesNames(arg, setNames))
+        ) {
+          reason = "Set builder may not read the accumulator inside the loop";
+          return;
+        }
+      }
+      for (const arg of node.arguments) {
+        if (
+          expressionReferencesNames(arg, setNames) ||
+          expressionReferencesNames(arg, mapNames)
+        ) {
+          reason =
+            "collection builder accumulator alias or escape is not supported";
           return;
         }
       }
