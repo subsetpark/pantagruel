@@ -2058,7 +2058,8 @@ function tryBuildForOfComprehensionReturn(
     )
   ) {
     return {
-      error: "for-of Set builder may not read the accumulator inside the loop",
+      error:
+        "for-of build-list comprehension may not read the accumulator inside the loop",
     };
   }
   const otherBindings = extracted.bindings.filter(
@@ -3505,6 +3506,11 @@ function describeForOfCollectionBuilderRejection(
         if (mapNames.has(receiver)) {
           reason =
             "Map builder construction is not supported in this milestone";
+          return;
+        }
+        if (setAliases.has(receiver)) {
+          reason =
+            "collection builder accumulator alias or escape is not supported";
           return;
         }
         if (setNames.has(receiver) && method !== "add") {

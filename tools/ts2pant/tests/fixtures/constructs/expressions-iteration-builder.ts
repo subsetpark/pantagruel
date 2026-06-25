@@ -222,7 +222,7 @@ function setAccumulatorAliasForOfRejected(items: IterationItem[]): Set<string> {
   const out = new Set<string>();
   const alias = out;
   for (const item of items) {
-    out.add(item.id);
+    alias.add(item.id);
   }
   return out;
 }
