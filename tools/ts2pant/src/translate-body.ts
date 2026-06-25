@@ -229,6 +229,7 @@ type PreludeStmt =
   | { kind: "muSearch"; tsName: string; mu: MuSearch; localName?: string }
   | ({ kind: "forOf" } & RecognizedForOfPush)
   | ({ kind: "forOfSet" } & RecognizedForOfSetAdd)
+  | ({ kind: "forOfFold" } & RecognizedForOfScalarFold)
   | { kind: "builderPush"; accName: string; valueExpr: ts.Expression }
   | { kind: "builderSetAdd"; accName: string; valueExpr: ts.Expression }
   | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
@@ -255,6 +256,15 @@ export interface RecognizedForOfSetAdd {
   proj: IR1Expr;
   guards: IR1Expr[];
   accName: string;
+}
+
+export interface RecognizedForOfScalarFold {
+  binder: string;
+  src: IR1Expr;
+  contribution: IR1Expr;
+  guards: IR1Expr[];
+  accName: string;
+  info: ReduceOpInfo;
 }
 
 /** Names a binding introduces into scope (none for an early-return arm). */
@@ -1395,6 +1405,37 @@ function translatePureBody(
     ];
   }
 
+  const forOfScalarFold = tryBuildForOfScalarFoldReturn(
+    extracted,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+  );
+  if (forOfScalarFold !== null) {
+    if ("error" in forOfScalarFold) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${forOfScalarFold.error}`,
+        },
+      ];
+    }
+    const argExprs = params.map((p) => ast.var(p.name));
+    const lhs = ast.app(ast.var(functionName), argExprs);
+    return [
+      ...forOfScalarFold.prelude.ruleDecls,
+      ...forOfScalarFold.loweredLets.propositions,
+      {
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        lhs,
+        rhs: forOfScalarFold.rhs,
+      },
+    ];
+  }
+
   const localListBuilder = tryBuildLocalListBuilderReturn(
     extracted,
     checker,
@@ -1985,6 +2026,12 @@ interface ForOfSetBuilderResult {
   diagnostics: PropResult[];
 }
 
+interface ForOfScalarFoldResult {
+  prelude: LoweredPreludeBindings;
+  loweredLets: IR1SsaBodyLowerResult;
+  rhs: OpaqueExpr;
+}
+
 function tryBuildForOfComprehensionReturn(
   extracted: ExtractedBody,
   checker: ts.TypeChecker,
@@ -2244,6 +2291,111 @@ function tryBuildForOfSetComprehensionReturn(
     prelude,
     loweredLets,
     diagnostics: loweredLets.diagnostics,
+  };
+}
+
+function tryBuildForOfScalarFoldReturn(
+  extracted: ExtractedBody,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  env: AssumptionEnv,
+): ForOfScalarFoldResult | { error: string } | null {
+  const ast = getAst();
+  if (!ts.isExpression(extracted.returnExpr)) {
+    return null;
+  }
+  const returnedExpr = unwrapExpression(extracted.returnExpr);
+  if (!ts.isIdentifier(returnedExpr)) {
+    return null;
+  }
+  const accName = returnedExpr.text;
+  const forOfBindings = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "forOfFold" }> =>
+      binding.kind === "forOfFold" && binding.accName === accName,
+  );
+  if (forOfBindings.length === 0) {
+    return null;
+  }
+  if (forOfBindings.length !== 1) {
+    return { error: "for-of scalar fold must have one loop" };
+  }
+  const accDecls = extracted.bindings.filter(
+    (binding): binding is Extract<PreludeStmt, { kind: "const" }> =>
+      binding.kind === "const" && binding.tsName === accName,
+  );
+  if (accDecls.length !== 1) {
+    return {
+      error: "for-of scalar fold must return its local accumulator",
+    };
+  }
+  const forOf = forOfBindings[0]!;
+  const accDecl = accDecls[0]!;
+  const otherBindings = extracted.bindings.filter(
+    (binding) => binding !== forOf && binding !== accDecl,
+  );
+  if (otherBindings.length > 0) {
+    return {
+      error:
+        "for-of scalar fold must be exactly one accumulator let followed by one loop",
+    };
+  }
+  if (guardStatementsReadName(extracted.guardStmts, accName)) {
+    return {
+      error: "for-of scalar fold guard may not read the accumulator",
+    };
+  }
+
+  const prelude = lowerPreludeBindings(
+    otherBindings,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+    env,
+    undefined,
+  );
+  if ("error" in prelude) {
+    return prelude;
+  }
+  const loweredLets = ir1SsaBodyLowerSuccess();
+  const folded = ast.eachComb(
+    [],
+    [
+      ast.gIn(forOf.binder, lowerL1ToOpaque(forOf.src)),
+      ...forOf.guards.map((guard) => ast.gExpr(lowerL1ToOpaque(guard))),
+    ],
+    makeCombiner(forOf.info.combiner),
+    lowerL1ToOpaque(forOf.contribution),
+  );
+
+  if (
+    forOf.info.identityText !== null &&
+    isIdentityInit(accDecl.initializer, forOf.info.identityText)
+  ) {
+    return { prelude, loweredLets, rhs: folded };
+  }
+
+  const init = buildPureL1OrNull(accDecl.initializer, {
+    checker,
+    strategy,
+    paramNames,
+    state: undefined,
+    supply,
+    env,
+  });
+  if (init === null) {
+    return { error: "for-of scalar fold initializer is not pure" };
+  }
+  const outerOp = translateOperator(forOf.info.outer);
+  if (outerOp === null) {
+    return { error: "for-of scalar fold outer operator translation failed" };
+  }
+  return {
+    prelude,
+    loweredLets,
+    rhs: ast.binop(outerOp, lowerL1ToOpaque(init), folded),
   };
 }
 
@@ -2931,6 +3083,118 @@ export function recognizeForOfSetAdd(
   );
 }
 
+export function recognizeForOfScalarFold(
+  stmt: ts.ForOfStatement,
+  accNames: ReadonlySet<string>,
+  ctx: L1BuildContext,
+): RecognizedForOfScalarFold | null {
+  const init = stmt.initializer;
+  if (
+    !ts.isVariableDeclarationList(init) ||
+    !(init.flags & ts.NodeFlags.Const) ||
+    init.declarations.length !== 1
+  ) {
+    return null;
+  }
+  const decl = init.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    return null;
+  }
+
+  const binderTsName = decl.name.text;
+  const binder = toPantTermName(binderTsName);
+  const scopedParams = new Map(ctx.paramNames);
+  scopedParams.set(binderTsName, binder);
+  const scopedCtx: L1BuildContext = { ...ctx, paramNames: scopedParams };
+
+  if (!forOfSourceIsExpressible(stmt, decl, ctx)) {
+    return null;
+  }
+  const src = buildPureL1OrNull(stmt.expression, ctx);
+  if (src === null) {
+    return null;
+  }
+
+  const fold = recognizeForOfScalarFoldBody(stmt.statement, accNames);
+  if (fold === null) {
+    return null;
+  }
+  const accNameSet = new Set([fold.accName]);
+  if (
+    expressionHasSideEffects(fold.valueExpr, ctx.checker) ||
+    expressionHasUnsupportedScalarFoldPropertyAccess(fold.valueExpr, ctx) ||
+    expressionReferencesNames(fold.valueExpr, accNameSet)
+  ) {
+    return null;
+  }
+  const contribution = buildPureL1OrNull(fold.valueExpr, scopedCtx);
+  if (contribution === null) {
+    return null;
+  }
+
+  const guards: IR1Expr[] = [];
+  for (const guardExpr of fold.guardExprs) {
+    if (
+      expressionReferencesNames(guardExpr, accNameSet) ||
+      !isStaticallyBoolTyped(guardExpr, ctx.checker) ||
+      !isEffectFree(guardExpr, ctx.checker, {
+        admitForeignBoolPredicates: true,
+      })
+    ) {
+      return null;
+    }
+    const guard = buildPureL1OrNull(guardExpr, scopedCtx);
+    if (guard === null) {
+      return null;
+    }
+    guards.push(guard);
+  }
+
+  return {
+    binder,
+    src,
+    contribution,
+    guards,
+    accName: fold.accName,
+    info: fold.info,
+  };
+}
+
+function expressionHasUnsupportedScalarFoldPropertyAccess(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      const receiverType = ctx.checker.getTypeAtLocation(node.expression);
+      if (isPrimitiveScalarType(receiverType)) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(expr);
+  return found;
+}
+
+function isPrimitiveScalarType(type: ts.Type): boolean {
+  const flags = type.getNonNullableType().flags;
+  return (
+    (flags &
+      (ts.TypeFlags.StringLike |
+        ts.TypeFlags.NumberLike |
+        ts.TypeFlags.BooleanLike |
+        ts.TypeFlags.BigIntLike |
+        ts.TypeFlags.ESSymbolLike)) !==
+    0
+  );
+}
+
 function recognizeForOfAccumulatorWrite(
   stmt: ts.ForOfStatement,
   accNames: ReadonlySet<string>,
@@ -3299,6 +3563,129 @@ function recognizeSetAddStatement(
   return { accName, valueExpr: expr.arguments[0]! };
 }
 
+interface RecognizedScalarFoldBody {
+  accName: string;
+  valueExpr: ts.Expression;
+  guardExprs: ts.Expression[];
+  info: ReduceOpInfo;
+}
+
+function recognizeForOfScalarFoldBody(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+): RecognizedScalarFoldBody | null {
+  if (ts.isBlock(stmt)) {
+    if (stmt.statements.length !== 1) {
+      return null;
+    }
+    return recognizeForOfScalarFoldBody(stmt.statements[0]!, accNames);
+  }
+  const bodyStmt = unwrapSingleStatementBlock(stmt);
+  if (bodyStmt === null) {
+    return null;
+  }
+  const direct = recognizeScalarFoldWriteStatement(bodyStmt, accNames);
+  if (direct !== null) {
+    return { ...direct, guardExprs: [] };
+  }
+  if (ts.isIfStatement(bodyStmt)) {
+    if (bodyStmt.elseStatement !== undefined) {
+      return null;
+    }
+    const guarded = recognizeForOfScalarFoldBody(
+      bodyStmt.thenStatement,
+      accNames,
+    );
+    if (guarded === null) {
+      return null;
+    }
+    return {
+      ...guarded,
+      guardExprs: [
+        ...flattenConjunctiveGuards(bodyStmt.expression),
+        ...guarded.guardExprs,
+      ],
+    };
+  }
+  return null;
+}
+
+function recognizeScalarFoldWriteStatement(
+  stmt: ts.Statement,
+  accNames: ReadonlySet<string>,
+): Omit<RecognizedScalarFoldBody, "guardExprs"> | null {
+  if (!ts.isExpressionStatement(stmt)) {
+    return null;
+  }
+  const expr = unwrapExpression(stmt.expression);
+  if (ts.isBinaryExpression(expr)) {
+    if (
+      expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(expr.left) &&
+      accNames.has(expr.left.text)
+    ) {
+      const op = COMPOUND_ASSIGN_TO_BINARY.get(expr.operatorToken.kind);
+      if (op === undefined) {
+        return null;
+      }
+      const info = strictCommutativeReduceInfo(op);
+      return info === null
+        ? null
+        : { accName: expr.left.text, valueExpr: expr.right, info };
+    }
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(expr.left) &&
+      accNames.has(expr.left.text)
+    ) {
+      const accName = expr.left.text;
+      const rhs = unwrapExpression(expr.right);
+      if (!ts.isBinaryExpression(rhs)) {
+        return null;
+      }
+      const info = strictCommutativeReduceInfo(rhs.operatorToken.kind);
+      if (info === null) {
+        return null;
+      }
+      const leftRoot = getRootIdentifier(rhs.left);
+      const rightRoot = getRootIdentifier(rhs.right);
+      if (leftRoot === accName && rightRoot !== accName) {
+        return { accName, valueExpr: rhs.right, info };
+      }
+      if (rightRoot === accName && leftRoot !== accName) {
+        return { accName, valueExpr: rhs.left, info };
+      }
+    }
+    return null;
+  }
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    if (
+      expr.operator !== ts.SyntaxKind.PlusPlusToken ||
+      !ts.isIdentifier(expr.operand) ||
+      !accNames.has(expr.operand.text)
+    ) {
+      return null;
+    }
+    const info = strictCommutativeReduceInfo(ts.SyntaxKind.PlusToken);
+    return info === null
+      ? null
+      : {
+          accName: expr.operand.text,
+          valueExpr: ts.factory.createNumericLiteral(1),
+          info,
+        };
+  }
+  return null;
+}
+
+function strictCommutativeReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
+  const info = binopToReduceInfo(kind);
+  if (info === null || !info.commutative || info.identityText === null) {
+    return null;
+  }
+  return info;
+}
+
 function describeLocalListBuilderMutationRejection(
   stmt: ts.ExpressionStatement,
   accNames: ReadonlySet<string>,
@@ -3564,6 +3951,120 @@ function isAllowedSetAddReceiver(node: ts.Identifier): boolean {
   );
 }
 
+function describeForOfScalarFoldRejection(
+  stmt: ts.ForOfStatement,
+  accNames: ReadonlySet<string>,
+): string | null {
+  if (accNames.size === 0) {
+    return null;
+  }
+  const body = unwrapSingleStatementBlock(stmt.statement);
+  const statements =
+    body === null ? [] : ts.isBlock(body) ? [...body.statements] : [body];
+  if (statements.length !== 1) {
+    return null;
+  }
+  const stmt0 = unwrapSingleStatementBlock(statements[0]!);
+  if (stmt0 === null) {
+    return null;
+  }
+  if (ts.isIfStatement(stmt0) && stmt0.elseStatement === undefined) {
+    return describeForOfScalarFoldRejection(
+      ts.factory.createForOfStatement(
+        undefined,
+        stmt.initializer,
+        stmt.expression,
+        stmt0.thenStatement,
+      ),
+      accNames,
+    );
+  }
+  if (!ts.isExpressionStatement(stmt0)) {
+    return null;
+  }
+  const expr = unwrapExpression(stmt0.expression);
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    if (
+      expr.operator === ts.SyntaxKind.MinusMinusToken &&
+      ts.isIdentifier(expr.operand) &&
+      accNames.has(expr.operand.text)
+    ) {
+      return "for-of scalar fold uses non-commutative decrement";
+    }
+    return null;
+  }
+  if (!ts.isBinaryExpression(expr)) {
+    return null;
+  }
+  if (
+    expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken &&
+    ts.isIdentifier(expr.left) &&
+    accNames.has(expr.left.text)
+  ) {
+    const op = COMPOUND_ASSIGN_TO_BINARY.get(expr.operatorToken.kind);
+    if (op !== undefined && strictCommutativeReduceInfo(op) === null) {
+      return "for-of scalar fold uses a non-commutative or unsupported operator";
+    }
+    return null;
+  }
+  if (
+    expr.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isIdentifier(expr.left) &&
+    accNames.has(expr.left.text)
+  ) {
+    const accName = expr.left.text;
+    const rhs = unwrapExpression(expr.right);
+    if (isNullSeededScalarReduce(rhs, accName)) {
+      return "for-of scalar fold without an identity value is not supported";
+    }
+    if (ts.isBinaryExpression(rhs)) {
+      if (
+        (getRootIdentifier(rhs.left) === accName ||
+          getRootIdentifier(rhs.right) === accName) &&
+        strictCommutativeReduceInfo(rhs.operatorToken.kind) === null
+      ) {
+        return "for-of scalar fold uses a non-commutative or unsupported operator";
+      }
+    }
+  }
+  return null;
+}
+
+function isNullSeededScalarReduce(
+  expr: ts.Expression,
+  accName: string,
+): boolean {
+  const current = unwrapExpression(expr);
+  if (!ts.isConditionalExpression(current)) {
+    return false;
+  }
+  return (
+    expressionReferencesNames(current.condition, new Set([accName])) &&
+    expressionMentionsNullish(current.condition) &&
+    (expressionReferencesNames(current.whenTrue, new Set([accName])) ||
+      expressionReferencesNames(current.whenFalse, new Set([accName])))
+  );
+}
+
+function expressionMentionsNullish(expr: ts.Expression): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (
+      node.kind === ts.SyntaxKind.NullKeyword ||
+      node.kind === ts.SyntaxKind.UndefinedKeyword
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(expr);
+  return found;
+}
+
 function recognizeIfContinue(stmt: ts.Statement): ts.Expression | null {
   const ifStmt = unwrapSingleStatementBlock(stmt);
   if (
@@ -3694,13 +4195,23 @@ function extractReturnExpression(
         ...ctx,
         paramNames: scopedParams,
       });
-      if (setRecognized === null) {
-        return null;
+      if (setRecognized !== null) {
+        bindings.push({ kind: "forOfSet", ...setRecognized });
+        i += 1;
+        lastLetDeclNames = new Set();
+        continue;
       }
-      bindings.push({ kind: "forOfSet", ...setRecognized });
-      i += 1;
-      lastLetDeclNames = new Set();
-      continue;
+      const scalarFold = recognizeForOfScalarFold(stmt, letNames, {
+        ...ctx,
+        paramNames: scopedParams,
+      });
+      if (scalarFold !== null) {
+        bindings.push({ kind: "forOfFold", ...scalarFold });
+        i += 1;
+        lastLetDeclNames = new Set();
+        continue;
+      }
+      return null;
     }
     if (
       ts.isIfStatement(stmt) ||
@@ -3932,6 +4443,7 @@ function preludeBindingReferencesTsName(
       );
     case "forOf":
     case "forOfSet":
+    case "forOfFold":
       return binding.accName === name;
     case "builderPush":
     case "builderSetAdd":
@@ -3981,6 +4493,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     const listBuilderAliases = new Set<string>();
     const setBuilderAliases = new Set<string>();
     const mapBuilderAliases = new Set<string>();
+    const scalarFoldAccNames = new Set<string>();
     while (i < lastIdx) {
       if (recognizeLetWhilePair(stmts, i, checker)) {
         i += 2;
@@ -4001,6 +4514,13 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         );
         if (collectionRejection !== null) {
           return collectionRejection;
+        }
+        const scalarRejection = describeForOfScalarFoldRejection(
+          stmt,
+          scalarFoldAccNames,
+        );
+        if (scalarRejection !== null) {
+          return scalarRejection;
         }
         return "for-of loop is not a recognized build-list comprehension";
       }
@@ -4025,6 +4545,9 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
       if (ts.isVariableStatement(stmt)) {
         const declList = stmt.declarationList;
         if (declList.flags & ts.NodeFlags.Let) {
+          for (const name of bindingNamesFromDeclarationList(declList)) {
+            scalarFoldAccNames.add(name);
+          }
           const declaredNames = declaredIdentifierNames(declList);
           if (
             declaredNames === null ||
@@ -4793,6 +5316,13 @@ function lowerPreludeBindings(
             "for-of Set builder is only supported when returning its accumulator directly",
         };
       }
+      if (binding.kind === "forOfFold") {
+        return {
+          tag: "error",
+          error:
+            "for-of scalar fold is only supported when returning its accumulator directly",
+        };
+      }
       if (binding.kind === "builderPush") {
         return {
           tag: "error",
@@ -4950,10 +5480,18 @@ function validatePreludeBindings(
       if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
         return { error: "while-loop predicate references a later binding" };
       }
-    } else if (binding.kind === "forOf" || binding.kind === "forOfSet") {
+    } else if (
+      binding.kind === "forOf" ||
+      binding.kind === "forOfSet" ||
+      binding.kind === "forOfFold"
+    ) {
       const blockedIr1Names = blockedNamesForIR1(bindings.slice(idx + 1));
+      const loopExprs =
+        binding.kind === "forOfFold"
+          ? [binding.src, binding.contribution, ...binding.guards]
+          : [binding.src, binding.proj, ...binding.guards];
       if (
-        [binding.src, binding.proj, ...binding.guards].some((expr) =>
+        loopExprs.some((expr) =>
           ir1ExprReferencesAnyName(expr, blockedIr1Names),
         )
       ) {
@@ -5203,6 +5741,7 @@ export function lowerNestedPureBlockReturnToL1(
     if (
       binding.kind === "forOf" ||
       binding.kind === "forOfSet" ||
+      binding.kind === "forOfFold" ||
       binding.kind === "builderPush" ||
       binding.kind === "builderSetAdd" ||
       binding.kind === "reassign" ||

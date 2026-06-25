@@ -57,37 +57,31 @@ describe("iteration builder", () => {
   });
 
   // Patch 4 unskips this scalar-fold case.
-  it("sumIntFold lowers to init plus a sum comprehension", {
-    skip: "Patch 4 implements additive scalar folds",
-  }, async () => {
+  it("sumIntFold lowers to init plus a sum comprehension", async () => {
     const output = await emitFixture("sumIntFold");
     assert.match(
       output,
-      /^sum-int-fold items = \+ over each item in items \| iteration-item--count item\.$/mu,
+      /^sum-int-fold items = \(\+ over each item in items \| iteration-item--count item\)\.$/mu,
     );
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   // Patch 4 unskips this scalar-fold case.
-  it("countGuardedFold folds the guard into the sum comprehension", {
-    skip: "Patch 4 implements guarded count folds",
-  }, async () => {
+  it("countGuardedFold folds the guard into the sum comprehension", async () => {
     const output = await emitFixture("countGuardedFold");
     assert.match(
       output,
-      /^count-guarded-fold items = \+ over each item in items, iteration-item--active item \| 1\.$/mu,
+      /^count-guarded-fold items = \(\+ over each item in items, iteration-item--active item \| 1\)\.$/mu,
     );
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
 
   // Patch 4 unskips this scalar-fold case.
-  it("allActiveFold lowers to an and comprehension", {
-    skip: "Patch 4 implements boolean-and scalar folds",
-  }, async () => {
+  it("allActiveFold lowers to an and comprehension", async () => {
     const output = await emitFixture("allActiveFold");
     assert.match(
       output,
-      /^all-active-fold items = and over each item in items \| iteration-item--active item\.$/mu,
+      /^all-active-fold items = \(and over each item in items \| iteration-item--active item\)\.$/mu,
     );
     assert.doesNotMatch(output, /UNSUPPORTED/u);
   });
@@ -162,18 +156,14 @@ describe("iteration builder", () => {
   });
 
   // Patch 4 unskips this preserved scalar-fold rejection.
-  it("conjoinNoIdentityRejected remains unsupported", {
-    skip: "Patch 4 verifies no-identity fold rejection",
-  }, async () => {
+  it("conjoinNoIdentityRejected remains unsupported", async () => {
     const output = await emitFixture("conjoinNoIdentityRejected");
     assert.match(output, /^> UNSUPPORTED: conjoin-no-identity-rejected/mu);
     assert.match(output, /identity|null|fold|unsupported/u);
   });
 
   // Patch 4 unskips this preserved scalar-fold rejection.
-  it("foldNonCommutativeRejected remains unsupported", {
-    skip: "Patch 4 verifies non-commutative fold rejection",
-  }, async () => {
+  it("foldNonCommutativeRejected remains unsupported", async () => {
     const output = await emitFixture("foldNonCommutativeRejected");
     assert.match(output, /^> UNSUPPORTED: fold-non-commutative-rejected/mu);
     assert.match(output, /commutative|fold|unsupported/u);

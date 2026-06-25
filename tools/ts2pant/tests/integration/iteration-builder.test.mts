@@ -29,32 +29,23 @@ async function checkFixture(functionName: string): Promise<void> {
 
 describe("iteration builder integration", () => {
   // Patch 2 unskips these list-builder checker stubs.
-  it(
-    "list builder positives pass pant --check",
-    { skip: "Patch 2 implements for-of list builder widening" },
-    async () => {
-      await checkFixture("listConstProjection");
-      await checkFixture("listCompoundGuard");
-      await checkFixture("listNestedGuard");
-    },
-  );
+  it("list builder positives pass pant --check", {
+    skip: "Patch 2 implements for-of list builder widening",
+  }, async () => {
+    await checkFixture("listConstProjection");
+    await checkFixture("listCompoundGuard");
+    await checkFixture("listNestedGuard");
+  });
 
   // Patch 3 unskips this Set-builder checker stub.
-  it(
-    "setAddForOf passes pant --check",
-    async () => {
-      await checkFixture("setAddForOf");
-    },
-  );
+  it("setAddForOf passes pant --check", async () => {
+    await checkFixture("setAddForOf");
+  });
 
   // Patch 4 unskips these scalar-fold checker stubs.
-  it(
-    "scalar fold positives pass pant --check",
-    { skip: "Patch 4 implements scalar fold lowering" },
-    async () => {
-      await checkFixture("sumIntFold");
-      await checkFixture("countGuardedFold");
-      await checkFixture("allActiveFold");
-    },
-  );
+  it("scalar fold positives pass pant --check", async () => {
+    await checkFixture("sumIntFold");
+    await checkFixture("countGuardedFold");
+    await checkFixture("allActiveFold");
+  });
 });

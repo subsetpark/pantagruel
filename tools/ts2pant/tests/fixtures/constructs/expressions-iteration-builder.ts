@@ -85,7 +85,7 @@ function setAddForOf(items: IterationItem[]): Set<string> {
  * Pure additive scalar fold.
  * Target Pantagruel encoding: identity plus `+ over each`.
  *
- * @pant sum-int-fold items = + over each item in items | iteration-item--count item.
+ * @pant sum-int-fold items = (+ over each item in items | iteration-item--count item).
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function sumIntFold(items: IterationItem[]): number {
@@ -100,7 +100,7 @@ function sumIntFold(items: IterationItem[]): number {
  * Guarded count fold.
  * Target Pantagruel encoding: guarded `+ over each` of one per matching item.
  *
- * @pant count-guarded-fold items = + over each item in items, iteration-item--active item | 1.
+ * @pant count-guarded-fold items = (+ over each item in items, iteration-item--active item | 1).
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function countGuardedFold(items: IterationItem[]): number {
@@ -117,7 +117,7 @@ function countGuardedFold(items: IterationItem[]): number {
  * Boolean-and scalar fold.
  * Target Pantagruel encoding: `and over each`.
  *
- * @pant all-active-fold items = and over each item in items | iteration-item--active item.
+ * @pant all-active-fold items = (and over each item in items | iteration-item--active item).
  */
 // biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
 function allActiveFold(items: IterationItem[]): boolean {
