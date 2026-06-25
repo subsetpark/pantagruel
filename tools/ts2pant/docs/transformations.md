@@ -194,9 +194,9 @@ all x: T | ~(x in f args).
   to another variable, capturing it in a closure, passing it to another call, or
   reading it from a guard/value expression.
 - Unknown mutating methods on the accumulator.
-- Loop-backed builders outside the already-supported for-of build-list
-  comprehension path. Broader `for-of` and `forEach` builder completeness is a
-  separate iteration milestone.
+- Loop-backed builders use the Structured Iteration contracts below. `for-of`
+  list and Set builders are admitted only through that path; `forEach` builder
+  callbacks remain deferred.
 
 ## Uninterpreted Functions (General Function Calls)
 
@@ -532,7 +532,8 @@ the conditional therefore appears only at accessor equations' RHS positions.
 Envelopes and Barbed Wire"](https://maartenfokkinga.github.io/utwente/mmf91m.pdf), FPCA 1991;
 Lamport, *Specifying Systems* (TLA+ `\A x \in arr` idiom for per-element next-state).
 
-ts2pant accepts three shapes that are all instances of the catamorphism `foldr : (a -> b -> b) -> b -> [a] -> b`:
+ts2pant accepts these shapes as instances of the catamorphism
+`foldr : (a -> b -> b) -> b -> [a] -> b`:
 
 **Shape A — uniform iterator write (mutating).**
 `for (const x of arr) { x.p = e(x) }` and `arr.forEach(x => { x.p = e(x) })` become
@@ -553,6 +554,71 @@ with `init` elided when it equals the combiner identity (0 for `+`, 1 for `*`, `
 `false` for `||`). `reduceRight` is accepted only for commutative combiners; non-commutative
 ops require acc on the left.
 
+**Shape D — pure for-of build-list (expression).**
+
+```ts
+const out = [];
+for (const x of xs) {
+  const y = f(x);
+  if (g1(x)) {
+    if (g2(y)) out.push(h(y));
+  }
+}
+return out;
+```
+
+becomes `each x in xs, g1 x, g2 (f x) | h (f x)`. The loop may contain
+pure loop-local `const` bindings before the accumulator write; those bindings
+are inlined into the projection and guards through the same capture-avoiding
+substitution discipline used by let-elimination. Compound `&&` guards and
+nested `if` guards are flattened into the comprehension guard list in source
+order, so the emitted target stays the existing `each binder in src, g1, g2 |
+proj` form rather than introducing a new list-builder construct.
+
+**Shape E — pure for-of Set builder (expression).**
+
+```ts
+const out = new Set<T>();
+for (const x of xs) {
+  if (g(x)) out.add(f(x));
+}
+return out;
+```
+
+uses the Set-as-list membership encoding from Local Collection Builders:
+
+```text
+all e: T | e in (fn args) <-> some x in xs, g x | e = f x.
+```
+
+The target is membership equivalence over `some`, never list equality against
+`each`. A Set is order-agnostic and deduplicates equal projected elements; list
+equality would over-constrain programs where two distinct source elements
+project to the same Set member. Membership is the observable contract that
+matches both TypeScript `Set` and ts2pant's `[T]` representation.
+
+**Shape F — pure for-of scalar fold (expression).**
+
+```ts
+let acc = init;
+for (const x of xs) {
+  if (g(x)) acc OP= f(x);
+}
+return acc;
+```
+
+becomes `init OP (combOP over each x in xs, g x | f x)` for the commutative
+identity-bearing subset: `+`, `*`, `&&`, `||`, plus `count++` as `+ over each
+... | 1`. When `init` is the combiner identity (`0`, `1`, `true`, `false`),
+the outer `init OP` is elided and the result is the bare reduce expression.
+The same source-order guard flattening and loop-local const inlining as Shape D
+apply before the fold projection is emitted.
+
+No-identity / nullable reduces such as conjoin/disjoin are excluded because
+they require an option-typed fold target rather than identity elision.
+Non-commutative accumulations are excluded because `combOP over each` is an
+order-insensitive reduction target.
+
 The unified loop milestone keeps the recursion-scheme framing explicit:
 bounded loops are catamorphisms and lower through `IR1SsaLoopBody` with a
 non-null `IR1SsaTerminationMetric` (counter metrics for counter/while,
@@ -562,7 +628,7 @@ folds it back to the post-state, so those loop bodies carry
 `terminationMetric: null`. L6+L7 closed both halves under the same loop-body
 contract.
 
-**Invariants** (post-IR1-SSA):
+**Invariants:**
 - Shape A and Shape B both lower through
   `lowerForeachShapeAAsGeneralLoop` / `lowerForeachShapeBAsGeneralLoop` in
   `src/ir1-ssa-foreach.ts`. The old `IR1SsaLoopSummary` path is gone; both
@@ -581,6 +647,24 @@ contract.
 - Shape B `foldLeaves` carry the `outerOp` binop and the comprehension
   `combiner` separately, so frame conditions for untouched properties still
   fire via the modified-rules set.
+- Shape D list-builder loop-local consts are pure, loop-scoped, and hygienic:
+  they inline into guards/projections via the substitution primitives rather
+  than escaping as Pant rule declarations.
+- Shape D/E/F guard extraction is ordered and conjunctive. `if (g1 && g2)` and
+  nested `if (g1) { if (g2) ... }` both contribute `g1, g2` to the emitted
+  comprehension in source order.
+- Shape E emits only membership facts for the returned Set/list value. It does
+  not constrain insertion order or duplicate insertions beyond `some`-based
+  membership equivalence.
+- Shape F admits only commutative identity-bearing combiners whose identity can
+  justify init elision. Nullable/no-identity folds and non-commutative updates
+  remain unsupported.
+- The pure for-of builder recognizers reject `break`, `continue` beyond the
+  leading-guard form, early `return`, `throw`, nested loops, accumulator
+  aliasing or escape, Map builders, Set `.delete` / `.clear`, multi-collection
+  loops, and any accumulator read from a guard or projected value. `forEach`
+  build-list callbacks are deferred; `forEach` still routes through the
+  mutating Shape A/B machinery where applicable.
 
 ## Functor-Lift Recognizer
 

@@ -321,10 +321,14 @@ positives in the diagnostic output.
   and non-literal labels.
 
 **Open Questions**:
+- Resolved by the M3 gameplan: for-of Set builders are in scope and lower to
+  membership equivalence over a `some` comprehension, not list equality.
 - Resolved by the M3 gameplan: commutative identity-bearing scalar folds
   (`+`, `*`, `&&`, `||`, `count++`) are in M3, lowering to the Shape-C
   `combOP over each` reduce. No-identity / nullable reduces (conjoin/disjoin),
   which need an option-typed fold, are deferred to a later milestone.
+- Resolved by the M3 gameplan: forEach build-list callbacks and callback
+  `return` semantics are deferred. M3 is scoped to `for-of` statements.
 
 ---
 
