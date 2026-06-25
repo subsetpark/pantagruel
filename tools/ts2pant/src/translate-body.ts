@@ -3051,13 +3051,6 @@ interface RecognizedPushBody {
   }>;
 }
 
-function recognizeForOfPushBody(
-  stmt: ts.Statement,
-  accNames: ReadonlySet<string>,
-): RecognizedPushBody | null {
-  return recognizeForOfWriteBody(stmt, accNames, recognizePushStatement);
-}
-
 function recognizeForOfWriteBody(
   stmt: ts.Statement,
   accNames: ReadonlySet<string>,
@@ -3435,7 +3428,8 @@ function describeForOfCollectionBuilderRejection(
         const receiver = callee.expression.text;
         const method = callee.name.text;
         if (mapNames.has(receiver)) {
-          reason = "Map builder construction is not supported in this milestone";
+          reason =
+            "Map builder construction is not supported in this milestone";
           return;
         }
         if (setNames.has(receiver) && method !== "add") {
