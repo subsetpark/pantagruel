@@ -214,6 +214,34 @@ function setDeleteForOfRejected(items: IterationItem[]): Set<string> {
 }
 
 /**
+ * Out-of-scope control: Set accumulator aliases must not flow into the lowered
+ * prelude around the loop builder.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setAccumulatorAliasForOfRejected(items: IterationItem[]): Set<string> {
+  const out = new Set<string>();
+  const alias = out;
+  for (const item of items) {
+    out.add(item.id);
+  }
+  return out;
+}
+
+/**
+ * Out-of-scope control: recognized for-of builder pieces may not reference a
+ * binding declared later in the prelude.
+ */
+// biome-ignore lint/correctness/noUnusedVariables: unexported fixture corpus
+function setTdzSourceForOfRejected(items: IterationItem[]): Set<string> {
+  const out = new Set<string>();
+  for (const item of laterItems) {
+    out.add(item.id);
+  }
+  const laterItems = items;
+  return out;
+}
+
+/**
  * Out-of-scope scalar fold: null-seeded conjoin has no identity-bearing target
  * in the current scalar fold lowering.
  */

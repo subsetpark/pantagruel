@@ -1343,24 +1343,34 @@ function translatePureBody(
     });
     const binderVar = ast.var(binder);
     const memberExpr = ast.binop(ast.opIn(), binderVar, resultApp);
+    const someBinder = allocForOfSomeBinder(supply, params, {
+      prelude: forOfSetComprehension.prelude,
+      forOf: forOfSetComprehension.forOf,
+      extraUsedNames: [binder],
+    });
+    const someBinderVar = ir1Var(someBinder);
+    const someProj = substituteIR1ExprSubtree(
+      forOfSetComprehension.forOf.proj,
+      ir1Var(forOfSetComprehension.forOf.binder),
+      someBinderVar,
+    );
+    const someGuards = forOfSetComprehension.forOf.guards.map((guard) =>
+      substituteIR1ExprSubtree(
+        guard,
+        ir1Var(forOfSetComprehension.forOf.binder),
+        someBinderVar,
+      ),
+    );
     const someBody = ast.binop(
       ast.opEq(),
       binderVar,
-      applyOpaqueAliases(
-        lowerL1ToOpaque(forOfSetComprehension.forOf.proj),
-        supply,
-      ),
+      applyOpaqueAliases(lowerL1ToOpaque(someProj), supply),
     );
     const someExpr = ast.exists(
       [],
       [
-        ast.gIn(
-          forOfSetComprehension.forOf.binder,
-          lowerL1ToOpaque(forOfSetComprehension.forOf.src),
-        ),
-        ...forOfSetComprehension.forOf.guards.map((guard) =>
-          ast.gExpr(lowerL1ToOpaque(guard)),
-        ),
+        ast.gIn(someBinder, lowerL1ToOpaque(forOfSetComprehension.forOf.src)),
+        ...someGuards.map((guard) => ast.gExpr(lowerL1ToOpaque(guard))),
       ],
       someBody,
     );
@@ -2154,10 +2164,24 @@ function tryBuildForOfSetComprehensionReturn(
     };
   }
 
+  const validation = validatePreludeBindings(extracted.bindings, checker);
+  if (validation !== null) {
+    return validation;
+  }
+
   const forOf = forOfBindings[0]!;
   const otherBindings = extracted.bindings.filter(
     (binding) => binding !== forOf && binding !== accDecls[0],
   );
+  if (
+    otherBindings.some((binding) =>
+      preludeBindingReferencesTsName(binding, accName),
+    )
+  ) {
+    return {
+      error: "for-of Set builder accumulator alias or escape is not supported",
+    };
+  }
   const prelude = lowerPreludeBindings(
     otherBindings,
     checker,
@@ -2546,6 +2570,39 @@ function allocSetMembershipBinder(
   let binder = allocComprehensionBinder(supply, "x");
   while (usedNames.has(binder)) {
     binder = allocComprehensionBinder(supply, "x");
+  }
+  return binder;
+}
+
+function allocForOfSomeBinder(
+  supply: UniqueSupply,
+  params: Array<{ name: string; type: string }>,
+  builder: {
+    prelude: LoweredPreludeBindings;
+    forOf: RecognizedForOfSetAdd;
+    extraUsedNames?: readonly string[];
+  },
+): string {
+  const usedNames = new Set<string>(params.map((p) => p.name));
+  for (const name of builder.prelude.scopedParams.values()) {
+    usedNames.add(name);
+  }
+  for (const name of builder.extraUsedNames ?? []) {
+    usedNames.add(name);
+  }
+  for (const expr of [
+    builder.forOf.src,
+    ...builder.forOf.guards,
+    builder.forOf.proj,
+  ]) {
+    for (const name of freeVarsIR1Expr(expr)) {
+      usedNames.add(name);
+    }
+  }
+
+  let binder = allocComprehensionBinder(supply, "n");
+  while (usedNames.has(binder)) {
+    binder = allocComprehensionBinder(supply, "n");
   }
   return binder;
 }
@@ -3409,6 +3466,16 @@ function describeForOfCollectionBuilderRejection(
     ) {
       return;
     }
+    if (ts.isIdentifier(node)) {
+      if (setNames.has(node.text) && !isAllowedSetAddReceiver(node)) {
+        reason = "Set builder may not read the accumulator inside the loop";
+        return;
+      }
+      if (mapNames.has(node.text)) {
+        reason = "Map builder construction is not supported in this milestone";
+        return;
+      }
+    }
     if (ts.isCallExpression(node)) {
       for (const arg of node.arguments) {
         if (
@@ -3445,13 +3512,25 @@ function describeForOfCollectionBuilderRejection(
   if (reason !== null) {
     return reason;
   }
-  if (nodeReferencesNames(stmt.statement, setNames)) {
-    return "Set builder may not read the accumulator inside the loop";
-  }
-  if (nodeReferencesNames(stmt.statement, mapNames)) {
-    return "Map builder construction is not supported in this milestone";
-  }
   return null;
+}
+
+function isAllowedSetAddReceiver(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if (
+    parent === undefined ||
+    !ts.isPropertyAccessExpression(parent) ||
+    parent.expression !== node ||
+    parent.name.text !== "add"
+  ) {
+    return false;
+  }
+  const grandparent = parent.parent;
+  return (
+    grandparent !== undefined &&
+    ts.isCallExpression(grandparent) &&
+    grandparent.expression === parent
+  );
 }
 
 function recognizeIfContinue(stmt: ts.Statement): ts.Expression | null {
@@ -3804,6 +3883,54 @@ function guardStatementsReadName(
 ): boolean {
   const names = new Set([name]);
   return guardStmts.some((stmt) => nodeReferencesNames(stmt, names));
+}
+
+function preludeBindingReferencesTsName(
+  binding: PreludeStmt,
+  name: string,
+): boolean {
+  const names = new Set([name]);
+  switch (binding.kind) {
+    case "const":
+      return expressionReferencesNames(binding.initializer, names);
+    case "muSearch":
+      return (
+        expressionReferencesNames(binding.mu.initTsExpr, names) ||
+        expressionReferencesNames(binding.mu.predicateTsExpr, names) ||
+        expressionReferencesNames(binding.mu.stepExpr, names)
+      );
+    case "forOf":
+    case "forOfSet":
+      return binding.accName === name;
+    case "builderPush":
+    case "builderSetAdd":
+      return (
+        binding.accName === name ||
+        expressionReferencesNames(binding.valueExpr, names)
+      );
+    case "reassign":
+      return (
+        binding.tsName === name ||
+        expressionReferencesNames(binding.valueExpr, names)
+      );
+    case "stmt":
+      return nodeReferencesNames(binding.stmt, names);
+    case "earlyReturn":
+      return (
+        expressionReferencesNames(binding.predicateExpr, names) ||
+        (binding.valueExpr !== undefined &&
+          expressionReferencesNames(binding.valueExpr, names)) ||
+        binding.blockBindings.some((blockBinding) =>
+          expressionReferencesNames(blockBinding.initializer, names),
+        ) ||
+        (binding.nestedBlock !== undefined &&
+          nodeReferencesNames(binding.nestedBlock, names))
+      );
+    default: {
+      const _exhaustive: never = binding;
+      return _exhaustive;
+    }
+  }
 }
 
 function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
@@ -4793,6 +4920,14 @@ function validatePreludeBindings(
         return { error: "while-loop predicate references a later binding" };
       }
     } else if (binding.kind === "forOf" || binding.kind === "forOfSet") {
+      const blockedIr1Names = blockedNamesForIR1(bindings.slice(idx + 1));
+      if (
+        [binding.src, binding.proj, ...binding.guards].some((expr) =>
+          ir1ExprReferencesAnyName(expr, blockedIr1Names),
+        )
+      ) {
+        return { error: "for-of loop references a later binding" };
+      }
     } else if (binding.kind === "builderPush") {
       if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
         return { error: "list builder push references a later binding" };
@@ -4859,6 +4994,35 @@ function validatePreludeBindings(
     }
   }
   return null;
+}
+
+function blockedNamesForIR1(bindings: readonly PreludeStmt[]): Set<string> {
+  const names = new Set<string>();
+  for (const binding of bindings) {
+    if (binding.kind === "const" || binding.kind === "muSearch") {
+      names.add(binding.tsName);
+      names.add(toPantTermName(binding.tsName));
+      if (binding.localName !== undefined) {
+        names.add(binding.localName);
+      }
+    }
+  }
+  return names;
+}
+
+function ir1ExprReferencesAnyName(
+  expr: IR1Expr,
+  names: ReadonlySet<string>,
+): boolean {
+  if (names.size === 0) {
+    return false;
+  }
+  for (const name of freeVarsIR1Expr(expr)) {
+    if (names.has(name)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
