@@ -260,6 +260,43 @@ type — so we avoid misclassifying genuine arrays (`number[]`) as optional.
 See `isNullableTsType` and the `QuestionQuestionToken` / `questionDotToken`
 branches in `translate-body.ts`.
 
+## Variadic Tuple Homogenization (Tuple-to-List Lowering)
+
+**Standard name:** Tuple-shape homogenization / collection over-approximation.
+**Reference:** TypeScript Compiler API `TupleTypeReference.target.elementFlags`
+and `combinedFlags` (public metadata contract in TS 5.9).
+
+Pantagruel has fixed products (`A * B`) and homogeneous lists (`[T]`), but no
+native encoding for TypeScript variadic tuples. `mapTsType()` therefore splits
+tuple lowering into two cases:
+
+- **Fixed tuples** (no `ElementFlags.Variable` bit) stay on the existing product
+  path byte-for-byte.
+- **Variadic tuples** are accepted only when they form a homogeneous
+  required-head/rest shape: a non-empty prefix of `Required` elements followed
+  by exactly one trailing variable-position element, and every translated
+  element position maps to the same Pant sort.
+
+Accepted examples:
+
+- `[T, ...T[]]` → `[T]`
+- `[[A, B], ...[A, B][]]` → `[A * B]`
+
+Rejected examples:
+
+- `[A, ...B[]]` — heterogeneous repeated sort
+- `[...T[]]` — zero required head
+- `[A?, ...A[]]` — optional prefix
+- `[A, ...A[], A]` — unsupported variable shape (middle/trailing required after rest)
+
+**Invariants:**
+- Structural tuple-shape refusals and element-sort heterogeneity refusals are
+  reported separately.
+- Homogeneity is checked on the translated Pant sort, not raw TS type identity.
+- The resulting list sort intentionally **over-approximates** the TS tuple's
+  minimum length: `[T, ...T[]]` becomes `[T]`, which preserves element sort but
+  does not encode the lower bound of one element.
+
 Optional parameters (`p?: P`) list-lift to `p: [P]` via `mapTsType`'s
 union-with-`undefined` handling; `p ?? c` inside the body expands to the
 cardinality case-split above, giving one list-lifted signature rather than
