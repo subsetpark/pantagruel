@@ -23,6 +23,23 @@ describe("recursive discriminated union integration", () => {
     await loadAst();
   });
 
+  it("@pant on `foreachBodyKind` (nullable recursive union) entails", {
+    skip: "Patch 3 restores nullable recursive DU registration before solver entailment",
+  }, async () => {
+    const output = await emitAndCheck(
+      await buildDocument(FIXTURE, "foreachBodyKind"),
+    );
+    const result = runCheck(output);
+    const entailments = result.checks.filter(
+      (c) =>
+        c.message.startsWith("OK: Entailed:") ||
+        c.message.startsWith("FAIL: Not entailed:"),
+    );
+    assert.ok(entailments.length >= 1, "expected an entailment result");
+    assert.ok(result.passed, `pant --check failed:\n${result.output}`);
+    assert.ok(entailments.every((c) => c.passed));
+  });
+
   for (const fn of ["treeKind", "leafValue", "leftChildKind"]) {
     it(`@pant on \`${fn}\` (recursive union) entails`, {
       skip: !solverAvailable() ? "z3 not available" : undefined,
