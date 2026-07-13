@@ -1,5 +1,7 @@
 # Workstream: ts2pant Body Completeness
 
+**Status:** COMPLETE (Milestone 5 ownership audit, 2026-07-13)
+
 ## Vision
 
 Make ts2pant's TypeScript body lowering accept the common, unambiguous
@@ -266,11 +268,11 @@ Follow-on iteration completeness: once straight-line builders are expressible,
 
 ---
 
-### Milestone 3: iteration-builder-completeness — PLANNED
+### Milestone 3: iteration-builder-completeness — COMPLETE (PRs #365–#369)
 
-> Planned by `gameplans/ts2pant-iteration-builder-completeness.json` (5 patches:
-> 2 INFRA + 3 BEHAVIOR chained 2→3→4). Concrete scope, fixed by the post-M2
-> survey: (a) widen the for-of build-list recognizer to admit pure loop-local
+> Landed via `gameplans/ts2pant-iteration-builder-completeness.json` (PRs
+> #365–#369). The implementation (a) widened the for-of build-list recognizer
+> to admit pure loop-local
 > `const` bindings before the push and compound/nested guards, reusing the
 > existing `each binder in src, guards | proj` comprehension; (b) for-of Set
 > builders via a membership-equivalence assertion over a `some` comprehension
@@ -279,7 +281,10 @@ Follow-on iteration completeness: once straight-line builders are expressible,
 > identity-bearing OP ∈ {+, *, &&, ||} (and `count++`), reusing the Shape-C
 > `combOP over each` reduce with identity-elision. No-identity / nullable
 > reduces (conjoin/disjoin) and `forEach` callbacks are deferred (see Decisions
-> Made and Open Questions).
+> Made and Open Questions). The post-M3 diagnostic reports 866 functions, 171
+> clean, 690 unsupported, and 5 errors; the targeted for-of bucket moved from
+> 52 to 42. The iteration-builder integration suite now runs all list, Set, and
+> scalar-fold `pant --check` cases with no skips.
 
 **Definition of Done**:
 - For-of list builders whose loop body has pure loop-local `const` bindings
@@ -312,13 +317,13 @@ Switch/statement-position cleanup can proceed with fewer loop-shaped false
 positives in the diagnostic output.
 
 **Operator Actions Before Next Milestone**:
-- Re-run the corpus diagnostic and inspect the remaining switch buckets:
+- Done: re-ran the corpus diagnostic and inspected the remaining switch buckets:
   `switch default must end with return`, `switch case must end with return`,
   `switch case label must be a literal`, and
   `statement is not supported by unified SSA body lowering: SwitchStatement`.
-- Decide whether M4 should admit a bounded switch value shape or remain a
-  measurement-only milestone if switch residuals are dominated by fall-through
-  and non-literal labels.
+- Done: the 47 switch residuals contain no bounded-pure value-switch family.
+  M4 is measurement-only; see
+  `tools/ts2pant/docs/switch-body-survey.md`.
 
 **Open Questions**:
 - Resolved by the M3 gameplan: for-of Set builders are in scope and lower to
@@ -332,43 +337,62 @@ positives in the diagnostic output.
 
 ---
 
-### Milestone 4: switch-body-completeness
+### Milestone 4: switch-body-completeness — COMPLETE (MEASUREMENT-ONLY, 2026-07-13)
+
+> Survey report: `tools/ts2pant/docs/switch-body-survey.md`. The post-M3 corpus
+> contains 47 switch-related residuals: 19 exhaustive `default` throws, 12
+> grouped-label fall-through cases, 7 `ts.SyntaxKind.*` non-literal labels, 4
+> statement-position visitor switches with mutation/`break`, 3 effectful block
+> bodies, and 2 complex non-pure block bodies. None belongs to the bounded,
+> no-fall-through pure value-switch subset this milestone proposed to add.
+> **Decision: no behavior gameplan.** Existing supported switch fixtures already
+> exercise the switch-to-`cond` contract, and every residual has a different
+> semantic owner or is intentionally unsupported.
 
 **Definition of Done**:
-- Switch bodies in value position support every bounded no-fall-through shape
-  with a clear `cond` target: terminal return, block-return, and nested pure
-  block-return case/default bodies.
-- Switch statements in supported pure-body preludes and supported unified SSA
-  body positions lower through the same switch-to-cond contract where the
-  semantics are equivalent.
-- Non-literal labels, default-not-last, fall-through-by-empty-case,
-  break-only/throw-only value cases, and side-effectful discriminants remain
-  rejected with existing or sharper diagnostics.
-- The switch case/default residual buckets move down in the post-M4 corpus
-  diagnostic.
+- The post-M3 switch residuals are classified by source shape and semantic
+  owner in a committed report.
+- The survey confirms that bounded no-fall-through pure value switches already
+  lower through the existing switch-to-`cond` contract.
+- Non-literal labels, default-not-last, grouped-label/empty-case fall-through,
+  break-only/throw-only value cases, statement-position mutation switches, and
+  effectful block values remain rejected with precise diagnostics.
+- No vacuous behavior gameplan is created for a milestone with zero in-scope
+  corpus examples.
 
 **Why this is a safe pause point**:
-The milestone extends the existing switch-to-cond contract without changing
-the rejection policy for semantically ambiguous switch forms. Stopping here
-leaves the translator with a stronger value-position switch lowering but no
-unsound fall-through modeling.
+The measurement preserves the existing switch-to-cond contract and its
+conservative refusal boundaries. Stopping here avoids adding unrelated enum
+resolution, fall-through, throw/exhaustiveness, or statement-SSA semantics
+under a misleading body-completeness label.
 
 **Unlocks**:
-Final body-completeness cleanup can target the residual structural buckets
-that remain after nested blocks, builders, loops, and switches have been
-removed from the top ranking.
+Final body-completeness cleanup can classify the remaining structural buckets
+without treating intentionally unsupported switch shapes as an implementation
+gap.
 
 **Operator Actions Before Next Milestone**:
-- Re-run the corpus diagnostic and classify the remaining structural buckets
-  into: body-completeness owned, other-workstream owned, and intentionally
-  unsupported.
-- If body-completeness-owned residuals are no longer among the top buckets,
+- Done: re-ran the corpus diagnostic and classified the remaining structural
+  buckets into: body-completeness owned, other-workstream owned, and
+  intentionally unsupported.
+- Done: body-completeness-owned residuals are no longer among the top buckets;
   skip M5 and mark the workstream complete after reconciling the acceptance
-  suite.
+  suite through M5's audit-only closeout.
 
 ---
 
-### Milestone 5: residual-body-diagnostic-cleanup
+### Milestone 5: residual-body-diagnostic-cleanup — COMPLETE (AUDIT-ONLY, 2026-07-13)
+
+> Audit report: `tools/ts2pant/docs/body-completeness-residual-audit.md`.
+> The completion threshold is more than 10 normalized diagnostic occurrences.
+> All 15 buckets above that threshold have an explicit owner in
+> `tools/ts2pant/scripts/corpus-diag.mts`; a new unaudited high-volume reason is
+> printed as `UNASSIGNED`. Function-level decomposition of the coarse
+> 46/42/41/22/13 structural labels found no remaining high-volume bounded pure-body
+> family. **Decision: no behavior gameplan.** The residuals require generalized
+> statement/effect SSA, accumulator/Map/seeded-collection semantics,
+> guard/foreign/type work, or intentionally deferred closure/exception/switch
+> semantics.
 
 **Definition of Done**:
 - Every remaining structural body-lowering bucket above a small threshold
@@ -382,6 +406,12 @@ removed from the top ranking.
   other-workstream residuals.
 - The final corpus diagnostic no longer has a structural body-lowering bucket
   above the threshold that lacks an owner.
+
+The transformation catalogue and ts2pant development guide already describe
+the transformations delivered by M1-M3: if-conversion, hygienic
+let-elimination, record returns, local collection builders, and structured
+iteration. M5 adds no translator transformation, so no new algorithm entry is
+needed.
 
 **Why this is a safe pause point**:
 This is the terminal reconciliation milestone. It does not need to close every
@@ -407,7 +437,7 @@ type/opaque precision rather than structural body sequencing.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| What post-M1 bucket threshold defines "workstream complete"? | Suggested threshold: no body-completeness-owned normalized bucket above 10 functions, but this should be confirmed after M1/M2 because bucket normalization may split or merge shapes. | M4 operator review |
+| ~~What post-M1 bucket threshold defines "workstream complete"?~~ | RESOLVED (M5 audit): more than 10 normalized diagnostic occurrences. Counts are occurrences rather than necessarily unique functions; every bucket above the threshold must have an explicit owner, and the diagnostic prints new high-volume reasons as `UNASSIGNED`. | Resolved |
 | ~~Should scalar local folds be part of `iteration-builder-completeness`?~~ | RESOLVED (M3 gameplan): yes for commutative identity-bearing folds (`+`, `*`, `&&`, `||`, `count++`) via the Shape-C `combOP over each` reduce; no-identity/nullable reduces (conjoin/disjoin) deferred to a later option-typed-fold milestone. The post-M2 survey found only 3 scalar folds in the for-of bucket, all no-identity. | Resolved |
 | ~~Is `forEach` callback `return` behavior in scope?~~ | RESOLVED (M3 gameplan): deferred. No `forEach` instances in the for-of bucket; `forEach` routes through the mutating Shape A/B machinery, and callback `return` only exits the callback. Revisit once the for-of widening is the established target. | Resolved |
 
@@ -424,6 +454,8 @@ type/opaque precision rather than structural body sequencing.
 | M3's first loop family is the for-of list-build widening (loop-local consts + compound/nested guards). | The post-M2 survey of the 52 for-of failures found list-push-extended dominant (30); the M2 operator action mandated choosing the largest family that reuses the established builder target, and this reuses the for-of `each` comprehension with no new target-language construct. |
 | M3 includes for-of Set builders, lowered to membership-equivalence over a `some` comprehension, not list equality. | A Set deduplicates and is order-agnostic; equating it to `each n in src | proj n` over-constrains the result when two distinct elements project equal. `all e: T | e in (f args) <-> some n in src, guards | e = proj n` is the faithful, checker-supported encoding and matches M2's Set-as-list membership philosophy. |
 | M3 includes commutative identity-bearing scalar folds but defers no-identity reduces and forEach. | `+`/`*`/`&&`/`||` (and `count++`) form monoids whose unit is the elided init, mapping cleanly onto the Shape-C `combOP over each` reduce. conjoin/disjoin are null-seeded no-identity reduces needing an option-typed fold target; forEach routes through the mutating Shape A/B path. Both are deferred to keep M3 a clean, atomic extension of the comprehension target. |
+| M4 closes as measurement-only; no switch behavior gameplan is warranted. | The post-M3 survey found 47 switch residuals, all outside the bounded-pure value-switch subset: exhaustive throw defaults, fall-through, computed enum labels, statement-position mutation, or effectful/complex blocks. The already-supported subset has fixtures and no remaining corpus bucket, so an implementation gameplan would be vacuous. |
+| M5 closes as an audit-only ownership reconciliation at a greater-than-10 threshold. | The coarse structural labels decompose into generalized effects/SSA, internal accumulators, searches, collection constructors, closure conversion, or other-workstream dependencies. No high-volume family remains inside the bounded body targets delivered by M1-M3, and the diagnostic now exposes any future high-volume unassigned reason. |
 
 ## Definition of Done (Acceptance Suite)
 
@@ -498,30 +530,35 @@ not need to read source to decide pass/fail.
     `tools/ts2pant/src/translate-body.ts` (`recognizeForOfPush`/`recognizeForOfPushBody`,
     `tryBuildForOfSetComprehensionReturn`, `tryBuildForOfScalarFoldReturn`).
 
-- **DoD-5 — Switch value bodies preserve conservative switch semantics**
-  - **Assert**: Supported no-fall-through switch value fixtures emit `cond`
-    output, while fall-through, non-literal labels, side-effectful
-    discriminants, and default-not-last cases remain unsupported.
-  - **Verify by** `cmd`: Run `just ts2pant-test-unit` and inspect switch body
-    fixture snapshots.
-  - **Expected**: Positive switch fixtures contain `cond`; negative switch
-    fixtures retain their precise UNSUPPORTED diagnostics.
-  - **Traces to**: Milestone 4 — switch body lowering in
-    `tools/ts2pant/src/ir1-build.ts`.
+- **DoD-5 — Switch residuals are measured and conservatively owned**
+  - **Assert**: Every post-M3 switch diagnostic is classified as an existing
+    supported shape, an intentional refusal, or work owned by enum resolution,
+    fall-through/throw semantics, statement-position SSA, or purity analysis.
+  - **Verify by** `cmd`: Run
+    `NODE_OPTIONS=--max-old-space-size=6144 npx tsx tools/ts2pant/scripts/corpus-diag.mts --summary-only`
+    and compare the switch buckets with
+    `tools/ts2pant/docs/switch-body-survey.md`; run `just ts2pant-test-unit` to
+    retain the existing positive and negative switch fixtures.
+  - **Expected**: The report accounts for all 47 switch residuals; supported
+    bounded value switches still emit `cond`, while fall-through, non-literal
+    labels, throw-only defaults, and statement-position mutation remain
+    explicitly unsupported.
+  - **Traces to**: Milestone 4 — switch-body residual survey and the existing
+    switch-to-`cond` contract in `tools/ts2pant/src/ir1-build.ts`.
 
 - **DoD-6 — Body-completeness residuals are measured and owned**
   - **Assert**: The final corpus diagnostic has no structural
     body-completeness-owned bucket above the workstream threshold that lacks an
     owner or intentional-unsupported note.
   - **Verify by** `cmd`: Run
-    `NODE_OPTIONS=--max-old-space-size=6144 npx tsx tools/ts2pant/scripts/corpus-diag.mts`
+    `NODE_OPTIONS=--max-old-space-size=6144 npx tsx tools/ts2pant/scripts/corpus-diag.mts --summary-only`
     and compare the top buckets against the owner table documented by M5.
   - **Expected**: Every structural body bucket above threshold is either
     absent, below threshold, implemented, or explicitly assigned/documented;
-    DU, guard/foreign, and type/opaque buckets are not counted against this
-    workstream.
+    the ownership section contains no `UNASSIGNED`; DU, guard/foreign, and
+    type/opaque buckets are not counted against this workstream.
   - **Traces to**: Milestone 5 — `tools/ts2pant/scripts/corpus-diag.mts` and
-    body residual documentation.
+    `tools/ts2pant/docs/body-completeness-residual-audit.md`.
 
 - **DoD-7 — Workspace-level verification passes**
   - **Assert**: The final body-completeness state passes the ts2pant unit and
