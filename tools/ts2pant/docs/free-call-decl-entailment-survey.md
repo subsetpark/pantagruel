@@ -18,10 +18,11 @@ a shared js-stdlib rule**.
 
 ## Method
 
-Every `@pant`-bearing fixture function across `tools/ts2pant/tests/fixtures`
-(13 functions; `src/` dogfood files carry no `@pant` annotations) was built
-through the standard pipeline, emitted, and run through `pant --check`. Each
-function is flagged for whether its assertion involves a free or built-in call.
+Every `@pant`-bearing fixture function in the Milestone 3 survey set across
+`tools/ts2pant/tests/fixtures` (12 functions, covering 14 `@pant` assertions;
+`src/` dogfood files carry no `@pant` annotations) was built through the
+standard pipeline, emitted, and run through `pant --check`. Each function is
+flagged for whether its assertion involves a free or built-in call.
 
 ## Results
 
