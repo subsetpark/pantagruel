@@ -31,6 +31,8 @@ export const UNSUPPORTED_NON_DISCRIMINATED_UNION_FIELD_ACCESS_REASON =
   "field access on a non-discriminated union is not expressible in Pantagruel";
 export const UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON =
   "discriminated union could not be registered for tagged Pantagruel encoding";
+export const UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON =
+  "variadic tuple shape is not expressible as a Pantagruel list";
 export const UNSUPPORTED_VARIADIC_TUPLE_REASON =
   "heterogeneous variadic tuple is not expressible as a Pantagruel list";
 
@@ -2333,12 +2335,12 @@ export function mapTsType(
       variableIndex !== typeArgs.length - 1 ||
       variableIndex !== elementFlags.length - 1
     ) {
-      return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_REASON);
+      return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON);
     }
 
     for (let i = 0; i < variableIndex; i += 1) {
       if (elementFlags[i] !== ts.ElementFlags.Required) {
-        return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_REASON);
+        return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON);
       }
     }
 
@@ -2358,7 +2360,7 @@ export function mapTsType(
     }
 
     if (repeatedSort === null) {
-      return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_REASON);
+      return unsupportedType(UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON);
     }
 
     // Pant lists intentionally over-approximate TS required-head/rest tuples:

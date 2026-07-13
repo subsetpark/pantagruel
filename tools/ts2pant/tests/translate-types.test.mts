@@ -37,6 +37,7 @@ import {
   RealStrategy,
   resolveFieldOwner,
   type TupleShape,
+  UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON,
   UNSUPPORTED_VARIADIC_TUPLE_REASON,
   translateTypes,
 } from "../src/translate-types.js";
@@ -753,6 +754,20 @@ describe("mapTsType", () => {
     assert.deepEqual(mapTsType(type, checker, IntStrategy), {
       ok: false,
       reason: UNSUPPORTED_VARIADIC_TUPLE_REASON,
+    });
+  });
+
+  it("refuses a structurally unsupported middle-rest tuple distinctly", () => {
+    const { checker, type } = extractAliasType(
+      `
+      type MiddleRestTuple = [number, ...number[], number];
+    `,
+      "MiddleRestTuple",
+    );
+
+    assert.deepEqual(mapTsType(type, checker, IntStrategy), {
+      ok: false,
+      reason: UNSUPPORTED_VARIADIC_TUPLE_SHAPE_REASON,
     });
   });
 
