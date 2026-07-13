@@ -12,7 +12,6 @@ import {
   IntStrategy,
   mapTsType,
   newSynthCell,
-  UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
 } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
@@ -73,7 +72,7 @@ describe("du-cutover", () => {
     // Refused (not fallen through to the `A + B` union encoding).
     assert.deepEqual(mapped, {
       ok: false,
-      reason: UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
+      reason: "discriminant literals do not share one Pantagruel sort",
     });
   });
 });

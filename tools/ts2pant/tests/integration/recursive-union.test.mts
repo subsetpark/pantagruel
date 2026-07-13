@@ -24,7 +24,7 @@ describe("recursive discriminated union integration", () => {
   });
 
   it("@pant on `foreachBodyKind` (nullable recursive union) entails", {
-    skip: "Patch 3 restores nullable recursive DU registration before solver entailment",
+    skip: !solverAvailable() ? "z3 not available" : undefined,
   }, async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "foreachBodyKind"),

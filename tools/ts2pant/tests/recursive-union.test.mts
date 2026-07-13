@@ -19,9 +19,7 @@ describe("recursive discriminated union", () => {
     await loadAst();
   });
 
-  it("translates an IR1ForeachBody-shaped nullable recursive union", {
-    skip: "Patch 3 resolves nullable recursive DU knot-tying for reserved domains",
-  }, async () => {
+  it("translates an IR1ForeachBody-shaped nullable recursive union", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "foreachBodyKind"),
     );
@@ -30,15 +28,22 @@ describe("recursive discriminated union", () => {
     assert.equal([...output.matchAll(/^ForeachBody\.$/gmu)].length, 1);
   });
 
-  it("emits correct recursive DU accessor sorts", {
-    skip: "Patch 3 emits recursive DU accessor sorts after nullable union repair",
-  }, async () => {
+  it("emits correct recursive DU accessor sorts", async () => {
     const output = await emitAndCheck(
       await buildDocument(FIXTURE, "foreachBodyKind"),
     );
-    assert.match(output, /foreach-body--arms s: ForeachBody => \[String \* ForeachBody\]\./u);
-    assert.match(output, /foreach-body--otherwise s: ForeachBody => \[ForeachBody\]\./u);
-    assert.match(output, /foreach-body--stmts s: ForeachBody => \[ForeachBody\]\./u);
+    assert.match(
+      output,
+      /foreach-body--arms s: ForeachBody, foreach-body--kind s = "cond-stmt" => \[String \* ForeachBody\]\./u,
+    );
+    assert.match(
+      output,
+      /foreach-body--otherwise s: ForeachBody, foreach-body--kind s = "cond-stmt" => \[ForeachBody\]\./u,
+    );
+    assert.match(
+      output,
+      /foreach-body--stmts s: ForeachBody, foreach-body--kind s = "block" => \[ForeachBody\]\./u,
+    );
   });
 
   it("translates a self-referential union to a domain with self-referential accessors", async () => {

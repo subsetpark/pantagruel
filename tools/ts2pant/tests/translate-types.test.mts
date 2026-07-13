@@ -771,25 +771,28 @@ describe("mapTsType", () => {
     });
   });
 
-  it("propagates a nested DU field-mapping refusal", {
-    skip: "Patch 3 preserves nested DU refusal provenance during registration",
-  }, () => {
-    const { checker, type } = extractAliasType(
+  it("propagates a nested DU field-mapping refusal", () => {
+    const sourceFile = createSourceFileFromSource(
       `
-      type NestedRefusal = {
-        outer: {
-          ok: number;
-          bad: () => void;
-        };
-      };
+      export function consume(
+        value:
+          | { kind: "ok"; value: number }
+          | { kind: "bad"; items: [number, ...string[]] }
+      ): void {}
     `,
-      "NestedRefusal",
     );
+    const checker = getChecker(sourceFile);
+    const paramTypeNode = sourceFile
+      .getFunctionOrThrow("consume")
+      .getParameters()[0]!
+      .getTypeNodeOrThrow().compilerNode;
+    const type = checker.getTypeAtLocation(paramTypeNode);
     const mapped = mapTsType(type, checker, IntStrategy, newSynthCell());
 
     assert.deepEqual(mapped, {
       ok: false,
-      reason: "() => void",
+      reason:
+        "discriminated union field items: heterogeneous variadic tuple is not expressible as a Pantagruel list",
     });
   });
 

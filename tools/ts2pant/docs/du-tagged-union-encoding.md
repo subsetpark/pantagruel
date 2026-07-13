@@ -24,8 +24,17 @@ qualifying field is encoded as an ordinary guarded variant field under the
 chosen discriminant.
 
 Unions that contain `null`, `undefined`, or `void` do not qualify as
-discriminated unions. Optionality stays on the existing list-lift path:
-`T | null` maps to `[T]`, and `A | B | null` maps to `[A + B]`.
+discriminated unions. Ordinary optionality stays on the existing list-lift
+path: `T | null` maps to `[T]`, and `A | B | null` maps to `[A + B]`.
+
+There is one recursive exception. While a directly self-referential DU is being
+registered, the translator reserves its synthesized domain by TypeScript type
+identity before mapping variant fields. If TypeScript later presents a nullable
+view of exactly that DU's non-null constituents, such as `Body | null` flattened
+to the DU members plus `null`, the nullable view maps to `[Body]`. The match is
+not name-based and not structural: the complete non-null constituent identity
+set must equal the reserved recursive DU's complete non-null constituent set.
+Unrelated `A | B | null` unions keep the ordinary `[A + B]` encoding.
 
 ## Encoding
 
@@ -106,6 +115,19 @@ registration is keyed by structural shape, the nested occurrence and any other
 occurrence share one synthesized domain. A nested narrowed read therefore has
 the same entailment story as a top-level narrowed read.
 
+Direct recursive DUs use identity reuse rather than structural shape dedup while
+the knot is being tied. A field of type `Tree` inside the `Tree` DU maps to the
+already reserved `Tree` domain. A nullable recursive field maps through the
+constituent-set normalization above, so `otherwise: Tree | null` maps to
+`[Tree]`.
+
+Tuple fields keep the tuple-shape contract from the type mapper. Fixed tuples
+remain Pantagruel products, so `[Cond, Body]` maps to `Cond * Body`.
+Homogeneous required-head/rest tuples map to lists, so `[Body, ...Body[]]`
+maps to `[Body]` and `[[Cond, Body], ...[Cond, Body][]]` maps to
+`[Cond * Body]`. Heterogeneous variadic tuples are refused instead of being
+encoded as a lossy list-of-sum or prefix-plus-tail shape.
+
 ## Refusal Taxonomy
 
 The cutover makes the tagged guarded-rule encoding the sole path for detected
@@ -114,7 +136,9 @@ discriminated unions:
 - If detection succeeds and tagged registration succeeds, the union maps to the
   synthesized DU domain and is never `+`-encoded.
 - If detection succeeds but tagged registration fails, the union is refused with
-  `discriminated union could not be registered for tagged Pantagruel encoding`.
+  a registration reason from the failing registration step. A nested field
+  mapping failure preserves both the field name and the inner reason, for
+  example `discriminated union field callback: () => void`.
   It does not fall back to the legacy `+`-of-records encoding.
 - If a non-discriminated union is used only as a value type, the existing
   `A + B` encoding remains available.
@@ -127,7 +151,13 @@ discriminated unions:
 - Intersection field access is unchanged. Intersections have AND semantics, so
   a field declared by one member is genuinely present on the intersection
   value; resolving that member's accessor remains sound.
-- Optionality is unchanged: `T | null` still maps to `[T]`.
+- Optionality is unchanged for ordinary unions: `T | null` still maps to `[T]`.
+- Nullable views of a reserved recursive DU use `[Domain]` only on exact
+  non-null constituent identity-set equality.
+- Unsupported indirect or mutual recursion remains refused by the recursion
+  guard. The nullable-recursive matcher does not add aliases to the recursive
+  identity cache and does not infer recursion from names or broad structural
+  resemblance.
 
 The remaining `A + B` support is therefore a value encoding for
 non-discriminated unions, not a discriminated-union fallback and not a license
