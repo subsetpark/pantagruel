@@ -537,6 +537,22 @@ export interface DiscriminatedUnionSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+type DiscriminatedUnionRegistrationResult =
+  | { readonly ok: true; readonly domain: string }
+  | { readonly ok: false; readonly reason: string };
+
+function okDiscriminatedUnionRegistration(
+  domain: string,
+): DiscriminatedUnionRegistrationResult {
+  return { ok: true, domain };
+}
+
+function failedDiscriminatedUnionRegistration(
+  reason: string,
+): DiscriminatedUnionRegistrationResult {
+  return { ok: false, reason };
+}
+
 export function emptyDiscriminatedUnionSynth(): DiscriminatedUnionSynth {
   return { byShape: new Map(), emitted: new Set() };
 }
@@ -796,10 +812,52 @@ function unionIsSelfReferential(
   );
 }
 
+function nullableUnionMemberSet(type: ts.Type): Set<ts.Type> | null {
+  if (!type.isUnion() || !type.types.some(isTsNullish)) {
+    return null;
+  }
+  const members = type.types.filter((member) => !isTsNullish(member));
+  return members.length > 0 ? new Set(members) : null;
+}
+
+function sameTypeIdentitySet(a: ReadonlySet<ts.Type>, b: ReadonlySet<ts.Type>) {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const member of a) {
+    if (!b.has(member)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function reservedRecursiveDomainForNullableUnion(
+  type: ts.Type,
+  cell: SynthCell,
+): string | null {
+  const nullableMembers = nullableUnionMemberSet(type);
+  if (nullableMembers === null) {
+    return null;
+  }
+  for (const [reservedType, domain] of cell.recursiveDomains) {
+    if (!reservedType.isUnion()) {
+      continue;
+    }
+    const reservedMembers = new Set(
+      reservedType.types.filter((member) => !isTsNullish(member)),
+    );
+    if (sameTypeIdentitySet(nullableMembers, reservedMembers)) {
+      return domain;
+    }
+  }
+  return null;
+}
+
 /**
  * Single entry point for registering a discriminated-union domain, owning the
  * recursion bookkeeping so the type-mapping branch and field-owner resolution
- * share it. Returns the synthesized domain name, or null on refusal.
+ * share it. Returns the synthesized domain name, or a detailed refusal.
  *
  * A directly self-referential union reserves its domain name before mapping
  * fields (via `cell.recursiveDomains`) so a self-referential field resolves to that
@@ -813,7 +871,7 @@ function registerDiscriminatedUnionDomain(
   detection: DiscriminatedUnionDetection,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-): string | null {
+): DiscriminatedUnionRegistrationResult {
   // Same recursive type seen before (in-flight self-reference, or an earlier
   // completed registration): reuse its domain by identity.
   const reserved = cell.recursiveDomains.get(type);
@@ -821,10 +879,12 @@ function registerDiscriminatedUnionDomain(
     reserved !== undefined &&
     unionIsSelfReferential(type, detection, checker)
   ) {
-    return reserved;
+    return okDiscriminatedUnionRegistration(reserved);
   }
   if (cell.visiting.has(type)) {
-    return null;
+    return failedDiscriminatedUnionRegistration(
+      "recursive discriminated union registration is already in progress",
+    );
   }
   if (unionIsSelfReferential(type, detection, checker)) {
     const reg = registerName(
@@ -833,7 +893,7 @@ function registerDiscriminatedUnionDomain(
     );
     cell.registry = reg.registry;
     cell.recursiveDomains.set(type, reg.name);
-    const domain = cellRegisterDiscriminatedUnion(
+    const registered = cellRegisterDiscriminatedUnionResult(
       cell,
       detection,
       checker,
@@ -841,16 +901,16 @@ function registerDiscriminatedUnionDomain(
       reg.name,
       reg.name,
     );
-    if (domain === null) {
+    if (!registered.ok) {
       cell.recursiveDomains.delete(type);
-      return null;
+      return registered;
     }
-    cell.recursiveDomains.set(type, domain);
-    return domain;
+    cell.recursiveDomains.set(type, registered.domain);
+    return registered;
   }
   cell.visiting.add(type);
   try {
-    return cellRegisterDiscriminatedUnion(
+    return cellRegisterDiscriminatedUnionResult(
       cell,
       detection,
       checker,
@@ -863,7 +923,7 @@ function registerDiscriminatedUnionDomain(
   }
 }
 
-export function cellRegisterDiscriminatedUnion(
+function cellRegisterDiscriminatedUnionResult(
   cell: SynthCell,
   detection: DiscriminatedUnionDetection,
   checker: ts.TypeChecker,
@@ -874,7 +934,7 @@ export function cellRegisterDiscriminatedUnion(
   // rather than allocating a fresh name; the caller already advanced the
   // registry.
   reservedDomain?: string,
-): string | null {
+): DiscriminatedUnionRegistrationResult {
   const variants: Array<{
     key: string;
     literal: DiscriminantLiteral;
@@ -889,12 +949,16 @@ export function cellRegisterDiscriminatedUnion(
   for (const variant of detection.variants) {
     const key = literalKey(variant.literal);
     if (!literalCanEmit(variant.literal)) {
-      return null;
+      return failedDiscriminatedUnionRegistration(
+        `unsupported discriminant literal ${key}`,
+      );
     }
     const litType = literalPantType(variant.literal, strategy);
     discriminantType ??= litType;
     if (discriminantType !== litType) {
-      return null;
+      return failedDiscriminatedUnionRegistration(
+        "discriminant literals do not share one Pantagruel sort",
+      );
     }
     const fields: RecordSynthField[] = [];
     for (const field of variant.fields) {
@@ -902,12 +966,20 @@ export function cellRegisterDiscriminatedUnion(
         continue;
       }
       const mapped = mapTsType(field.type, checker, strategy, cell);
-      if (
-        !mapped.ok ||
-        !isValidPantFieldType(mapped.sort) ||
-        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(field.name)
-      ) {
-        return null;
+      if (!mapped.ok) {
+        return failedDiscriminatedUnionRegistration(
+          `discriminated union field ${field.name}: ${mapped.reason}`,
+        );
+      }
+      if (!isValidPantFieldType(mapped.sort)) {
+        return failedDiscriminatedUnionRegistration(
+          `discriminated union field ${field.name}: invalid Pantagruel sort ${mapped.sort}`,
+        );
+      }
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(field.name)) {
+        return failedDiscriminatedUnionRegistration(
+          `discriminated union field ${field.name}: invalid field name`,
+        );
       }
       fields.push({ name: field.name, type: mapped.sort });
       const slot = fieldVariants.get(field.name) ?? {
@@ -924,7 +996,9 @@ export function cellRegisterDiscriminatedUnion(
     variants.push({ key, literal: variant.literal, fields });
   }
   if (!discriminantType) {
-    return null;
+    return failedDiscriminatedUnionRegistration(
+      "discriminated union has no emit-ready discriminant",
+    );
   }
 
   const key = discriminatedUnionShapeKey(
@@ -933,7 +1007,7 @@ export function cellRegisterDiscriminatedUnion(
   );
   const cached = cell.discriminatedUnionSynth.byShape.get(key);
   if (cached) {
-    return cached.domain;
+    return okDiscriminatedUnionRegistration(cached.domain);
   }
 
   let domainName: string;
@@ -971,7 +1045,26 @@ export function cellRegisterDiscriminatedUnion(
     emitted: cell.discriminatedUnionSynth.emitted,
   };
   cell.registry = bReg.registry;
-  return entry.domain;
+  return okDiscriminatedUnionRegistration(entry.domain);
+}
+
+export function cellRegisterDiscriminatedUnion(
+  cell: SynthCell,
+  detection: DiscriminatedUnionDetection,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  preferredDomain = "DiscriminatedUnion",
+  reservedDomain?: string,
+): string | null {
+  const result = cellRegisterDiscriminatedUnionResult(
+    cell,
+    detection,
+    checker,
+    strategy,
+    preferredDomain,
+    reservedDomain,
+  );
+  return result.ok ? result.domain : null;
 }
 
 export function emitDiscriminatedUnionSynthDecls(
@@ -1759,8 +1852,8 @@ function collectFieldOwners(
         checker,
         strategy,
       );
-      if (owner) {
-        out.add(owner);
+      if (owner.ok) {
+        out.add(owner.domain);
         return;
       }
     }
@@ -2469,19 +2562,24 @@ export function mapTsType(
     if (synthCell) {
       const detection = detectDiscriminatedUnion(type, checker);
       if (detection) {
-        const domain = registerDiscriminatedUnionDomain(
+        const registered = registerDiscriminatedUnionDomain(
           synthCell,
           type,
           detection,
           checker,
           strategy,
         );
-        if (domain !== null) {
-          return okSort(domain);
+        if (registered.ok) {
+          return okSort(registered.domain);
         }
-        return unsupportedType(
-          UNSUPPORTED_DISCRIMINATED_UNION_REGISTRATION_REASON,
-        );
+        return unsupportedType(registered.reason);
+      }
+      const recursiveDomain = reservedRecursiveDomainForNullableUnion(
+        type,
+        synthCell,
+      );
+      if (recursiveDomain !== null) {
+        return okSort(`[${recursiveDomain}]`);
       }
     }
     // List-lift encoding for optionality: strip null/undefined/void before
