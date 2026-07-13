@@ -52,3 +52,31 @@ type Shape =
 export function shapeKind(s: Shape): string {
   return s.kind;
 }
+
+// Mirrors the essential `IR1ForeachCondStmt` / `IR1ForeachBody` shape without
+// importing the production IR1 types. The recursive branch is nullable so the
+// body field exercises the reserved-domain knot, while the tuple fields mirror
+// the required-head/rest variadics that Patch 2 and Patch 3 split apart.
+type ForeachCondStmt = {
+  kind: "cond-stmt";
+  arms: readonly [
+    readonly [string, ForeachBody],
+    ...ReadonlyArray<readonly [string, ForeachBody]>,
+  ];
+  otherwise: ForeachBody | null;
+};
+
+type ForeachBody =
+  | { kind: "assign"; value: number }
+  | ForeachCondStmt
+  | {
+      kind: "block";
+      stmts: readonly [ForeachBody, ...ForeachBody[]];
+    };
+
+/**
+ * @pant foreachBodyKind body = foreach-body--kind body.
+ */
+export function foreachBodyKind(body: ForeachBody): string {
+  return body.kind;
+}

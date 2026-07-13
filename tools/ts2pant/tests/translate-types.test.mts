@@ -76,6 +76,16 @@ function extractFirstAlias(source: string) {
   return { alias, checker, sourceFile };
 }
 
+function extractAliasType(source: string, aliasName: string) {
+  const sourceFile = createSourceFileFromSource(source);
+  const checker = getChecker(sourceFile);
+  const aliasNode = sourceFile
+    .getTypeAliasOrThrow(aliasName)
+    .getTypeNodeOrThrow().compilerNode;
+  const type = checker.getTypeAtLocation(aliasNode);
+  return { checker, sourceFile, type };
+}
+
 function emitSynthDeclsOnly(cell: ReturnType<typeof newSynthCell>) {
   return cellEmitSynth(cell).decls;
 }
@@ -687,6 +697,94 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
 });
 
 describe("mapTsType", () => {
+  it("maps a fixed tuple as a Pantagruel product", {
+    skip: "Patch 2 keeps fixed tuples as products while tuple variadics are reworked",
+  }, () => {
+    const { checker, type } = extractAliasType(
+      `
+      type FixedTuple = [number, string];
+    `,
+      "FixedTuple",
+    );
+
+    assert.deepEqual(mapTsType(type, checker, IntStrategy), {
+      ok: true,
+      sort: "Int * String",
+    });
+  });
+
+  it("maps a homogeneous required-head/rest tuple to a Pantagruel list", {
+    skip: "Patch 2 implements homogeneous variadic tuple mapping",
+  }, () => {
+    const { checker, type } = extractAliasType(
+      `
+      type HomogeneousTuple<T> = [T, ...T[]];
+      type NumberTuple = HomogeneousTuple<number>;
+    `,
+      "NumberTuple",
+    );
+
+    assert.deepEqual(mapTsType(type, checker, IntStrategy), {
+      ok: true,
+      sort: "[Int]",
+    });
+  });
+
+  it("keeps a tuple pair as the element of a homogeneous variadic list", {
+    skip: "Patch 2 keeps repeated tuple pairs inside list-lifted variadics",
+  }, () => {
+    const { checker, type } = extractAliasType(
+      `
+      type Pair = [number, string];
+      type RepeatedPairTuple = [Pair, ...Pair[]];
+    `,
+      "RepeatedPairTuple",
+    );
+
+    assert.deepEqual(mapTsType(type, checker, IntStrategy), {
+      ok: true,
+      sort: "[Int * String]",
+    });
+  });
+
+  it("refuses a heterogeneous required-head/rest tuple", {
+    skip: "Patch 2 refuses heterogeneous variadic tuples precisely",
+  }, () => {
+    const { checker, type } = extractAliasType(
+      `
+      type HeterogeneousTuple = [number, ...string[]];
+    `,
+      "HeterogeneousTuple",
+    );
+
+    assert.deepEqual(mapTsType(type, checker, IntStrategy), {
+      ok: false,
+      reason: "heterogeneous variadic tuple is not expressible in Pantagruel",
+    });
+  });
+
+  it("propagates a nested DU field-mapping refusal", {
+    skip: "Patch 3 preserves nested DU refusal provenance during registration",
+  }, () => {
+    const { checker, type } = extractAliasType(
+      `
+      type NestedRefusal = {
+        outer: {
+          ok: number;
+          bad: () => void;
+        };
+      };
+    `,
+      "NestedRefusal",
+    );
+    const mapped = mapTsType(type, checker, IntStrategy, newSynthCell());
+
+    assert.deepEqual(mapped, {
+      ok: false,
+      reason: "() => void",
+    });
+  });
+
   it("maps `any` to the shared Opaque sort", async () => {
     await loadAst();
     const cell = newSynthCell();
