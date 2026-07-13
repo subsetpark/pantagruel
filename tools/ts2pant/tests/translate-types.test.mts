@@ -37,6 +37,7 @@ import {
   RealStrategy,
   resolveFieldOwner,
   type TupleShape,
+  UNSUPPORTED_VARIADIC_TUPLE_REASON,
   translateTypes,
 } from "../src/translate-types.js";
 import type { PantDeclaration } from "../src/types.js";
@@ -697,9 +698,7 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
 });
 
 describe("mapTsType", () => {
-  it("maps a fixed tuple as a Pantagruel product", {
-    skip: "Patch 2 keeps fixed tuples as products while tuple variadics are reworked",
-  }, () => {
+  it("maps a fixed tuple as a Pantagruel product", () => {
     const { checker, type } = extractAliasType(
       `
       type FixedTuple = [number, string];
@@ -713,9 +712,7 @@ describe("mapTsType", () => {
     });
   });
 
-  it("maps a homogeneous required-head/rest tuple to a Pantagruel list", {
-    skip: "Patch 2 implements homogeneous variadic tuple mapping",
-  }, () => {
+  it("maps a homogeneous required-head/rest tuple to a Pantagruel list", () => {
     const { checker, type } = extractAliasType(
       `
       type HomogeneousTuple<T> = [T, ...T[]];
@@ -730,9 +727,7 @@ describe("mapTsType", () => {
     });
   });
 
-  it("keeps a tuple pair as the element of a homogeneous variadic list", {
-    skip: "Patch 2 keeps repeated tuple pairs inside list-lifted variadics",
-  }, () => {
+  it("keeps a tuple pair as the element of a homogeneous variadic list", () => {
     const { checker, type } = extractAliasType(
       `
       type Pair = [number, string];
@@ -747,9 +742,7 @@ describe("mapTsType", () => {
     });
   });
 
-  it("refuses a heterogeneous required-head/rest tuple", {
-    skip: "Patch 2 refuses heterogeneous variadic tuples precisely",
-  }, () => {
+  it("refuses a heterogeneous required-head/rest tuple", () => {
     const { checker, type } = extractAliasType(
       `
       type HeterogeneousTuple = [number, ...string[]];
@@ -759,7 +752,7 @@ describe("mapTsType", () => {
 
     assert.deepEqual(mapTsType(type, checker, IntStrategy), {
       ok: false,
-      reason: "heterogeneous variadic tuple is not expressible in Pantagruel",
+      reason: UNSUPPORTED_VARIADIC_TUPLE_REASON,
     });
   });
 
