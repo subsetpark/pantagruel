@@ -11,6 +11,67 @@ import { IntStrategy } from "../src/translate-types.js";
 
 const SRC_DIR = resolve(import.meta.dirname, "../src");
 const SUMMARY_ONLY = process.argv.includes("--summary-only");
+const OWNER_THRESHOLD = 10;
+
+// M5 ownership is deliberately attached to normalized diagnostic contracts,
+// not inferred from source syntax. A new high-volume reason therefore appears
+// as UNASSIGNED until its semantic owner is audited explicitly.
+const RESIDUAL_OWNERS = new Map<string, string>([
+  [
+    "alias IR1ForeachCondStmt: discriminated union could not be registered for tagged Pantagruel encoding",
+    "DU/type-shape encoding",
+  ],
+  ["early-return predicate has side effects", "guard/foreign-call purity"],
+  ["early-return value has side effects", "guard/foreign-call purity"],
+  [
+    "if-with-return block must contain only const bindings followed by a return",
+    "follow-up: generalized nested sequencing",
+  ],
+  [
+    "for-of loop is not a recognized build-list comprehension",
+    "follow-up: generalized accumulator/search loops",
+  ],
+  [
+    "expression statement before return (only const / μ-search / if-early-return allowed)",
+    "follow-up: local-effect/statement SSA",
+  ],
+  [
+    "Map builder construction is not supported in this milestone",
+    "follow-up: Map builder semantics",
+  ],
+  [
+    "unsupported pure expression in const initializer",
+    "expression/type lowering",
+  ],
+  [
+    "local bindings or multiple statements before return",
+    "follow-up: generalized local sequencing",
+  ],
+  [
+    "Set builder from iterable is not supported",
+    "follow-up: collection constructor semantics",
+  ],
+  [
+    "switch default must end with `return EXPR`",
+    "intentional: switch exhaustiveness/throw semantics",
+  ],
+  [
+    "switch case must end with `return EXPR` (no fall-through, no break/throw cases in M1)",
+    "intentional: switch fall-through/break/throw semantics",
+  ],
+  [
+    "statement is not supported by unified SSA body lowering",
+    "follow-up: statement-position SSA",
+  ],
+  [
+    "branch call is not a recognized Map/Set effect",
+    "follow-up: branch-local collection effects",
+  ],
+  [
+    "let captured by closure that reassigns it is not supported",
+    "intentional: closure conversion",
+  ],
+]);
 
 interface DiagnosticResult {
   file: string;
@@ -145,6 +206,15 @@ for (const [reason, count] of [...unsupportedBuckets.entries()].sort(
   (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
 )) {
   console.log(`${count}\t${reason}`);
+}
+
+console.log(`\nOWNERSHIP (normalized buckets > ${OWNER_THRESHOLD}):`);
+for (const [reason, count] of [...unsupportedBuckets.entries()]
+  .filter(([, count]) => count > OWNER_THRESHOLD)
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+  console.log(
+    `${count}\t${RESIDUAL_OWNERS.get(reason) ?? "UNASSIGNED"}\t${reason}`,
+  );
 }
 
 if (errorBuckets.size > 0) {

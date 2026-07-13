@@ -29,9 +29,7 @@ async function checkFixture(functionName: string): Promise<void> {
 
 describe("iteration builder integration", () => {
   // Patch 2 unskips these list-builder checker stubs.
-  it("list builder positives pass pant --check", {
-    skip: "Patch 2 implements for-of list builder widening",
-  }, async () => {
+  it("list builder positives pass pant --check", async () => {
     await checkFixture("listConstProjection");
     await checkFixture("listCompoundGuard");
     await checkFixture("listNestedGuard");
