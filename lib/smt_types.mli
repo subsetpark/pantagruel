@@ -54,6 +54,20 @@ val product_sort_name : Types.ty list -> string
 val sum_sort_name : Types.ty list -> string
 val sort_base_name : Types.ty -> string
 val domain_elements : string -> int -> string list
+
+val encode_ident : string -> string
+(** Injectively hex-encode an identifier component. *)
+
+val decode_ident : string -> string option
+(** Decode a component produced by [encode_ident]. *)
+
 val sanitize_ident : string -> string
+(** Encode a source variable/binder in the [pant$v] namespace. Compiler-owned
+    names beginning with [_] and already encoded names pass through unchanged.
+*)
+
+val smt_domain_name : string -> string
+(** Encode a source domain in the [pant$d] namespace. *)
+
 val smt_rule_name : Env.t -> string -> int -> string
 val smt_qualified_rule_name : Env.t -> string -> string -> int -> string

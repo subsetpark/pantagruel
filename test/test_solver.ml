@@ -83,6 +83,12 @@ let test_translate_value_negation () =
 let test_translate_value_domain () =
   check string "domain val" "User_0" (Solver.translate_value "User!val!0")
 
+let test_translate_value_namespaced_domain () =
+  check string "declared element" "User_0"
+    (Solver.translate_value (List.hd (Smt_types.domain_elements "User" 1)));
+  check string "solver-generated element" "User_0"
+    (Solver.translate_value (Smt_types.smt_domain_name "User" ^ "!val!0"))
+
 let test_translate_value_plain () =
   check string "plain atom" "42" (Solver.translate_value "42")
 
@@ -105,6 +111,16 @@ let test_translate_display_name_applied_prime () =
 
 let test_translate_display_name_plain () =
   check string "plain name" "x" (Solver.translate_display_name "x")
+
+let test_translate_display_name_namespaced () =
+  let env = Env.empty "" in
+  let balance = Smt_types.smt_rule_name env "balance" 1 in
+  let account = Smt_types.sanitize_ident "account" in
+  check string "namespaced applied term" "balance account"
+    (Solver.translate_display_name (Printf.sprintf "(%s %s)" balance account));
+  check string "namespaced primed term" "balance' account"
+    (Solver.translate_display_name
+       (Printf.sprintf "(%s_prime %s)" balance account))
 
 (* --- classify_term tests --- *)
 
@@ -222,6 +238,8 @@ let () =
         [
           test_case "negation" `Quick test_translate_value_negation;
           test_case "domain" `Quick test_translate_value_domain;
+          test_case "namespaced domain" `Quick
+            test_translate_value_namespaced_domain;
           test_case "plain" `Quick test_translate_value_plain;
           test_case "true" `Quick test_translate_value_true;
         ] );
@@ -232,6 +250,7 @@ let () =
           test_case "applied_prime" `Quick
             test_translate_display_name_applied_prime;
           test_case "plain" `Quick test_translate_display_name_plain;
+          test_case "namespaced" `Quick test_translate_display_name_namespaced;
         ] );
       ( "classify_term",
         [

@@ -14,131 +14,13 @@ include Smt_preamble
 include Smt_doc
 include Smt_expr
 
-(** Alpha-rename quantifier binders whose string names collide with a declared
-    rule / closure symbol at the SMT top level.
-
-    This is a *name-collision* pass, not a capture-avoidance pass: Bindlib's
-    mbinder already keeps binder identity free of capture in the AST. But
-    [Ast.lower_name] returns the user-chosen string unchanged, and SMT's scope
-    rules shadow the top-level declaration within the quantifier body. So an
-    emission like [(forall ((name ...)) (name x))] — with [name] a declared rule
-    — would read [name x] as applying the bound variable, not the rule.
-
-    The rewrite itself delegates to [Smt_expr.substitute_vars] (library-backed
-    via Bindlib); no hand-rolled walker. We just compute fresh strings that
-    don't collide with sibling binders, outer quantifier binders in [env], or
-    any declared rule / closure, and hand the rename map to the substitution
-    primitive. *)
+(** Rule symbols and variables occupy disjoint SMT namespaces, so source-level
+    binder names cannot shadow top-level rules after emission. Kept as an
+    identity compatibility hook for callers that exercise this stage. *)
 let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     (body : Ast.expr) : Ast.param list * Ast.guard list * Ast.expr =
-  let is_rule_name name =
-    List.exists
-      (fun (_, (e : Env.entry)) ->
-        match[@warning "-4"] e.kind with
-        | Env.KRule _ | Env.KClosure _ -> true
-        | _ -> false)
-      (Env.overloads_of name env)
-  in
-  let binder_names =
-    let from_params =
-      List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
-    in
-    let from_guards =
-      List.filter_map
-        (fun g ->
-          match g with
-          | GParam p -> Some (Ast.lower_name p.param_name)
-          | GIn (Lower n, _) -> Some n
-          | GExpr _ -> None)
-        guards
-    in
-    from_params @ from_guards
-  in
-  (* Seed [occupied] with sibling binders in this quantifier and any outer
-     quantifier binder in scope via [env.vars]. A fresh name matching an
-     enclosing binder would capture outer references when the body rebinds;
-     a fresh name matching a sibling would duplicate. Rules / closures are
-     checked separately in [fresh_for]. *)
-  let occupied =
-    ref
-      (Env.fold_all_terms
-         (fun name entry acc ->
-           match entry.Env.kind with
-           | Env.KVar _ -> Smt_doc.StringSet.add name acc
-           | Env.KRule _ | Env.KClosure _ | Env.KDomain | Env.KAlias _ -> acc)
-         env
-         (Smt_doc.StringSet.of_list binder_names))
-  in
-  let fresh_for orig =
-    let rec try_n n =
-      let cand =
-        if n = 0 then Printf.sprintf "%s_q" orig
-        else Printf.sprintf "%s_q%d" orig n
-      in
-      if Smt_doc.StringSet.mem cand !occupied || is_rule_name cand then
-        try_n (n + 1)
-      else cand
-    in
-    let name = try_n 0 in
-    occupied := Smt_doc.StringSet.add name !occupied;
-    name
-  in
-  let renames =
-    List.filter_map
-      (fun orig ->
-        if is_rule_name orig then Some (orig, fresh_for orig) else None)
-      binder_names
-  in
-  if renames = [] then (params, guards, body)
-  else
-    let rename_param (p : Ast.param) =
-      match List.assoc_opt (Ast.lower_name p.param_name) renames with
-      | Some fresh -> { p with param_name = Lower fresh }
-      | None -> p
-    in
-    let params' = List.map rename_param params in
-    (* Params are in scope for every guard and the body; seed [active] with
-       their renames. Guards fold left-to-right, adding each binder's rename
-       to [active] only AFTER the guard that introduces it — so the guard's
-       own expression (and earlier guards' expressions) see the pre-binder
-       scope. This matters when a binder name shadows an outer rule: the
-       reference in an earlier guard should resolve to the rule and must not
-       be rewritten to the bound-variable form. GIn's list expression is
-       evaluated in the OUTER scope per [ast.ml], so it too is substituted
-       under the pre-binder [active]. *)
-    let param_subst =
-      List.filter_map
-        (fun (p : Ast.param) ->
-          let n = Ast.lower_name p.param_name in
-          match List.assoc_opt n renames with
-          | Some fresh -> Some (n, EVar (Lower fresh))
-          | None -> None)
-        params
-    in
-    let extend_subst subst name =
-      match List.assoc_opt name renames with
-      | Some fresh -> (name, EVar (Lower fresh)) :: subst
-      | None -> subst
-    in
-    let guards_rev, final_subst =
-      List.fold_left
-        (fun (acc, active) g ->
-          match g with
-          | GExpr e -> (GExpr (Smt_expr.substitute_vars active e) :: acc, active)
-          | GParam p ->
-              let n = Ast.lower_name p.param_name in
-              (GParam (rename_param p) :: acc, extend_subst active n)
-          | GIn (Lower n, e) ->
-              let e' = Smt_expr.substitute_vars active e in
-              let n' =
-                match List.assoc_opt n renames with Some x -> x | None -> n
-              in
-              (GIn (Lower n', e') :: acc, extend_subst active n))
-        ([], param_subst) guards
-    in
-    let guards' = List.rev guards_rev in
-    let body' = Smt_expr.substitute_vars final_subst body in
-    (params', guards', body')
+  let _ = env in
+  (params, guards, body)
 
 (** Translate an expression to SMT-LIB2 term string *)
 let rec translate_expr config env (e : expr) =
@@ -183,16 +65,16 @@ let rec translate_expr config env (e : expr) =
   | ETuple exprs ->
       let ts = List.map (translate_expr config env) exprs in
       (* Infer component types to build the correct constructor name *)
-      let component_sorts =
+      let component_types =
         List.map
           (fun sub_e ->
             match Check.infer_type { Check.env; loc = dummy_loc } sub_e with
-            | Ok ty -> sort_base_name ty
+            | Ok ty -> ty
             | Error _ ->
                 failwith "SMT translation: cannot infer tuple component type")
           exprs
       in
-      let ctor = "mk_Pair_" ^ String.concat "_" component_sorts in
+      let ctor = "mk_" ^ product_sort_name component_types in
       Printf.sprintf "(%s %s)" ctor (String.concat " " ts)
   | EProj (e, idx) ->
       Printf.sprintf "(fst_%d %s)" idx (translate_expr config env e)
@@ -980,11 +862,9 @@ and translate_aggregate_finite config env inner_config (comb : combiner) params
             dummy_acc lets)
 
 and translate_quantifier config env quant params guards body =
-  (* Alpha-rename any binder whose string name would shadow a declared rule /
-     closure symbol at the SMT top level — Bindlib keeps binder *identity*
-     fresh but preserves the user-chosen name string, and SMT's scope rules
-     would reinterpret [(name x)] inside the quantifier body as applying the
-     bound variable. See [alpha_rename_binders]. *)
+  (* This compatibility stage is now an identity: emitted binder and rule
+     symbols occupy different namespaces, so SMT cannot confuse them even when
+     their Pantagruel spellings match. *)
   let params, guards, body = alpha_rename_binders env params guards body in
   (* Enrich env with formal parameter bindings so that type inference
      on guard expressions (e.g., GIn list exprs) can resolve them. *)
@@ -2442,14 +2322,14 @@ let collect_conds_in_expr (e : expr) : cond_info list =
   List.rev !results
 
 (** Collect all cond expressions from classified chapters *)
-let collect_conds chapters : cond_info list =
+let collect_conds ?env chapters : cond_info list =
   List.concat_map
     (fun c ->
       let wrap_prop, props =
         match c with
         | Smt_doc.Invariant { head_bindings; propositions; checks } ->
             ( (fun (p : expr located) ->
-                Smt_doc.bind_head_params head_bindings p),
+                Smt_doc.bind_head_params ?env head_bindings p),
               propositions @ checks )
         | Smt_doc.Action { params; guards; propositions; checks; _ } ->
             ( (fun (p : expr located) ->
@@ -2700,9 +2580,9 @@ let invariant_expensive_for_consistency env (inv : expr located) =
 
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
-  let invariants = collect_invariants chapters in
-  let init_props = collect_initial_props chapters in
-  let actions = collect_actions chapters in
+  let invariants = collect_invariants ~env chapters in
+  let init_props = collect_initial_props ~env chapters in
+  let actions = collect_actions ~env chapters in
   let queries = ref [] in
   let add f = queries := with_cond_aux f :: !queries in
   (* Invariant consistency query *)
@@ -2767,7 +2647,7 @@ let generate_queries config env (doc : document) =
               ~steps:config.steps))
       invariants;
   (* Cond exhaustiveness queries *)
-  let conds = collect_conds chapters in
+  let conds = collect_conds ~env chapters in
   List.iteri
     (fun index cond ->
       add (fun () ->
@@ -2775,7 +2655,7 @@ let generate_queries config env (doc : document) =
             ~index cond))
     conds;
   (* Entailment queries for check blocks *)
-  let all_checks = collect_checks chapters in
+  let all_checks = collect_checks ~env chapters in
   List.iteri
     (fun index (check_expr, check_context) ->
       match check_context with

@@ -16,6 +16,10 @@ val strip_prime_suffix : string -> string
 val add_prime_suffix : string -> string
 (** [add_prime_suffix s] appends [prime_suffix] to [s]. *)
 
+val decode_symbol : string -> string
+(** [decode_symbol s] removes Pantagruel's internal SMT namespace/encoding from
+    a generated variable or rule symbol. *)
+
 val translate_value_sexp : Sexplib0.Sexp.t -> string
 (** [translate_value_sexp sexp] renders solver values for display, including Z3
     negation forms such as [(- 1)] and internal domain atoms such as

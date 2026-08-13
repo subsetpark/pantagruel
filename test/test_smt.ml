@@ -33,6 +33,14 @@ let contains s sub =
     in
     check 0
 
+let smt_var = Smt.sanitize_ident
+let smt_domain = Smt.smt_domain_name
+let smt_rule env name arity = Smt.smt_rule_name env name arity
+let smt_prime name = name ^ "_prime"
+
+let smt_element domain index =
+  List.nth (Smt.domain_elements domain (index + 1)) index
+
 let test_lit_bool () =
   let env = Env.empty "" in
   check string "true" "true" (Smt.translate_expr config env (Ast.ELitBool true));
@@ -51,63 +59,75 @@ let test_lit_real () =
 
 let test_var () =
   let env = Env.empty "" in
-  check string "x" "x" (Smt.translate_expr config env (Ast.EVar (Lower "x")));
-  check string "hyphenated" "has_permp"
+  check string "x" (smt_var "x")
+    (Smt.translate_expr config env (Ast.EVar (Lower "x")));
+  check string "hyphenated" (smt_var "has-perm?")
     (Smt.translate_expr config env (Ast.EVar (Lower "has-perm?")))
 
 let test_primed () =
   let env = Env.empty "" in
-  check string "f'" "f_prime"
+  check string "f'"
+    (smt_prime (smt_rule env "f" 0))
     (Smt.translate_expr config env (Ast.EPrimed (Lower "f")))
 
 let test_binop_and () =
   let env = Env.empty "" in
-  check string "and" "(and x y)"
+  check string "and"
+    (Printf.sprintf "(and %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpAnd, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_or () =
   let env = Env.empty "" in
-  check string "or" "(or x y)"
+  check string "or"
+    (Printf.sprintf "(or %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpOr, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_impl () =
   let env = Env.empty "" in
-  check string "impl" "(=> x y)"
+  check string "impl"
+    (Printf.sprintf "(=> %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpImpl, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_eq () =
   let env = Env.empty "" in
-  check string "eq" "(= x y)"
+  check string "eq"
+    (Printf.sprintf "(= %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpEq, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_neq () =
   let env = Env.empty "" in
-  check string "neq" "(not (= x y))"
+  check string "neq"
+    (Printf.sprintf "(not (= %s %s))" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpNeq, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_lt () =
   let env = Env.empty "" in
-  check string "lt" "(< x y)"
+  check string "lt"
+    (Printf.sprintf "(< %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpLt, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_arith () =
   let env = Env.empty "" in
-  check string "add" "(+ x y)"
+  check string "add"
+    (Printf.sprintf "(+ %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpAdd, EVar (Lower "x"), EVar (Lower "y"))));
-  check string "sub" "(- x y)"
+  check string "sub"
+    (Printf.sprintf "(- %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpSub, EVar (Lower "x"), EVar (Lower "y"))));
-  check string "mul" "(* x y)"
+  check string "mul"
+    (Printf.sprintf "(* %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpMul, EVar (Lower "x"), EVar (Lower "y"))));
-  check string "div" "(div x y)"
+  check string "div"
+    (Printf.sprintf "(div %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpDiv, EVar (Lower "x"), EVar (Lower "y"))))
 
@@ -118,33 +138,40 @@ let test_binop_string_concat () =
     |> Env.add_var "t" Types.TyString
     |> Env.add_rule "name" Types.TyString Ast.dummy_loc ~chapter:0
   in
-  check string "string concat" "(str.++ s t)"
+  check string "string concat"
+    (Printf.sprintf "(str.++ %s %s)" (smt_var "s") (smt_var "t"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpAdd, EVar (Lower "s"), EVar (Lower "t"))));
-  check string "string concat with literal" {|(str.++ s "x")|}
+  check string "string concat with literal"
+    (Printf.sprintf {|(str.++ %s "x")|} (smt_var "s"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpAdd, EVar (Lower "s"), ELitString "x")));
   (* Primed string ref must hit the [unprime_expr] fallback so concat lowers
      to [str.++] rather than [+]. The direct [Check.infer_type e1] sees a
      primed nullary rule and returns an error; the fallback unprimes to the
      base rule and recovers [TyString]. *)
-  check string "primed string concat" {|(str.++ name_prime "x")|}
+  check string "primed string concat"
+    (Printf.sprintf {|(str.++ %s "x")|} (smt_prime (smt_rule env "name" 0)))
     (Smt.translate_expr config env
        (Ast.EBinop (OpAdd, EPrimed (Lower "name"), ELitString "x")))
 
 let test_unop_not () =
   let env = Env.empty "" in
-  check string "not" "(not x)"
+  check string "not"
+    (Printf.sprintf "(not %s)" (smt_var "x"))
     (Smt.translate_expr config env (Ast.EUnop (OpNot, EVar (Lower "x"))))
 
 let test_unop_neg () =
   let env = Env.empty "" in
-  check string "neg" "(- x)"
+  check string "neg"
+    (Printf.sprintf "(- %s)" (smt_var "x"))
     (Smt.translate_expr config env (Ast.EUnop (OpNeg, EVar (Lower "x"))))
 
 let test_app () =
   let env = Env.empty "" in
-  check string "app" "(f x y)"
+  check string "app"
+    (Printf.sprintf "(%s %s %s)" (smt_rule env "f" 2) (smt_var "x")
+       (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x"); EVar (Lower "y") ])))
 
@@ -179,20 +206,24 @@ let test_list_index_fallback () =
 
 let test_primed_app () =
   let env = Env.empty "" in
-  check string "primed app" "(f_prime x)"
+  check string "primed app"
+    (Printf.sprintf "(%s %s)" (smt_prime (smt_rule env "f" 1)) (smt_var "x"))
     (Smt.translate_expr config env
        (Ast.EApp (EPrimed (Lower "f"), [ EVar (Lower "x") ])))
 
 let test_domain_in () =
   let env = Env.empty "" in
   check string "in domain"
-    "(or (= x Account_0) (= x Account_1) (= x Account_2))"
+    (Printf.sprintf "(or (= %s %s) (= %s %s) (= %s %s))" (smt_var "x")
+       (smt_element "Account" 0) (smt_var "x") (smt_element "Account" 1)
+       (smt_var "x") (smt_element "Account" 2))
     (Smt.translate_expr config env
        (Ast.EBinop (OpIn, EVar (Lower "x"), EDomain (Upper "Account"))))
 
 let test_proj () =
   let env = Env.empty "" in
-  check string "proj" "(fst_1 x)"
+  check string "proj"
+    (Printf.sprintf "(fst_1 %s)" (smt_var "x"))
     (Smt.translate_expr config env (Ast.EProj (EVar (Lower "x"), 1)))
 
 (* --- Sort encoding tests --- *)
@@ -209,7 +240,7 @@ let test_sort_real () =
   check string "Real sort" "Real" (Smt.sort_of_ty Types.TyReal)
 
 let test_sort_domain () =
-  check string "Domain sort" "Account"
+  check string "Domain sort" (smt_domain "Account")
     (Smt.sort_of_ty (Types.TyDomain "Account"))
 
 (* --- Integration tests --- *)
@@ -217,8 +248,10 @@ let test_sort_domain () =
 let test_preamble_domains_simple () =
   let env = Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0 in
   let preamble = Smt.declare_domain_sorts config env in
-  check bool "has sort decl" true (contains preamble "(declare-sort Account 0)");
-  check bool "has Account_0" true (contains preamble "Account_0");
+  check bool "has sort decl" true
+    (contains preamble
+       (Printf.sprintf "(declare-sort %s 0)" (smt_domain "Account")));
+  check bool "has Account_0" true (contains preamble (smt_element "Account" 0));
   check bool "has distinct" true (contains preamble "(distinct")
 
 let test_function_declarations () =
@@ -231,9 +264,14 @@ let test_function_declarations () =
   in
   let decls = Smt.declare_functions env in
   check bool "has balance decl" true
-    (contains decls "(declare-fun balance (Account) Int)");
+    (contains decls
+       (Printf.sprintf "(declare-fun %s (%s) Int)" (smt_rule env "balance" 1)
+          (smt_domain "Account")));
   check bool "has balance_prime decl" true
-    (contains decls "(declare-fun balance_prime (Account) Int)")
+    (contains decls
+       (Printf.sprintf "(declare-fun %s (%s) Int)"
+          (smt_prime (smt_rule env "balance" 1))
+          (smt_domain "Account")))
 
 (* Recursion is detected at [Env.attach_rule_body] time by scanning the
    equation's RHS for references to the rule's own name. The flag rides
@@ -340,14 +378,23 @@ let test_recursive_rule_emits_define_fun_rec () =
   let env, _doc = Collect.recognize_split_form_bodies env doc in
   let smt = Smt.generate_preamble_with_rule_bodies config env in
   check bool "has define-fun-rec" true
-    (contains smt "(define-fun-rec loop ((x Int)) Int");
-  check bool "has recursive call in body" true (contains smt "(loop (- x 1))");
+    (contains smt
+       (Printf.sprintf "(define-fun-rec %s ((%s Int)) Int"
+          (smt_rule env "loop" 1) (smt_var "x")));
+  check bool "has recursive call in body" true
+    (contains smt
+       (Printf.sprintf "(%s (- %s 1))" (smt_rule env "loop" 1) (smt_var "x")));
   check bool "skips current declare-fun" false
-    (contains smt "(declare-fun loop (Int) Int)");
+    (contains smt
+       (Printf.sprintf "(declare-fun %s (Int) Int)" (smt_rule env "loop" 1)));
   check bool "keeps primed declare-fun" true
-    (contains smt "(declare-fun loop_prime (Int) Int)");
+    (contains smt
+       (Printf.sprintf "(declare-fun %s (Int) Int)"
+          (smt_prime (smt_rule env "loop" 1))));
   check bool "no legacy forall axiom for recursive rule" false
-    (contains smt "(assert (forall ((x Int)) (= (loop x)")
+    (contains smt
+       (Printf.sprintf "(assert (forall ((%s Int)) (= (%s %s)" (smt_var "x")
+          (smt_rule env "loop" 1) (smt_var "x")))
 
 let test_non_recursive_rule_emits_existing_shape () =
   let env, doc =
@@ -360,11 +407,14 @@ let test_non_recursive_rule_emits_existing_shape () =
   | None -> fail "expected rule body in env");
   let smt = Smt.generate_preamble_with_rule_bodies config env in
   check bool "has declare-fun" true
-    (contains smt "(declare-fun next (Int) Int)");
+    (contains smt
+       (Printf.sprintf "(declare-fun %s (Int) Int)" (smt_rule env "next" 1)));
   check bool "has universal axiom" true
-    (contains smt "(assert (forall ((x Int)) (= (next x) (+ x 1))))");
+    (contains smt
+       (Printf.sprintf "(assert (forall ((%s Int)) (= (%s %s) (+ %s 1))))"
+          (smt_var "x") (smt_rule env "next" 1) (smt_var "x") (smt_var "x")));
   check bool "does not use define-fun-rec" false
-    (contains smt "(define-fun-rec next")
+    (contains smt (Printf.sprintf "(define-fun-rec %s" (smt_rule env "next" 1)))
 
 let test_nullary_rule () =
   let env =
@@ -375,7 +425,9 @@ let test_nullary_rule () =
   in
   let decls = Smt.declare_functions env in
   check bool "has const decl" true
-    (contains decls "(declare-const nobody User)")
+    (contains decls
+       (Printf.sprintf "(declare-const %s %s)" (smt_rule env "nobody" 0)
+          (smt_domain "User")))
 
 let test_classify_chapters () =
   let env, doc =
@@ -451,8 +503,10 @@ let test_contradiction_query_content () =
   in
   check bool "has check-sat" true (contains contra.smt2 "(check-sat)");
   check bool "has balance decl" true
-    (contains contra.smt2 "(declare-fun balance ");
-  check bool "has postcondition" true (contains contra.smt2 "balance_prime");
+    (contains contra.smt2
+       (Printf.sprintf "(declare-fun %s " (smt_rule env "balance" 1)));
+  check bool "has postcondition" true
+    (contains contra.smt2 (smt_prime (smt_rule env "balance" 1)));
   check bool "has produce-unsat-cores" true
     (contains contra.smt2 "(set-option :produce-unsat-cores true)");
   check bool "has get-unsat-core" true (contains contra.smt2 "(get-unsat-core)");
@@ -475,9 +529,11 @@ let test_frame_conditions () =
   let frame = Smt.generate_frame_conditions config env [ "Accounts" ] in
   (* owner should be framed (not in Accounts context) *)
   check bool "owner is framed" true
-    (contains frame "owner_prime" && contains frame "owner");
+    (contains frame (smt_prime (smt_rule env "owner" 1))
+    && contains frame (smt_rule env "owner" 1));
   (* balance IS in context: left free, not framed *)
-  check bool "balance not framed" false (contains frame "balance_prime")
+  check bool "balance not framed" false
+    (contains frame (smt_prime (smt_rule env "balance" 1)))
 
 let test_prime_expr () =
   let open Ast in
@@ -542,9 +598,11 @@ let test_card_list () =
     Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "active")))
   in
   (* Should expand to sum of ite over domain elements *)
-  check bool "has ite" true (contains result "(ite (select active");
-  check bool "has Account_0" true (contains result "Account_0");
-  check bool "has Account_2" true (contains result "Account_2")
+  check bool "has ite" true
+    (contains result
+       (Printf.sprintf "(ite (select %s" (smt_rule env "active" 0)));
+  check bool "has Account_0" true (contains result (smt_element "Account" 0));
+  check bool "has Account_2" true (contains result (smt_element "Account" 2))
 
 let test_subset () =
   let env =
@@ -562,9 +620,11 @@ let test_subset () =
       (Ast.EBinop (OpSubset, EVar (Lower "xs"), EVar (Lower "ys")))
   in
   (* Should expand over domain elements *)
-  check bool "has select xs" true (contains result "(select xs");
-  check bool "has select ys" true (contains result "(select ys");
-  check bool "has Item_0" true (contains result "Item_0")
+  check bool "has select xs" true
+    (contains result (Printf.sprintf "(select %s" (smt_rule env "xs" 0)));
+  check bool "has select ys" true
+    (contains result (Printf.sprintf "(select %s" (smt_rule env "ys" 0)));
+  check bool "has Item_0" true (contains result (smt_element "Item" 0))
 
 let test_in_list () =
   let env =
@@ -579,12 +639,16 @@ let test_in_list () =
     Smt.translate_expr config env
       (Ast.EBinop (OpIn, EVar (Lower "a"), EVar (Lower "active")))
   in
-  check string "in list" "(select active a)" result
+  check string "in list"
+    (Printf.sprintf "(select %s %s)" (smt_rule env "active" 0) (smt_var "a"))
+    result
 
 let test_sanitize_ident () =
-  check string "hyphen" "has_perm" (Smt.sanitize_ident "has-perm");
-  check string "question" "is_validp" (Smt.sanitize_ident "is-valid?");
-  check string "plain" "foo" (Smt.sanitize_ident "foo")
+  check string "hyphen" "pant$v$6861732d7065726d"
+    (Smt.sanitize_ident "has-perm");
+  check string "question" "pant$v$69732d76616c69643f"
+    (Smt.sanitize_ident "is-valid?");
+  check string "plain" "pant$v$666f6f" (Smt.sanitize_ident "foo")
 
 let test_domain_standalone () =
   let env = Env.empty "" in
@@ -643,8 +707,9 @@ let test_subset_domain_rhs () =
     Smt.translate_expr config env
       (Ast.EBinop (OpSubset, EVar (Lower "xs"), EDomain (Upper "Item")))
   in
-  check bool "has select xs" true (contains result "(select xs");
-  check bool "has Item_0" true (contains result "Item_0")
+  check bool "has select xs" true
+    (contains result (Printf.sprintf "(select %s" (smt_rule env "xs" 0)));
+  check bool "has Item_0" true (contains result (smt_element "Item" 0))
 
 (* --- Value terms tests --- *)
 
@@ -660,9 +725,13 @@ let test_build_value_terms () =
     [ Ast.{ param_name = Lower "a"; param_type = TName (Upper "Account") } ]
   in
   let terms = Smt.build_value_terms config env params in
-  check bool "has param a" true (List.mem "a" terms);
-  check bool "has (balance a)" true (List.mem "(balance a)" terms);
-  check bool "has (balance_prime a)" true (List.mem "(balance_prime a)" terms)
+  let a = smt_var "a" in
+  let balance = smt_rule env "balance" 1 in
+  check bool "has param a" true (List.mem a terms);
+  check bool "has (balance a)" true
+    (List.mem (Printf.sprintf "(%s %s)" balance a) terms);
+  check bool "has (balance_prime a)" true
+    (List.mem (Printf.sprintf "(%s %s)" (smt_prime balance) a) terms)
 
 let test_build_value_terms_nullary () =
   let env =
@@ -672,8 +741,9 @@ let test_build_value_terms_nullary () =
          Ast.dummy_loc ~chapter:0
   in
   let terms = Smt.build_value_terms config env [] in
-  check bool "has count" true (List.mem "count" terms);
-  check bool "has count_prime" true (List.mem "count_prime" terms)
+  let count = smt_rule env "count" 0 in
+  check bool "has count" true (List.mem count terms);
+  check bool "has count_prime" true (List.mem (smt_prime count) terms)
 
 let test_contradiction_query_has_get_value () =
   let env, doc =
@@ -960,15 +1030,19 @@ let test_rename_smt_for_step () =
          (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
   in
-  let smt = "(>= (balance a) 0)" in
+  let balance = smt_rule env "balance" 1 in
+  let smt = Printf.sprintf "(>= (%s a) 0)" balance in
   let renamed = Smt.rename_smt_for_step env smt 2 in
-  check bool "has balance_s2" true (contains renamed "balance_s2");
-  check bool "no bare balance" false (contains renamed "(balance a)");
+  check bool "has balance_s2" true (contains renamed (balance ^ "_s2"));
+  check bool "no bare balance" false
+    (contains renamed (Printf.sprintf "(%s a)" balance));
   (* Test primed renaming *)
-  let smt2 = "(= (balance_prime a) (- (balance a) 1))" in
+  let smt2 =
+    Printf.sprintf "(= (%s a) (- (%s a) 1))" (smt_prime balance) balance
+  in
   let renamed2 = Smt.rename_smt_for_step env smt2 1 in
-  check bool "has balance_s2 (prime)" true (contains renamed2 "balance_s2");
-  check bool "has balance_s1 (base)" true (contains renamed2 "balance_s1")
+  check bool "has balance_s2 (prime)" true (contains renamed2 (balance ^ "_s2"));
+  check bool "has balance_s1 (base)" true (contains renamed2 (balance ^ "_s1"))
 
 let test_generate_bmc_queries () =
   let env, doc =
@@ -992,9 +1066,10 @@ let test_generate_bmc_queries () =
   in
   check bool "has BMC queries" true (List.length bmc_queries >= 1);
   let bmc = List.hd bmc_queries in
+  let balance = smt_rule env "balance" 1 in
   check bool "has check-sat" true (contains bmc.smt2 "(check-sat)");
-  check bool "has step 0" true (contains bmc.smt2 "balance_s0");
-  check bool "has step 1" true (contains bmc.smt2 "balance_s1");
+  check bool "has step 0" true (contains bmc.smt2 (balance ^ "_s0"));
+  check bool "has step 1" true (contains bmc.smt2 (balance ^ "_s1"));
   check bool "has initial state" true (contains bmc.smt2 "Initial state");
   check bool "has transition" true (contains bmc.smt2 "Transition step");
   check bool "has violated" true (contains bmc.smt2 "Invariant violated")
@@ -1040,6 +1115,22 @@ let test_format_bmc_counterexample_applied () =
   check bool "has Step 1" true (contains result "Step 1");
   check bool "has balance Account_0 = 10" true
     (contains result "balance Account_0 = 10")
+
+let test_format_bmc_counterexample_namespaced () =
+  let env = Env.empty "" in
+  let balance = smt_rule env "balance" 1 in
+  let account = smt_element "Account" 0 in
+  let values =
+    [
+      (Printf.sprintf "(%s_s0 %s)" balance account, "10");
+      (Printf.sprintf "(%s_s1 %s)" balance account, "5");
+    ]
+  in
+  let result = Solver.format_bmc_counterexample values in
+  check bool "decodes source rule and domain element" true
+    (contains result "balance Account_0 = 10");
+  check bool "does not expose internal namespace" false
+    (contains result "pant$")
 
 (* --- Domain bounds tests --- *)
 
@@ -1091,25 +1182,29 @@ let test_card_domain_with_bounds () =
 
 let test_binop_iff () =
   let env = Env.empty "" in
-  check string "iff" "(= x y)"
+  check string "iff"
+    (Printf.sprintf "(= %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpIff, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_ge () =
   let env = Env.empty "" in
-  check string "ge" "(>= x y)"
+  check string "ge"
+    (Printf.sprintf "(>= %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpGe, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_gt () =
   let env = Env.empty "" in
-  check string "gt" "(> x y)"
+  check string "gt"
+    (Printf.sprintf "(> %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpGt, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_le () =
   let env = Env.empty "" in
-  check string "le" "(<= x y)"
+  check string "le"
+    (Printf.sprintf "(<= %s %s)" (smt_var "x") (smt_var "y"))
     (Smt.translate_expr config env
        (Ast.EBinop (OpLe, EVar (Lower "x"), EVar (Lower "y"))))
 
@@ -1118,8 +1213,10 @@ let test_tuple () =
   let result =
     Smt.translate_expr config env (Ast.ETuple [ ELitNat 1; ELitNat 2 ])
   in
-  (* Tuple translates to mk-pair or similar *)
-  check bool "tuple non-empty" true (String.length result > 0)
+  check string "tuple constructor matches declared product datatype"
+    (Printf.sprintf "(mk_%s 1 2)"
+       (Smt.product_sort_name [ Types.TyNat; Types.TyNat ]))
+    result
 
 let test_override () =
   let env =
@@ -1138,7 +1235,8 @@ let test_override () =
            [ EVar (Lower "a") ] ))
   in
   check bool "applied override has ite" true (contains result "ite");
-  check bool "applied override has f" true (contains result "f");
+  check bool "applied override has f" true
+    (contains result (smt_rule env "f" 1));
   (* Standalone override (not applied) can't be represented directly *)
   let result2 =
     Smt.translate_expr config env
@@ -1178,7 +1276,8 @@ let test_override_unary_tuple_key () =
   check bool "unary tuple-key override has no conjunctive guard" false
     (contains result "(and ");
   check bool "unary tuple-key override fallback applies single arg" true
-    (contains result "(g p)")
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "g" 1) (smt_var "p")))
 
 let test_override_nary_tuple_key () =
   (* Arity-2 rule with a tuple-keyed override: the ite guard conjoins equality
@@ -1209,11 +1308,13 @@ let test_override_nary_tuple_key () =
   check bool "arity-2 override has conjunctive guard" true
     (contains result "(and ");
   check bool "arity-2 override fallback applies both args" true
-    (contains result "(f h1 k1)");
+    (contains result
+       (Printf.sprintf "(%s %s %s)" (smt_rule env "f" 2) (smt_var "h1")
+          (smt_var "k1")));
   check bool "arity-2 override guard mentions h equality" true
-    (contains result "(= h1 h)");
+    (contains result (Printf.sprintf "(= %s %s)" (smt_var "h1") (smt_var "h")));
   check bool "arity-2 override guard mentions k equality" true
-    (contains result "(= k1 k)")
+    (contains result (Printf.sprintf "(= %s %s)" (smt_var "k1") (smt_var "k")))
 
 let test_initially () =
   let env = Env.empty "" in
@@ -1228,10 +1329,62 @@ let test_lit_string () =
 (* --- Bug-finding tests --- *)
 
 let test_sanitize_ident_bang () =
-  (* Bug #1: sanitize_ident doesn't handle '!' — produces invalid SMT-LIB2 *)
+  (* Source punctuation is encoded instead of leaking into SMT symbols. *)
   let result = Smt.sanitize_ident "check-out!" in
   check bool "no bang in sanitized ident" true
     (not (String.contains result '!'))
+
+let test_reserved_user_symbols_reach_solver () =
+  let env, doc =
+    parse_and_collect
+      "module ReservedSymbols.\n\
+       List.\n\
+       select left: List, right: List => Bool.\n\
+       match left: List, right: List => Bool.\n\
+       ---\n\
+       all left: List, right: List | select left right = match left right.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let consistency =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  check bool "escaped domain declaration" true
+    (contains consistency.smt2
+       (Printf.sprintf "(declare-sort %s 0)" (Smt.smt_domain_name "List")));
+  check bool "escaped select declaration" true
+    (contains consistency.smt2
+       ("(declare-fun " ^ Smt.smt_rule_name env "select" 2));
+  check bool "escaped match application" true
+    (contains consistency.smt2 ("(" ^ Smt.smt_rule_name env "match" 2 ^ " "));
+  if Solver.solver_available () then
+    match Solver.run_solver ~timeout:5.0 consistency.smt2 with
+    | Solver.SolverError message ->
+        failf "reserved-symbol query was rejected by the solver: %s" message
+    | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
+
+let test_rule_application_head_not_auto_bound () =
+  let env, doc =
+    parse_and_collect
+      "module RuleHeadScope.\n\
+       Value.\n\
+       Outcome.\n\
+       err observed: Nat0 => Outcome.\n\
+       observed value: Value => Nat0.\n\
+       ---\n\
+       all value: Value | err (observed value) = err (observed value).\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let consistency =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  check bool "rule head is not rebound as a numeric quantifier" false
+    (contains consistency.smt2
+       ("(forall ((" ^ Smt.sanitize_ident "observed" ^ " Int)"));
+  if Solver.solver_available () then
+    match Solver.run_solver ~timeout:5.0 consistency.smt2 with
+    | Solver.SolverError message ->
+        failf "rule-head scope query was rejected by the solver: %s" message
+    | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
 
 let test_translate_in_zero_bound () =
   (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
@@ -1278,11 +1431,15 @@ let test_nat_vs_nat0_constraints () =
          Ast.dummy_loc ~chapter:0
   in
   let constraints = Smt.declare_type_constraints config env in
-  check bool "Nat has >= 1 bound" true (contains constraints ">= (score");
-  check bool "Nat0 has >= 0 bound" true (contains constraints ">= (count");
+  check bool "Nat has >= 1 bound" true
+    (contains constraints (">= (" ^ smt_rule env "score" 1));
+  check bool "Nat0 has >= 0 bound" true
+    (contains constraints (">= (" ^ smt_rule env "count" 1));
   (* Verify the actual bound values *)
-  check bool "contains 1) for Nat" true (contains constraints "(>= (score");
-  check bool "contains 0) for Nat0" true (contains constraints "(>= (count")
+  check bool "contains 1) for Nat" true
+    (contains constraints ("(>= (" ^ smt_rule env "score" 1));
+  check bool "contains 0) for Nat0" true
+    (contains constraints ("(>= (" ^ smt_rule env "count" 1))
 
 let test_domain_closure_bound_one () =
   (* Bug #11: with bound=1, domain_elements produces 1 element,
@@ -1307,7 +1464,8 @@ let test_domain_closure_bound_one () =
   in
   (* At bound=1, the closure axiom should still exist.
      If it's skipped, domain membership is incomplete. *)
-  check bool "has ancestor axiom at bound=1" true (contains inv.smt2 "ancestor")
+  check bool "has ancestor axiom at bound=1" true
+    (contains inv.smt2 (smt_rule env "ancestor" 1))
 
 let expression_tests =
   [
@@ -1356,7 +1514,8 @@ let test_sort_string () =
   check string "String sort" "String" (Smt.sort_of_ty Types.TyString)
 
 let test_sort_list () =
-  check string "List sort" "(Array Account Bool)"
+  check string "List sort"
+    (Printf.sprintf "(Array %s Bool)" (smt_domain "Account"))
     (Smt.sort_of_ty (Types.TyList (Types.TyDomain "Account")))
 
 let sort_tests =
@@ -1379,7 +1538,8 @@ let test_nat_type_constraints () =
   in
   let constraints = Smt.declare_type_constraints config env in
   (* Nat uses bound 1 (positive naturals) *)
-  check bool "has >= 1 for Nat" true (contains constraints ">= (balance");
+  check bool "has >= 1 for Nat" true
+    (contains constraints (">= (" ^ smt_rule env "balance" 1));
   check bool "has assert" true (contains constraints "(assert")
 
 let test_list_nat_element_constraint () =
@@ -1391,7 +1551,9 @@ let test_list_nat_element_constraint () =
          Ast.dummy_loc ~chapter:0
   in
   let constraints = Smt.declare_type_constraints config env in
-  check bool "has select xs" true (contains constraints "(select xs k_elem)");
+  check bool "has select xs" true
+    (contains constraints
+       (Printf.sprintf "(select %s k_elem)" (smt_rule env "xs" 0)));
   check bool "has >= k_elem 1" true (contains constraints "(>= k_elem 1)")
 
 let test_list_nat0_element_constraint () =
@@ -1403,7 +1565,9 @@ let test_list_nat0_element_constraint () =
   in
   let constraints = Smt.declare_type_constraints config env in
   check bool "has implication shape" true
-    (contains constraints "(=> (select ys k_elem) (>= k_elem 0))")
+    (contains constraints
+       (Printf.sprintf "(=> (select %s k_elem) (>= k_elem 0))"
+          (smt_rule env "ys" 0)))
 
 let test_list_with_params_element_constraint () =
   (* Parameterized rule: constraint applies under both the param and the elem quantifier *)
@@ -1416,9 +1580,11 @@ let test_list_with_params_element_constraint () =
          Ast.dummy_loc ~chapter:0
   in
   let constraints = Smt.declare_type_constraints config env in
-  check bool "param binder present" true (contains constraints "(x_0 User)");
+  check bool "param binder present" true
+    (contains constraints (Printf.sprintf "(x_0 %s)" (smt_domain "User")));
   check bool "element select applied" true
-    (contains constraints "(select (following x_0) k_elem)");
+    (contains constraints
+       (Printf.sprintf "(select (%s x_0) k_elem)" (smt_rule env "following" 1)));
   check bool "has >= k_elem 1" true (contains constraints "(>= k_elem 1)")
 
 let test_list_domain_element_no_constraint () =
@@ -1454,9 +1620,11 @@ let test_invariant_query_content () =
   in
   check bool "has check-sat" true (contains inv_con.smt2 "(check-sat)");
   check bool "has balance decl" true
-    (contains inv_con.smt2 "(declare-fun balance ");
+    (contains inv_con.smt2
+       (Printf.sprintf "(declare-fun %s " (smt_rule env "balance" 1)));
   check bool "has domain sort" true
-    (contains inv_con.smt2 "(declare-sort Account 0)")
+    (contains inv_con.smt2
+       (Printf.sprintf "(declare-sort %s 0)" (smt_domain "Account")))
 
 let test_expensive_string_quantifier_skips_consistency_only () =
   let env, doc =
@@ -1624,6 +1792,8 @@ let bmc_tests =
     test_case "format BMC counterexample" `Quick test_format_bmc_counterexample;
     test_case "format BMC counterexample applied" `Quick
       test_format_bmc_counterexample_applied;
+    test_case "format BMC counterexample namespaced" `Quick
+      test_format_bmc_counterexample_namespaced;
   ]
 
 let domain_bounds_tests =
@@ -1658,9 +1828,13 @@ let test_in_each_comprehension () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "has (= r (role User_0))" true
-    (contains result "(= r (role User_0))");
+    (contains result
+       (Printf.sprintf "(= %s (%s %s))" (smt_var "r") (smt_rule env "role" 1)
+          (smt_element "User" 0)));
   check bool "has (= r (role User_1))" true
-    (contains result "(= r (role User_1))");
+    (contains result
+       (Printf.sprintf "(= %s (%s %s))" (smt_var "r") (smt_rule env "role" 1)
+          (smt_element "User" 1)));
   check bool "has or" true (contains result "(or")
 
 let test_in_each_comprehension_guarded () =
@@ -1689,9 +1863,13 @@ let test_in_each_comprehension_guarded () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "has guard (active User_0)" true
-    (contains result "(active User_0)");
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "active" 1)
+          (smt_element "User" 0)));
   check bool "has (= r (role User_0))" true
-    (contains result "(= r (role User_0))");
+    (contains result
+       (Printf.sprintf "(= %s (%s %s))" (smt_var "r") (smt_rule env "role" 1)
+          (smt_element "User" 0)));
   check bool "has and (guard + eq)" true (contains result "(and")
 
 let test_in_membership_comprehension () =
@@ -1718,9 +1896,12 @@ let test_in_membership_comprehension () =
           (EApp (EVar (Lower "role"), [ EVar (Lower "u") ])) )
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has select admins" true (contains result "(select admins");
+  check bool "has select admins" true
+    (contains result (Printf.sprintf "(select %s" (smt_rule env "admins" 0)));
   check bool "has (= r (role User_0))" true
-    (contains result "(= r (role User_0))");
+    (contains result
+       (Printf.sprintf "(= %s (%s %s))" (smt_var "r") (smt_rule env "role" 1)
+          (smt_element "User" 0)));
   check bool "has or" true (contains result "(or")
 
 let test_card_each_comprehension () =
@@ -1743,7 +1924,7 @@ let test_card_each_comprehension () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "has ite" true (contains result "(ite");
-  check bool "has Role_0" true (contains result "Role_0");
+  check bool "has Role_0" true (contains result (smt_element "Role" 0));
   check bool "has +" true (contains result "(+")
 
 let test_each_comprehension_standalone () =
@@ -1765,7 +1946,8 @@ let test_each_comprehension_standalone () =
   let result = Smt.translate_expr config env expr in
   check bool "has as const" true (contains result "as const");
   check bool "has store" true (contains result "store");
-  check bool "has Array Role Bool" true (contains result "(Array Role Bool)")
+  check bool "has Array Role Bool" true
+    (contains result (Printf.sprintf "(Array %s Bool)" (smt_domain "Role")))
 
 let test_aggregate_add () =
   (* + over each u: User | score u → (+ (score User_0) (score User_1) ...) *)
@@ -1784,8 +1966,12 @@ let test_aggregate_add () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "has +" true (contains result "(+");
-  check bool "has (score User_0)" true (contains result "(score User_0)");
-  check bool "has (score User_1)" true (contains result "(score User_1)")
+  check bool "has (score User_0)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "score" 1) (smt_element "User" 0)));
+  check bool "has (score User_1)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "score" 1) (smt_element "User" 1)))
 
 let test_aggregate_and () =
   (* and over each u: User | active u → (and (active User_0) ...) *)
@@ -1804,7 +1990,10 @@ let test_aggregate_and () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "has and" true (contains result "(and");
-  check bool "has (active User_0)" true (contains result "(active User_0)")
+  check bool "has (active User_0)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "active" 1)
+          (smt_element "User" 0)))
 
 let test_aggregate_min_guarded () =
   (* min over each u: User, active u | score u → pant_min with ite guards *)
@@ -1874,7 +2063,10 @@ let test_aggregate_decl_guard_injection () =
       (EApp (EVar (Lower "score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has (active User_0)" true (contains result "(active User_0)");
+  check bool "has (active User_0)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "active" 1)
+          (smt_element "User" 0)));
   check bool "has ite" true (contains result "(ite")
 
 let test_aggregate_add_real () =
@@ -2035,9 +2227,9 @@ let test_mu_search_guarded_predicate () =
   let _ = Smt.translate_expr config env expr in
   let drained = Smt.drain_fallback_decls () in
   check bool "predicate appears applied to r" true
-    (contains drained "(activep _mu_fallback");
+    (contains drained ("(" ^ smt_rule env "active?" 1 ^ " _mu_fallback"));
   check bool "predicate appears applied to j witness" true
-    (contains drained "(activep _mu_j_")
+    (contains drained ("(" ^ smt_rule env "active?" 1 ^ " _mu_j_"))
 
 let test_mu_search_nested_binder_capture () =
   (* min over each j: Nat, (some j: Nat | p? j) | j — the inner quantifier
@@ -2067,8 +2259,10 @@ let test_mu_search_nested_binder_capture () =
   (* Inner binder must still be bound as [j] (or alpha-renamed to avoid
      collision with the outer witness) — never rewritten to the outer
      μ-search witness constant. *)
+  let j = smt_var "j" in
   check bool "inner exists keeps a j-family binder" true
-    (contains drained "(exists ((j " || contains drained "(exists ((j_");
+    (contains drained ("(exists ((" ^ j ^ " ")
+    || contains drained ("(exists ((" ^ j ^ "_"));
   check bool "inner binder not replaced by outer witness" true
     (not (contains drained "(exists ((_mu_fallback"))
 
@@ -2154,7 +2348,10 @@ let test_bounded_sum_over_nat0_symbolic_bound () =
   in
   let result = Smt.translate_expr config env expr in
   check string "symbolic bound unrolled with ite guards"
-    "(+ (ite (< 0 n) 0 0) (ite (< 1 n) 1 0) (ite (< 2 n) 2 0))" result
+    (Printf.sprintf
+       "(+ (ite (< 0 %s) 0 0) (ite (< 1 %s) 1 0) (ite (< 2 %s) 2 0))"
+       (smt_var "n") (smt_var "n") (smt_var "n"))
+    result
 
 let test_bounded_sum_over_nat0_concrete_bound () =
   let env = Env.empty "" in
@@ -2184,8 +2381,11 @@ let test_bounded_and_over_nat0_bool_body () =
   in
   let result = Smt.translate_expr config env expr in
   check string "and neutral true gating"
-    "(and (ite (< 0 n) (pp 0) true) (ite (< 1 n) (pp 1) true) (ite (< 2 n) (pp \
-     2) true))"
+    (Printf.sprintf
+       "(and (ite (< 0 %s) (%s 0) true) (ite (< 1 %s) (%s 1) true) (ite (< 2 \
+        %s) (%s 2) true))"
+       (smt_var "n") (smt_rule env "p?" 1) (smt_var "n") (smt_rule env "p?" 1)
+       (smt_var "n") (smt_rule env "p?" 1))
     result
 
 let test_bounded_over_each_rejects_no_bound () =
@@ -2292,15 +2492,21 @@ let test_closure_axiom_generation () =
     List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
   in
   (* Should have grounded closure axioms for ancestor *)
-  check bool "has ancestor" true (contains inv.smt2 "(ancestor");
-  check bool "has ancestor_prime" true (contains inv.smt2 "(ancestor_prime");
+  let ancestor = smt_rule env "ancestor" 1 in
+  check bool "has ancestor" true (contains inv.smt2 ("(" ^ ancestor));
+  check bool "has ancestor_prime" true
+    (contains inv.smt2 ("(" ^ smt_prime ancestor));
   (* Should be quantifier-free in closure section *)
   check bool "no exists in axioms" false (contains inv.smt2 "(exists ((_cz_");
   (* Should define ancestor for each pair *)
   check bool "has Block_0 Block_0 pair" true
-    (contains inv.smt2 "(select (ancestor Block_0) Block_0)");
+    (contains inv.smt2
+       (Printf.sprintf "(select (%s %s) %s)" ancestor (smt_element "Block" 0)
+          (smt_element "Block" 0)));
   check bool "has Block_0 Block_1 pair" true
-    (contains inv.smt2 "(select (ancestor Block_0) Block_1)")
+    (contains inv.smt2
+       (Printf.sprintf "(select (%s %s) %s)" ancestor (smt_element "Block" 0)
+          (smt_element "Block" 1)))
 
 let test_closure_no_frame_condition () =
   (* Closure rules should NOT generate frame conditions *)
@@ -2363,7 +2569,8 @@ let test_quantifier_guard_injection () =
   in
   (* The guard "active? u" should appear as an antecedent in the
      forall quantifier, substituted to match the quantified variable *)
-  check bool "has guard in quantifier" true (contains inv_con.smt2 "activep")
+  check bool "has guard in quantifier" true
+    (contains inv_con.smt2 (smt_rule env "active?" 1))
 
 let test_non_quantified_guard_injection () =
   (* A bare proposition using a guarded function should get wrapped *)
@@ -2392,7 +2599,9 @@ let test_non_quantified_guard_injection () =
   let result = Smt.translate_proposition config env expr in
   (* Should wrap: (=> (status x) (= (get_access x) x)) *)
   check bool "has implication" true (contains result "(=>");
-  check bool "has guard (status x)" true (contains result "(status x)")
+  check bool "has guard (status x)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "status" 1) (smt_var "x")))
 
 let test_nested_quantifier_guards () =
   (* Guards should be injected at the correct nesting level.
@@ -2428,7 +2637,8 @@ let test_nested_quantifier_guards () =
   let result = Smt.translate_expr config env expr in
   (* Outer forall should NOT have the guard (nested quantifier handles its own).
      Inner exists should have (active y) and (active x) as guards. *)
-  check bool "has active guard" true (contains result "(active")
+  check bool "has active guard" true
+    (contains result ("(" ^ smt_rule env "active" 1))
 
 let test_unguarded_rule_unchanged () =
   (* Rules without guards should produce the same output as before *)
@@ -2477,8 +2687,12 @@ let test_guard_substitution () =
      substitution in native forall emission. *)
   let result = Smt.translate_expr config_native env expr in
   (* Guard should be substituted: (active x), not (active u) *)
-  check bool "has (active x)" true (contains result "(active x)");
-  check bool "no (active u)" false (contains result "(active u)")
+  check bool "has (active x)" true
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "active" 1) (smt_var "x")));
+  check bool "no (active u)" false
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "active" 1) (smt_var "u")))
 
 let test_primed_guard_collection () =
   (* collect_body_guards on EApp(EPrimed (Lower "value"), [EVar (Lower "t")]) should return
@@ -2558,7 +2772,9 @@ let test_list_search_injects_membership_guard () =
   let result = Smt.translate_proposition config env expr in
   check bool "wraps with implication" true (contains result "(=>");
   check bool "guard references colors membership" true
-    (contains result "(select colors red)")
+    (contains result
+       (Printf.sprintf "(select %s %s)" (smt_rule env "colors" 0)
+          (smt_rule env "red" 0)))
 
 let test_list_search_stable_across_repeats () =
   (* xs x = xs x must translate to an equality between identical placeholders.
@@ -2622,10 +2838,13 @@ let test_list_search_guarded_nullary_list () =
   Smt.reset_list_search_cache ();
   let result = Smt.translate_proposition config env expr in
   (* Declaration guard (ready) must be injected unchanged. *)
-  check bool "declaration guard injected" true (contains result "ready");
+  check bool "declaration guard injected" true
+    (contains result (smt_rule env "ready" 0));
   (* The implicit membership guard must also be present. *)
   check bool "membership guard injected" true
-    (contains result "(select colors red)")
+    (contains result
+       (Printf.sprintf "(select %s %s)" (smt_rule env "colors" 0)
+          (smt_rule env "red" 0)))
 
 let test_list_search_precondition_injects_guard () =
   (* Action preconditions that mention a list-search must be asserted with
@@ -2653,13 +2872,17 @@ let test_list_search_precondition_injects_guard () =
   (* The membership guard (select colors red) must be asserted alongside
      the precondition body, so the list-search placeholder is constrained
      only when red actually belongs to colors. *)
+  let membership =
+    Printf.sprintf "(select %s %s)" (smt_rule env "colors" 0)
+      (smt_rule env "red" 0)
+  in
   check bool "precond query has membership guard" true
-    (contains precond_q.smt2 "(select colors red)");
+    (contains precond_q.smt2 membership);
   let contra_q =
     List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
   in
   check bool "contradiction query has membership guard" true
-    (contains contra_q.smt2 "(select colors red)")
+    (contains contra_q.smt2 membership)
 
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
@@ -2717,7 +2940,7 @@ let test_guarded_decl_e2e () =
   in
   (* Postcondition assertions should not wrap with guard implication *)
   check bool "postcond no guard implication" false
-    (contains postcond_section "(=> (activep");
+    (contains postcond_section ("(=> (" ^ smt_prime (smt_rule env "active?" 1)));
   (* The primed invariant (negated) should contain primed guard *)
   let violated_section =
     let lines = String.split_on_char '\n' inv_q.smt2 in
@@ -2731,7 +2954,7 @@ let test_guarded_decl_e2e () =
     String.concat "\n" (List.rev !violated_lines)
   in
   check bool "primed invariant has primed guard" true
-    (contains violated_section "activep_prime");
+    (contains violated_section (smt_prime (smt_rule env "active?" 1)));
   ignore doc
 
 let guard_injection_tests =
@@ -2772,7 +2995,8 @@ let test_cond_two_arms () =
         (ELitBool true, ELitNat 0);
       ]
   in
-  check string "two arms" "(ite (> x 0) 1 0)"
+  check string "two arms"
+    (Printf.sprintf "(ite (> %s 0) 1 0)" (smt_var "x"))
     (Smt.translate_expr config env expr)
 
 let test_cond_three_arms () =
@@ -2785,7 +3009,9 @@ let test_cond_three_arms () =
         (ELitBool true, ELitNat 0);
       ]
   in
-  check string "three arms" "(ite (> x 10) 2 (ite (> x 5) 1 0))"
+  check string "three arms"
+    (Printf.sprintf "(ite (> %s 10) 2 (ite (> %s 5) 1 0))" (smt_var "x")
+       (smt_var "x"))
     (Smt.translate_expr config env expr)
 
 let test_cond_exhaustiveness_query () =
@@ -2834,6 +3060,10 @@ let cond_tests =
 let bug_finding_tests =
   [
     test_case "sanitize_ident bang" `Quick test_sanitize_ident_bang;
+    test_case "reserved user symbols reach solver" `Quick
+      test_reserved_user_symbols_reach_solver;
+    test_case "rule application head is not auto-bound" `Quick
+      test_rule_application_head_not_auto_bound;
     test_case "translate_in zero bound" `Quick test_translate_in_zero_bound;
     test_case "override applied zero args" `Quick
       test_override_applied_zero_args;
@@ -2866,9 +3096,13 @@ let test_aggregate_add_item () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses +" true (contains result "(+");
-  check bool "has price Item_0" true (contains result "(price Item_0)");
-  check bool "has price Item_1" true (contains result "(price Item_1)");
-  check bool "has price Item_2" true (contains result "(price Item_2)")
+  let price = smt_rule env "price" 1 in
+  check bool "has price Item_0" true
+    (contains result (Printf.sprintf "(%s %s)" price (smt_element "Item" 0)));
+  check bool "has price Item_1" true
+    (contains result (Printf.sprintf "(%s %s)" price (smt_element "Item" 1)));
+  check bool "has price Item_2" true
+    (contains result (Printf.sprintf "(%s %s)" price (smt_element "Item" 2)))
 
 let test_aggregate_add_guarded () =
   let env = make_aggregate_env () in
@@ -3086,10 +3320,13 @@ let test_aggregate_integration () =
     List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
   in
   check bool "has and combiner" true (contains inv.smt2 "(and");
+  let available = smt_rule env "available?" 1 in
   check bool "has availablep Item_0" true
-    (contains inv.smt2 "(availablep Item_0)");
+    (contains inv.smt2
+       (Printf.sprintf "(%s %s)" available (smt_element "Item" 0)));
   check bool "has availablep Item_1" true
-    (contains inv.smt2 "(availablep Item_1)")
+    (contains inv.smt2
+       (Printf.sprintf "(%s %s)" available (smt_element "Item" 1)))
 
 let aggregate_tests =
   [
@@ -3129,7 +3366,8 @@ let test_entailment_invariant_query () =
   let q = List.hd entailment in
   check bool "has check-sat" true (contains q.smt2 "(check-sat)");
   check bool "has negated goal" true (contains q.smt2 "(assert (not");
-  check bool "has f declaration" true (contains q.smt2 "(declare-fun f ")
+  check bool "has f declaration" true
+    (contains q.smt2 (Printf.sprintf "(declare-fun %s " (smt_rule env "f" 1)))
 
 let test_entailment_action_query () =
   let env, doc =
@@ -3153,16 +3391,19 @@ let test_entailment_action_query () =
   in
   check int "entailment query count" 1 (List.length entailment);
   let q = List.hd entailment in
+  let balance = smt_rule env "balance" 1 in
+  let a = smt_var "a" and amount = smt_var "amount" in
   check bool "has check-sat" true (contains q.smt2 "(check-sat)");
   check bool "has negated goal" true (contains q.smt2 "(assert (not");
   check bool "has action postcondition" true
-    (contains q.smt2 "(= (balance_prime a)");
+    (contains q.smt2 (Printf.sprintf "(= (%s %s)" (smt_prime balance) a));
   check bool "has action precondition assumption" true
-    (contains q.smt2 "(>= (balance a) amount)");
+    (contains q.smt2 (Printf.sprintf "(>= (%s %s) %s)" balance a amount));
   (* The invariant [all a: Account | balance a >= 0] is grounded over the
      Account elements, so the assumption appears per-element. *)
   check bool "has invariant assumption" true
-    (contains q.smt2 "(>= (balance Account_0) 0)")
+    (contains q.smt2
+       (Printf.sprintf "(>= (%s %s) 0)" balance (smt_element "Account" 0)))
 
 let test_entailment_uses_chapter_local_invariants () =
   (* Two invariant chapters, each with a check. The check in the second chapter
@@ -3188,24 +3429,26 @@ let test_entailment_uses_chapter_local_invariants () =
   in
   check int "entailment query count" 2 (List.length entailment);
   (* Find each query by axiom fingerprint, not position *)
+  let f_axiom = "(= (" ^ smt_rule env "f" 1 ^ " " in
+  let g_axiom = "(= (" ^ smt_rule env "g" 1 ^ " " in
   let q1 =
     match
-      List.find_opt (fun (q : Smt.query) -> contains q.smt2 "(= (f ") entailment
+      List.find_opt (fun (q : Smt.query) -> contains q.smt2 f_axiom) entailment
     with
     | Some q -> q
     | None -> fail "Expected entailment query containing f axiom"
   in
-  check bool "q1 has f axiom" true (contains q1.smt2 "(= (f ");
-  check bool "q1 lacks g axiom" false (contains q1.smt2 "(= (g ");
+  check bool "q1 has f axiom" true (contains q1.smt2 f_axiom);
+  check bool "q1 lacks g axiom" false (contains q1.smt2 g_axiom);
   let q2 =
     match
-      List.find_opt (fun (q : Smt.query) -> contains q.smt2 "(= (g ") entailment
+      List.find_opt (fun (q : Smt.query) -> contains q.smt2 g_axiom) entailment
     with
     | Some q -> q
     | None -> fail "Expected entailment query containing g axiom"
   in
-  check bool "q2 has g axiom" true (contains q2.smt2 "(= (g ");
-  check bool "q2 lacks f axiom" false (contains q2.smt2 "(= (f ");
+  check bool "q2 has g axiom" true (contains q2.smt2 g_axiom);
+  check bool "q2 lacks f axiom" false (contains q2.smt2 f_axiom);
   ()
 
 let test_entailment_multiple_goals () =
@@ -3225,9 +3468,15 @@ let test_entailment_multiple_goals () =
   in
   check int "two entailment queries for two goals" 2 (List.length entailment);
   check bool "has strict gt goal" true
-    (List.exists (fun (q : Smt.query) -> contains q.smt2 "(> (f ") entailment);
+    (List.exists
+       (fun (q : Smt.query) ->
+         contains q.smt2 ("(> (" ^ smt_rule env "f" 1 ^ " "))
+       entailment);
   check bool "has gte goal" true
-    (List.exists (fun (q : Smt.query) -> contains q.smt2 "(>= (f ") entailment)
+    (List.exists
+       (fun (q : Smt.query) ->
+         contains q.smt2 ("(>= (" ^ smt_rule env "f" 1 ^ " "))
+       entailment)
 
 let test_no_entailment_without_checks () =
   let env, doc =
@@ -3279,8 +3528,11 @@ let test_ground_forall_domain () =
   let result = Smt.translate_expr config_g2 env expr in
   check bool "no native forall" false (contains result "forall");
   check bool "conjunction" true (contains result "(and ");
-  check bool "instance D_0" true (contains result "(p D_0)");
-  check bool "instance D_1" true (contains result "(p D_1)")
+  let p = smt_rule env "p" 1 in
+  check bool "instance D_0" true
+    (contains result (Printf.sprintf "(%s %s)" p (smt_element "D" 0)));
+  check bool "instance D_1" true
+    (contains result (Printf.sprintf "(%s %s)" p (smt_element "D" 1)))
 
 let test_ground_exists_domain () =
   let env = ground_env () in
@@ -3293,8 +3545,11 @@ let test_ground_exists_domain () =
   let result = Smt.translate_expr config_g2 env expr in
   check bool "no native exists" false (contains result "exists");
   check bool "disjunction" true (contains result "(or ");
-  check bool "instance D_0" true (contains result "(p D_0)");
-  check bool "instance D_1" true (contains result "(p D_1)")
+  let p = smt_rule env "p" 1 in
+  check bool "instance D_0" true
+    (contains result (Printf.sprintf "(%s %s)" p (smt_element "D" 0)));
+  check bool "instance D_1" true
+    (contains result (Printf.sprintf "(%s %s)" p (smt_element "D" 1)))
 
 let test_ground_gin_membership () =
   (* all x in items : the membership becomes a per-instance antecedent. *)
@@ -3311,10 +3566,15 @@ let test_ground_gin_membership () =
   in
   let result = Smt.translate_expr config_g2 env expr in
   check bool "no native forall" false (contains result "forall");
+  let items = smt_rule env "items" 0 and p = smt_rule env "p" 1 in
   check bool "membership antecedent for D_0" true
-    (contains result "(=> (and (select items D_0)) (p D_0))");
+    (contains result
+       (Printf.sprintf "(=> (and (select %s %s)) (%s %s))" items
+          (smt_element "D" 0) p (smt_element "D" 0)));
   check bool "membership antecedent for D_1" true
-    (contains result "(=> (and (select items D_1)) (p D_1))")
+    (contains result
+       (Printf.sprintf "(=> (and (select %s %s)) (%s %s))" items
+          (smt_element "D" 1) p (smt_element "D" 1)))
 
 let test_ground_partial_nat () =
   (* all x: D | all n: Nat | q x n : outer D grounded, inner Nat stays native. *)
@@ -3337,10 +3597,13 @@ let test_ground_partial_nat () =
   in
   let result = Smt.translate_expr config_g2 env expr in
   check bool "outer conjunction" true (contains result "(and ");
+  let n = smt_var "n" and q = smt_rule env "q" 2 in
   check bool "inner native forall over Int" true
-    (contains result "(forall ((n Int))");
-  check bool "grounded outer arg D_0" true (contains result "(q D_0 n)");
-  check bool "grounded outer arg D_1" true (contains result "(q D_1 n)")
+    (contains result (Printf.sprintf "(forall ((%s Int))" n));
+  check bool "grounded outer arg D_0" true
+    (contains result (Printf.sprintf "(%s %s %s)" q (smt_element "D" 0) n));
+  check bool "grounded outer arg D_1" true
+    (contains result (Printf.sprintf "(%s %s %s)" q (smt_element "D" 1) n))
 
 let test_ground_disabled_is_native () =
   (* config_native reproduces the native forall emission. *)
@@ -3352,8 +3615,12 @@ let test_ground_disabled_is_native () =
       (EApp (EVar (Lower "p"), [ EVar (Lower "x") ]))
   in
   let result = Smt.translate_expr config_native env expr in
-  check bool "native forall binder" true (contains result "(forall ((x D))");
-  check bool "no grounded instance" false (contains result "(p D_0)")
+  check bool "native forall binder" true
+    (contains result
+       (Printf.sprintf "(forall ((%s %s))" (smt_var "x") (smt_domain "D")));
+  check bool "no grounded instance" false
+    (contains result
+       (Printf.sprintf "(%s %s)" (smt_rule env "p" 1) (smt_element "D" 0)))
 
 let test_ground_cap_fallback () =
   (* Five binders at bound 4 = 1024 > cap 256 -> native fallback. *)
@@ -3389,7 +3656,8 @@ let test_ground_cap_fallback () =
   in
   let result = Smt.translate_expr config_g4 env expr in
   check bool "fell back to native forall" true
-    (contains result "(forall ((a D)")
+    (contains result
+       (Printf.sprintf "(forall ((%s %s)" (smt_var "a") (smt_domain "D")))
 
 let grounding_tests =
   [

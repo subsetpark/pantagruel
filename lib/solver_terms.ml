@@ -15,6 +15,61 @@ let strip_prime_suffix s =
 
 let add_prime_suffix s = s ^ prime_suffix
 
+let strip_prefix ~prefix s =
+  if String.starts_with ~prefix s then
+    Some
+      (String.sub s (String.length prefix)
+         (String.length s - String.length prefix))
+  else None
+
+let split_component s =
+  match String.index_opt s '$' with
+  | Some i -> (String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1))
+  | None -> (s, "")
+
+let decode_component encoded =
+  Smt_types.decode_ident encoded |> Option.value ~default:encoded
+
+(** Decode one generated SMT atom back to its Pantagruel spelling. Unknown and
+    solver-owned atoms pass through unchanged. *)
+let decode_symbol atom =
+  let base, primed =
+    if has_prime_suffix atom then (strip_prime_suffix atom, true)
+    else (atom, false)
+  in
+  let decoded =
+    match strip_prefix ~prefix:"pant$v$" base with
+    | Some encoded -> decode_component encoded
+    | None -> (
+        match strip_prefix ~prefix:"pant$r$" base with
+        | Some rest ->
+            let encoded, _suffix = split_component rest in
+            decode_component encoded
+        | None -> (
+            match strip_prefix ~prefix:"pant$q$" base with
+            | Some rest ->
+                let encoded_module, rest = split_component rest in
+                let encoded_name, _suffix = split_component rest in
+                decode_component encoded_module
+                ^ "::"
+                ^ decode_component encoded_name
+            | None -> base))
+  in
+  if primed then decoded ^ "'" else decoded
+
+let decode_domain_value atom =
+  match strip_prefix ~prefix:"pant$e$" atom with
+  | Some rest ->
+      let encoded, index = split_component rest in
+      decode_component encoded ^ "_" ^ index
+  | None -> (
+      match String.split_on_char '!' atom with
+      | encoded_sort :: "val" :: [ index ] -> (
+          match strip_prefix ~prefix:"pant$d$" encoded_sort with
+          | Some encoded -> decode_component encoded ^ "_" ^ index
+          | None -> encoded_sort ^ "_" ^ index)
+      | _ -> atom)
+
 (** Convert an s-expression back to its string representation. Used to produce
     the string keys/values that downstream display code expects. *)
 let sexp_to_string = Sexp.to_string
@@ -25,10 +80,7 @@ let sexp_to_string = Sexp.to_string
 let translate_value_sexp (sexp : Sexp.t) =
   match sexp with
   | List [ Atom "-"; Atom n ] -> "-" ^ n
-  | Atom s -> (
-      match String.split_on_char '!' s with
-      | domain :: "val" :: [ n ] -> domain ^ "_" ^ n
-      | _ -> s)
+  | Atom s -> decode_domain_value s
   | List _ -> sexp_to_string sexp
 
 (** Translate a raw string value for display. Kept for backward compatibility
@@ -42,18 +94,15 @@ let translate_value value =
     - Replaces _prime suffix with ' (for example, "balance_prime" -> "balance'")
     - Strips parens from applied terms for readability *)
 let translate_display_name term =
-  (* Replace _prime with ' *)
-  let replace_prime s =
-    match String.split_on_char ' ' s with
-    | [] -> s
-    | parts ->
-        String.concat " "
-          (List.map
-             (fun p ->
-               if has_prime_suffix p then strip_prime_suffix p ^ "'" else p)
-             parts)
+  let rec decode_sexp = function
+    | Sexp.Atom atom -> Sexp.Atom (decode_symbol (decode_domain_value atom))
+    | Sexp.List items -> Sexp.List (List.map decode_sexp items)
   in
-  let name = replace_prime term in
+  let name =
+    match Parsexp.Single.parse_string term with
+    | Ok sexp -> sexp_to_string (decode_sexp sexp)
+    | Error _ -> decode_symbol term
+  in
   (* Strip outer parens for display: "(balance a)" -> "balance a" *)
   if
     String.length name >= 2

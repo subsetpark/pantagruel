@@ -255,9 +255,9 @@ let test_no_shadowing_forall ?(native = false) fixture shadowed_name () =
         queries
 
 (** Assert that at least one emitted SMT query for [fixture] contains [needle]
-    as a substring. Used to lock in structural post-fix shapes — e.g. the
-    alpha-renamed binder suffix that [test_regression_fixture] (which only
-    checks structural-failure kinds) would miss. *)
+    as a substring. Used to lock in structural post-fix shapes that
+    [test_regression_fixture] (which only checks structural-failure kinds) would
+    miss. *)
 let test_smt_contains ?(native = false) fixture needle () =
   match regression_dir with
   | None -> failf "regression directory not found"
@@ -265,9 +265,9 @@ let test_smt_contains ?(native = false) fixture needle () =
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
       let queries =
-        (* Binder-renaming assertions target the native forall/exists emission;
-           translate with grounding off so the renamed binder survives in the
-           output instead of being expanded away. *)
+        (* Binder assertions target native forall/exists emission; translate
+           with grounding off so the binder survives instead of being expanded
+           away. *)
         match
           Test_util.translate_to_queries ~ground_quantifiers:(not native)
             (Test_util.parse_pant_file path)
@@ -320,15 +320,16 @@ let regression_cases () =
       (test_regression_fixture "bug_action_param_shadows_rule.pant" []);
     test_case "bug_action_param_shadows_rule.pant — no shadow forall" `Quick
       (test_no_shadowing_forall ~native:true
-         "bug_action_param_shadows_rule.pant" "a1");
+         "bug_action_param_shadows_rule.pant"
+         (Pantagruel.Smt.sanitize_ident "a1"));
     test_case "bug_rule_param_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rule_param_collision.pant" []);
     test_case "bug_nested_binder_collision.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_nested_binder_collision.pant" []);
     test_case
-      "bug_nested_binder_collision.pant — inner rename skips outer binder"
-      `Quick
-      (test_smt_contains ~native:true "bug_nested_binder_collision.pant" "x_q1");
+      "bug_nested_binder_collision.pant — binders use variable namespace" `Quick
+      (test_smt_contains ~native:true "bug_nested_binder_collision.pant"
+         (Pantagruel.Smt.sanitize_ident "x"));
     test_case "bug_rename_app_head.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rename_app_head.pant"
          [ "fallback_emission" ]);
@@ -337,7 +338,8 @@ let regression_cases () =
          "_list_index_fallback_");
     test_case "bug_rename_app_head.pant — binder does not shadow declared xs"
       `Quick
-      (test_no_shadowing_forall ~native:true "bug_rename_app_head.pant" "xs");
+      (test_no_shadowing_forall ~native:true "bug_rename_app_head.pant"
+         (Pantagruel.Smt.sanitize_ident "xs"));
   ]
 
 let () =

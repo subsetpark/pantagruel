@@ -13,12 +13,14 @@ let declare_domain_sorts config env =
     (fun name entry ->
       match entry.Env.kind with
       | Env.KDomain ->
+          let sort_name = smt_domain_name name in
           let elems = domain_elements name (bound_for config name) in
-          Buffer.add_string buf (Printf.sprintf "(declare-sort %s 0)\n" name);
+          Buffer.add_string buf
+            (Printf.sprintf "(declare-sort %s 0)\n" sort_name);
           List.iter
             (fun elem ->
               Buffer.add_string buf
-                (Printf.sprintf "(declare-const %s %s)\n" elem name))
+                (Printf.sprintf "(declare-const %s %s)\n" elem sort_name))
             elems;
           if List.length elems > 1 then
             Buffer.add_string buf
@@ -27,7 +29,7 @@ let declare_domain_sorts config env =
           (* Closure axiom: every element of the sort is one of our constants *)
           let disj = List.map (fun e -> Printf.sprintf "(= _x_ %s)" e) elems in
           Buffer.add_string buf
-            (Printf.sprintf "(assert (forall ((_x_ %s)) (or %s)))\n" name
+            (Printf.sprintf "(assert (forall ((_x_ %s)) (or %s)))\n" sort_name
                (String.concat " " disj))
       | Env.KAlias _ | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> ())
     env;

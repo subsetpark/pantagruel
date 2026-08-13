@@ -22,17 +22,22 @@ type chapter_class =
 
 module StringSet : Set.S with type elt = string
 
-val free_vars : Ast.expr -> StringSet.t
+val free_vars : ?env:Env.t -> Ast.expr -> StringSet.t
 
 val bind_head_params :
+  ?env:Env.t ->
   ?exclude:StringSet.t ->
   Ast.param list ->
   Ast.expr Ast.located ->
   Ast.expr Ast.located
 
 val classify_chapters : Ast.document -> chapter_class list
-val collect_invariants : chapter_class list -> Ast.expr Ast.located list
-val collect_initial_props : chapter_class list -> Ast.expr Ast.located list
+
+val collect_invariants :
+  ?env:Env.t -> chapter_class list -> Ast.expr Ast.located list
+
+val collect_initial_props :
+  ?env:Env.t -> chapter_class list -> Ast.expr Ast.located list
 
 type action_info = {
   a_label : string;
@@ -42,14 +47,16 @@ type action_info = {
   a_propositions : Ast.expr Ast.located list;
 }
 
-val collect_actions : chapter_class list -> action_info list
+val collect_actions : ?env:Env.t -> chapter_class list -> action_info list
 
 type check_context =
   | CheckInvariant of Ast.expr Ast.located list
   | CheckAction of action_info
 
 val collect_checks :
-  chapter_class list -> (Ast.expr Ast.located * check_context) list
+  ?env:Env.t ->
+  chapter_class list ->
+  (Ast.expr Ast.located * check_context) list
 
 val collect_frame_exprs :
   Smt_types.config -> Env.t -> string list -> (string * string) list
