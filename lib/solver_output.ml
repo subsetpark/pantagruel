@@ -122,7 +122,7 @@ let format_counterexample values =
               let args =
                 String.sub inner (i + 1) (String.length inner - i - 1)
               in
-              List.mem args param_values
+              List.mem (Solver_terms.translate_value args) param_values
           | None -> false
         else false
       in
@@ -187,15 +187,18 @@ let format_bmc_counterexample values =
               with Failure _ -> s)
           | _ -> s
         in
-        if String.length term >= 2 && term.[0] = '(' then
-          let inner = String.sub term 1 (String.length term - 2) in
-          match String.index_opt inner ' ' with
-          | Some i ->
-              let fname = String.sub inner 0 i in
-              let rest = String.sub inner i (String.length inner - i) in
-              strip_step fname ^ rest
-          | None -> strip_step inner
-        else strip_step term
+        let stripped =
+          if String.length term >= 2 && term.[0] = '(' then
+            let inner = String.sub term 1 (String.length term - 2) in
+            match String.index_opt inner ' ' with
+            | Some i ->
+                let fname = String.sub inner 0 i in
+                let rest = String.sub inner i (String.length inner - i) in
+                "(" ^ strip_step fname ^ rest ^ ")"
+            | None -> strip_step inner
+          else strip_step term
+        in
+        Solver_terms.translate_display_name stripped
       in
       let step_map = Hashtbl.create 16 in
       List.iter

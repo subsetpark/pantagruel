@@ -71,9 +71,15 @@ let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 module StringSet = Set.Make (String)
 (** [free_vars e] is the set of [lower_ident] names that appear free in [e].
     Used by [bind_head_params] to decide which head-level rule parameters
-    actually need to be universally quantified for a given proposition. *)
+    actually need to be universally quantified for a given proposition.
 
-let free_vars (e : expr) : StringSet.t =
+    With [env], a bare identifier in direct application-head position is not a
+    variable when an exact-arity rule exists: [Check.infer_type] resolves that
+    syntactic position through the term namespace before considering variables.
+    Mirroring that rule here prevents a declaration parameter named [f] from
+    spuriously capturing a later call [f x]. *)
+
+let free_vars ?env (e : expr) : StringSet.t =
   let bound_of_params (params : param list) =
     List.fold_left
       (fun s (p : param) -> StringSet.add (Ast.lower_name p.param_name) s)
@@ -84,6 +90,15 @@ let free_vars (e : expr) : StringSet.t =
     | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ | EDomain _
     | EQualified _ ->
         acc
+    | EApp ((EVar (Lower name) as f), args) ->
+        let acc = List.fold_left go acc args in
+        let is_rule_head =
+          match env with
+          | Some env ->
+              Option.is_some (Env.lookup_term_arity name (List.length args) env)
+          | None -> false
+        in
+        if is_rule_head then acc else go acc f
     | EApp (f, args) -> List.fold_left go (go acc f) args
     | ETuple exprs -> List.fold_left go acc exprs
     | EProj (e, _) -> go acc e
@@ -149,12 +164,12 @@ let param_name_set (params : param list) =
     to coincide with a head-rule-param name the free occurrence refers to the
     action constant — quantifying it would silently strengthen the proposition
     by shadowing the constant. *)
-let bind_head_params ?(exclude = StringSet.empty) (bindings : param list)
+let bind_head_params ?env ?(exclude = StringSet.empty) (bindings : param list)
     (p : expr located) =
   match bindings with
   | [] -> p
   | _ -> (
-      let free = free_vars p.value in
+      let free = free_vars ?env p.value in
       let _, kept_rev =
         List.fold_left
           (fun (seen, acc) (param : param) ->
@@ -171,7 +186,7 @@ let bind_head_params ?(exclude = StringSet.empty) (bindings : param list)
       | _ -> { p with value = Ast.make_forall kept [] p.value })
 
 (** Collect all invariants from the document (non-initially propositions) *)
-let collect_invariants chapters =
+let collect_invariants ?env chapters =
   List.concat_map
     (fun c ->
       match c with
@@ -184,13 +199,13 @@ let collect_invariants chapters =
               | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
               | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
               | EEach _ | ECond _ ->
-                  Some (bind_head_params head_bindings p))
+                  Some (bind_head_params ?env head_bindings p))
             propositions
       | Action _ -> [])
     chapters
 
 (** Collect all initial-state propositions, stripping the EInitially wrapper *)
-let collect_initial_props chapters =
+let collect_initial_props ?env chapters =
   List.concat_map
     (fun c ->
       match c with
@@ -199,7 +214,8 @@ let collect_initial_props chapters =
             (fun (p : expr located) ->
               match p.value with
               | EInitially e ->
-                  Some (bind_head_params head_bindings { p with value = e })
+                  Some
+                    (bind_head_params ?env head_bindings { p with value = e })
               | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
               | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
               | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
@@ -225,14 +241,14 @@ type action_info = {
     [count' a1 = count a1.] — where [a1] is [count]'s declared param — fails at
     SMT time with "unknown constant a1". Mirrors the invariant treatment in
     [collect_invariants]. *)
-let collect_actions chapters =
+let collect_actions ?env chapters =
   List.filter_map
     (fun c ->
       match c with
       | Action
           { label; params; guards; contexts; head_bindings; propositions; _ } ->
           let exclude = param_name_set params in
-          let bind_action = bind_head_params ~exclude head_bindings in
+          let bind_action = bind_head_params ?env ~exclude head_bindings in
           Some
             {
               a_label = label;
@@ -251,15 +267,17 @@ type check_context =
 
 (** Collect all check (entailment goal) propositions, paired with their chapter
     context *)
-let collect_checks chapters =
+let collect_checks ?env chapters =
   List.concat_map
     (fun c ->
       match c with
       | Invariant { head_bindings; propositions; checks } ->
           let bound_props =
-            List.map (bind_head_params head_bindings) propositions
+            List.map (bind_head_params ?env head_bindings) propositions
           in
-          let bound_checks = List.map (bind_head_params head_bindings) checks in
+          let bound_checks =
+            List.map (bind_head_params ?env head_bindings) checks
+          in
           List.map (fun chk -> (chk, CheckInvariant bound_props)) bound_checks
       | Action
           {
@@ -272,7 +290,7 @@ let collect_checks chapters =
             checks;
           } ->
           let exclude = param_name_set params in
-          let bind_action = bind_head_params ~exclude head_bindings in
+          let bind_action = bind_head_params ?env ~exclude head_bindings in
           let bound_props = List.map bind_action propositions in
           let bound_checks = List.map bind_action checks in
           let action =

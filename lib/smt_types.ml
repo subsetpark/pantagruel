@@ -96,6 +96,46 @@ let bound_for config domain_name =
   | Some b -> b
   | None -> config.bound
 
+(** Hex-encode a Pantagruel identifier for use as one component of an SMT
+    symbol. Encoding every byte makes the mapping injective: names such as [a-b]
+    and [a_b] cannot collapse after punctuation rewriting. *)
+let encode_ident name =
+  let buf = Buffer.create (String.length name * 2) in
+  String.iter
+    (fun c -> Buffer.add_string buf (Printf.sprintf "%02x" (Char.code c)))
+    name;
+  Buffer.contents buf
+
+let decode_ident encoded =
+  let len = String.length encoded in
+  if len mod 2 <> 0 then None
+  else
+    let buf = Buffer.create (len / 2) in
+    let rec loop i =
+      if i = len then Some (Buffer.contents buf)
+      else
+        match int_of_string_opt ("0x" ^ String.sub encoded i 2) with
+        | Some code ->
+            Buffer.add_char buf (Char.chr code);
+            loop (i + 2)
+        | None -> None
+    in
+    loop 0
+
+(** User-originated SMT symbols live in disjoint namespaces. The [$] separators
+    cannot occur in an encoded component. Names beginning with [_] are
+    compiler-generated temporaries (source identifiers must begin with a
+    letter), so they remain unchanged; already encoded names are also left
+    untouched to make grounding/substitution idempotent. *)
+let sanitize_ident name =
+  if
+    String.starts_with ~prefix:"pant$" name
+    || (String.length name > 0 && name.[0] = '_')
+  then name
+  else "pant$v$" ^ encode_ident name
+
+let smt_domain_name name = "pant$d$" ^ encode_ident name
+
 type query = {
   name : string;
   description : string;
@@ -134,7 +174,7 @@ let rec sort_of_ty = function
   | TyReal -> "Real"
   | TyString -> "String"
   | TyNothing -> "Int" (* bottom type, never instantiated *)
-  | TyDomain name -> name
+  | TyDomain name -> smt_domain_name name
   | TyList inner ->
       (* Model lists/sets as membership predicates: Array elem_sort Bool *)
       Printf.sprintf "(Array %s Bool)" (sort_of_ty inner)
@@ -147,9 +187,10 @@ let rec sort_of_ty = function
   | TyFunc _ -> "Int" (* functions are declared separately, not as sorts *)
 
 and product_sort_name ts =
-  "Pair_" ^ String.concat "_" (List.map sort_base_name ts)
+  "pant$t$product$" ^ String.concat "$" (List.map sort_base_name ts)
 
-and sum_sort_name ts = "Sum_" ^ String.concat "_" (List.map sort_base_name ts)
+and sum_sort_name ts =
+  "pant$t$sum$" ^ String.concat "$" (List.map sort_base_name ts)
 
 and sort_base_name = function
   | TyBool -> "Bool"
@@ -157,48 +198,38 @@ and sort_base_name = function
   | TyReal -> "Real"
   | TyString -> "String"
   | TyNothing -> "Nothing"
-  | TyDomain name -> name
-  | TyList inner -> "List_" ^ sort_base_name inner
+  | TyDomain name -> smt_domain_name name
+  | TyList inner -> "pant$t$list$" ^ sort_base_name inner
   | TyProduct ts -> product_sort_name ts
   | TySum ts -> sum_sort_name ts
   | TyFunc _ -> "Func"
 
 (** Generate domain element names *)
 let domain_elements name bound =
-  List.init bound (fun i -> Printf.sprintf "%s_%d" name i)
+  let encoded = encode_ident name in
+  List.init bound (fun i -> Printf.sprintf "pant$e$%s$%d" encoded i)
 
-(** Sanitize an identifier for SMT-LIB2 (replace hyphens, question marks) *)
-let sanitize_ident name =
-  name |> String.to_seq
-  |> Seq.map (fun c ->
-      match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
-  |> String.of_seq
-
-(** SMT symbol name for a rule or closure reference. When the name has two or
-    more arity overloads in [env], the symbol is mangled with an arity-tagged
-    suffix ([foo$1], [foo$2]) so each overload gets a distinct SMT function
-    symbol; single-arity rules keep their unmangled form to preserve existing
-    snapshot output. The [$] separator is injective against [sanitize_ident]:
-    Pantagruel lower identifiers permit only [a-zA-Z0-9-_?!] (and sanitize maps
-    those into [a-zA-Z0-9_]), so a sanitized identifier can never contain [$].
-    That guarantees an unrelated rule literally named [foo_1] cannot collide
-    with [foo/1]'s mangled form. *)
+(** SMT symbol name for a rule or closure reference. All rules use the [pant$r]
+    namespace. When a name has two or more arity overloads in [env], the symbol
+    also gets an arity-tagged suffix so each overload is distinct. The trailing
+    [$] makes generated suffixes such as [_prime] and [_s0] unambiguous with
+    respect to source names. *)
 let smt_rule_name env name arity =
+  let base = "pant$r$" ^ encode_ident name ^ "$" in
   if Env.name_is_overloaded name env then
-    sanitize_ident name ^ "$" ^ string_of_int arity
-  else sanitize_ident name
+    base ^ "arity$" ^ string_of_int arity ^ "$"
+  else base
 
 (** SMT symbol for an [EQualified] reference. When [(name, arity)] lives in the
     flat terms map (unambiguous import — exactly one origin), the qualified call
     shares a symbol with the unqualified one so that [all x | A::f x = f x]
     asserts the identity two users would expect. When it's reachable only via
     the qualified lookup (two or more modules export the same [(name, arity)]),
-    each qualified call gets a distinct module-prefixed symbol. [$] is injective
-    against [sanitize_ident] for both the module and the name component, so
-    [A$f$1] can't collide with anything a user could write literally. *)
+    each qualified call gets a distinct [pant$q]-prefixed symbol. Hex-encoded
+    components and [$] separators make the representation injective. *)
 let smt_qualified_rule_name env mod_name name arity =
   match Env.lookup_term_arity name arity env with
   | Some _ -> smt_rule_name env name arity
   | None ->
-      sanitize_ident mod_name ^ "$" ^ sanitize_ident name ^ "$"
-      ^ string_of_int arity
+      "pant$q$" ^ encode_ident mod_name ^ "$" ^ encode_ident name ^ "$arity$"
+      ^ string_of_int arity ^ "$"

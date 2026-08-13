@@ -78,17 +78,39 @@ let public_api_properties =
            Smt_types.sort_of_ty (Types.TyList left)
            = Printf.sprintf "(Array %s Bool)" (Smt_types.sort_of_ty left)
            && Smt_types.product_sort_name [ left; right ]
-              = "Pair_" ^ left_base ^ "_" ^ right_base
+              = "pant$t$product$" ^ left_base ^ "$" ^ right_base
            && Smt_types.sum_sort_name [ left; right ]
-              = "Sum_" ^ left_base ^ "_" ^ right_base
-           && Smt_types.sort_base_name (Types.TyList left) = "List_" ^ left_base));
+              = "pant$t$sum$" ^ left_base ^ "$" ^ right_base
+           && Smt_types.sort_base_name (Types.TyList left)
+              = "pant$t$list$" ^ left_base));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"domain elements use stable numbered names"
          ~count:100 QCheck2.Gen.nat_small (fun count ->
            Smt_types.domain_elements "User" count
-           = List.init count (Printf.sprintf "User_%d")));
+           = List.init count (fun i ->
+               Printf.sprintf "pant$e$%s$%d" (Smt_types.encode_ident "User") i)));
+    test_case "user symbols use isolated SMT namespaces" `Quick (fun () ->
+        check string "ordinary variable" "pant$v$6f7264696e617279"
+          (Smt_types.sanitize_ident "ordinary");
+        check string "array operator" "pant$v$73656c656374"
+          (Smt_types.sanitize_ident "select");
+        check string "binder keyword" "pant$v$6d61746368"
+          (Smt_types.sanitize_ident "match");
+        check string "Z3 List sort" "pant$d$4c697374"
+          (Smt_types.sort_of_ty (Types.TyDomain "List"));
+        check (list string) "List elements"
+          [ "pant$e$4c697374$0"; "pant$e$4c697374$1" ]
+          (Smt_types.domain_elements "List" 2);
+        check string "generated temporary unchanged" "_fallback_0"
+          (Smt_types.sanitize_ident "_fallback_0");
+        check bool "punctuation spellings remain distinct" true
+          (Smt_types.sanitize_ident "a-b" <> Smt_types.sanitize_ident "a_b"));
     QCheck_alcotest.to_alcotest
-      (QCheck2.Test.make ~name:"SMT identifiers are sanitized and mangled"
+      (QCheck2.Test.make ~name:"identifier encoding round-trips" ~count:1000
+         QCheck2.Gen.string (fun name ->
+           Smt_types.decode_ident (Smt_types.encode_ident name) = Some name));
+    QCheck_alcotest.to_alcotest
+      (QCheck2.Test.make ~name:"SMT identifiers are encoded and mangled"
          ~count:100 (QCheck2.Gen.pair gen_domain gen_rule)
          (fun (mod_name, rule_name) ->
            let env =
@@ -100,10 +122,16 @@ let public_api_properties =
                   (Types.TyFunc ([ Types.TyNat; Types.TyNat ], Some Types.TyNat))
                   Ast.dummy_loc ~chapter:0
            in
-           Smt_types.sanitize_ident (rule_name ^ "-?!") = rule_name ^ "_pb"
-           && Smt_types.smt_rule_name env rule_name 2 = rule_name ^ "$2"
+           Smt_types.sanitize_ident (rule_name ^ "-?!")
+           = "pant$v$" ^ Smt_types.encode_ident (rule_name ^ "-?!")
+           && Smt_types.smt_rule_name env rule_name 2
+              = "pant$r$" ^ Smt_types.encode_ident rule_name ^ "$arity$2$"
            && Smt_types.smt_qualified_rule_name sample_env mod_name rule_name 2
-              = mod_name ^ "$" ^ rule_name ^ "$2"));
+              = "pant$q$"
+                ^ Smt_types.encode_ident mod_name
+                ^ "$"
+                ^ Smt_types.encode_ident rule_name
+                ^ "$arity$2$"));
   ]
 
 let state_interleaving_properties =

@@ -429,7 +429,7 @@ let public_api_properties =
              }
            in
            let translate _config _env = function[@warning "-4"]
-             | Ast.EVar (Ast.Lower name) -> name
+             | Ast.EVar (Ast.Lower name) -> Smt_types.sanitize_ident name
              | e -> Ast.show_expr e
            in
            match
@@ -437,9 +437,7 @@ let public_api_properties =
                [] (Ast.EVar (Ast.Lower name))
            with
            | [ (None, first); (None, second); (None, third) ] ->
-               first = domain ^ "_0"
-               && second = domain ^ "_1"
-               && third = domain ^ "_2"
+               [ first; second; third ] = Smt_types.domain_elements domain 3
            | _ -> false));
   ]
 

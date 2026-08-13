@@ -60,7 +60,7 @@ let public_api_properties =
            let name = upper prefix "User" in
            has_substring
              (Smt_preamble.declare_domain_sorts config (env prefix))
-             name));
+             (Smt_types.smt_domain_name name)));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"declare_composite_types emits datatypes"
          ~count:100 gen_prefix (fun prefix ->
@@ -80,7 +80,10 @@ let public_api_properties =
       (QCheck2.Test.make ~name:"declare_functions emits declarations" ~count:100
          gen_prefix (fun prefix ->
            let name = lower prefix "active" in
-           has_substring (Smt_preamble.declare_functions (env prefix)) name));
+           let env = env prefix in
+           has_substring
+             (Smt_preamble.declare_functions env)
+             (Smt_types.smt_rule_name env name 1)));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"generate_closure_axioms returns text" ~count:100
          gen_prefix (fun prefix ->
@@ -122,7 +125,7 @@ let public_api_properties =
          ~count:100 gen_prefix (fun prefix ->
            Smt_preamble.resolve_param_sort (env prefix)
              (Ast.TName (Ast.Upper (upper prefix "User")))
-           = Some (upper prefix "User")));
+           = Some (Smt_types.smt_domain_name (upper prefix "User"))));
   ]
 
 let () = run "Smt_preamble" [ ("public_api", public_api_properties) ]
