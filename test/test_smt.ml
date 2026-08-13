@@ -854,9 +854,14 @@ let test_format_counterexample_empty () =
   check string "empty" "" (Solver.format_counterexample [])
 
 let test_format_counterexample_filters_encoded_param_alias () =
+  let env = Env.empty "" in
   let encoded_account = smt_element "Account" 0 in
+  let balance = smt_rule env "balance" 1 in
   let values =
-    [ ("a", encoded_account); ("(balance " ^ encoded_account ^ ")", "10") ]
+    [
+      (smt_var "a", encoded_account);
+      ("(" ^ balance ^ " " ^ encoded_account ^ ")", "10");
+    ]
   in
   let result = Solver.format_counterexample values in
   check bool "has decoded action parameter" true
