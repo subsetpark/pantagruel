@@ -329,7 +329,7 @@ let regression_cases () =
     test_case
       "bug_nested_binder_collision.pant — binders use variable namespace" `Quick
       (test_smt_contains ~native:true "bug_nested_binder_collision.pant"
-         (Pantagruel.Smt.sanitize_ident "x"));
+         (Printf.sprintf "((%s " (Pantagruel.Smt.sanitize_ident "x")));
     test_case "bug_rename_app_head.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_rename_app_head.pant"
          [ "fallback_emission" ]);

@@ -122,7 +122,7 @@ let format_counterexample values =
               let args =
                 String.sub inner (i + 1) (String.length inner - i - 1)
               in
-              List.mem args param_values
+              List.mem (Solver_terms.translate_value args) param_values
           | None -> false
         else false
       in

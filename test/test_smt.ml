@@ -853,6 +853,16 @@ let test_format_counterexample () =
 let test_format_counterexample_empty () =
   check string "empty" "" (Solver.format_counterexample [])
 
+let test_format_counterexample_filters_encoded_param_alias () =
+  let encoded_account = smt_element "Account" 0 in
+  let values =
+    [ ("a", encoded_account); ("(balance " ^ encoded_account ^ ")", "10") ]
+  in
+  let result = Solver.format_counterexample values in
+  check bool "has decoded action parameter" true
+    (contains result "a = Account_0");
+  check bool "filters decoded parameter alias" false (contains result "balance")
+
 let test_translate_value () =
   check string "z3 internal" "Account_0"
     (Solver.translate_value "Account!val!0");
@@ -1373,7 +1383,7 @@ let test_rule_application_head_not_auto_bound () =
        ---\n\
        all value: Value | err (observed value) = err (observed value).\n"
   in
-  let queries = Smt.generate_queries config env doc in
+  let queries = Smt.generate_queries config_native env doc in
   let consistency =
     List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
   in
@@ -1765,6 +1775,8 @@ let solver_parsing_tests =
     test_case "format counterexample" `Quick test_format_counterexample;
     test_case "format counterexample empty" `Quick
       test_format_counterexample_empty;
+    test_case "format counterexample filters encoded parameter alias" `Quick
+      test_format_counterexample_filters_encoded_param_alias;
     test_case "translate domain value" `Quick test_translate_value;
     test_case "format counterexample filters unchanged" `Quick
       test_format_counterexample_filters_unchanged;
