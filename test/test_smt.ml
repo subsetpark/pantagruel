@@ -1481,7 +1481,9 @@ let test_mu_search_assertions_follow_recursive_rule_definitions () =
     (match (definition_pos, assertion_pos) with
     | Some definition_pos, Some assertion_pos -> definition_pos < assertion_pos
     | _ -> false);
-  if Solver.solver_available () then
+  if not (Solver.solver_available ()) then
+    fail "guarded mu-search regression requires an available SMT solver"
+  else
     match Solver.run_solver ~timeout:5.0 consistency.smt2 with
     | Solver.SolverError message ->
         failf "guarded mu-search query was rejected by the solver: %s" message
