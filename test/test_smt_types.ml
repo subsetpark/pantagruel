@@ -70,6 +70,56 @@ let public_api_properties =
            let smt2 = "(declare-const x Int)\n(assert (> x 0))\n(check-sat)" in
            let spliced = Smt_types.splice_before_first_assert smt2 decls in
            decls = "" || String.contains spliced '('));
+    test_case "auxiliary declarations follow all user-defined types" `Quick
+      (fun () ->
+        let smt2 =
+          "; header\n\
+           (declare-sort D 0)\n\
+           (declare-const d D)\n\
+           (assert (= d d))\n\
+           (declare-datatype P ((mk_P (field D))))\n\
+           (declare-fun f () P)\n\
+           (assert true)\n"
+        in
+        let decls = "\n; aux\n(declare-const fallback P)\n" in
+        let expected =
+          "; header\n\
+           (declare-sort D 0)\n\
+           (declare-const d D)\n\
+           (assert (= d d))\n\
+           (declare-datatype P ((mk_P (field D))))\n\
+           ; aux\n\
+           (declare-const fallback P)\n\
+           (declare-fun f () P)\n\
+           (assert true)\n"
+        in
+        check string "spliced after datatype" expected
+          (Smt_types.splice_after_type_declarations smt2 decls));
+    test_case "auxiliary declarations follow a complete multiline datatype"
+      `Quick (fun () ->
+        let smt2 =
+          "; header\n\
+           (declare-datatype Pair\n\
+          \  ((mk-Pair\n\
+          \    (left Int)\n\
+          \    (right Int))))\n\
+           (declare-fun pair-value () Pair)\n\
+           (assert true)\n"
+        in
+        let decls = "\n; aux\n(declare-const fallback Pair)\n" in
+        let expected =
+          "; header\n\
+           (declare-datatype Pair\n\
+          \  ((mk-Pair\n\
+          \    (left Int)\n\
+          \    (right Int))))\n\
+           ; aux\n\
+           (declare-const fallback Pair)\n\
+           (declare-fun pair-value () Pair)\n\
+           (assert true)\n"
+        in
+        check string "spliced after closing parenthesis" expected
+          (Smt_types.splice_after_type_declarations smt2 decls));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"sort names cover scalar and composite types"
          ~count:100 (QCheck2.Gen.pair gen_ty gen_ty) (fun (left, right) ->
@@ -167,9 +217,13 @@ let state_interleaving_properties =
            in
            let with_cond = Smt_state.insert_cond_aux_decls smt2 in
            let with_fallbacks = Smt_state.insert_fallback_decls with_cond in
+           let with_fallbacks =
+             Smt_state.insert_fallback_asserts with_fallbacks
+           in
            let drained_cond = Smt_state.drain_cond_aux_decls () in
            let drained_fallbacks = Smt_state.drain_fallback_decls () in
-           drained_cond = "" && drained_fallbacks = ""
+           let drained_asserts = Smt_state.drain_fallback_asserts () in
+           drained_cond = "" && drained_fallbacks = "" && drained_asserts = ""
            && String.length with_fallbacks >= String.length smt2
            && Smt_types.sort_of_ty Types.TyNat = "Int"));
   ]

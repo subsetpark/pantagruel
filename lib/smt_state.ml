@@ -30,9 +30,11 @@ let drain_cond_aux_decls () =
   else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
 (** Insert accumulated cond-default declarations into a finished SMT-LIB2
-    string. Must be called after all [translate_*] calls for the query. *)
+    string. Must be called after all [translate_*] calls for the query. The
+    constants are placed after user-defined type declarations because their
+    sorts may be domains or composite datatypes. *)
 let insert_cond_aux_decls smt2 =
-  Smt_types.splice_before_first_assert smt2 (drain_cond_aux_decls ())
+  Smt_types.splice_after_type_declarations smt2 (drain_cond_aux_decls ())
 
 (** Fresh uninterpreted constants for translation fallbacks. When a translation
     site cannot produce a faithful SMT term (e.g. cardinality of a list over an
@@ -44,6 +46,7 @@ let insert_cond_aux_decls smt2 =
 let fallback_counter = ref 0
 
 let fallback_decls : string list ref = ref []
+let fallback_asserts : string list ref = ref []
 
 let fallback_cache : (string * string * string, string) Hashtbl.t =
   Hashtbl.create 16
@@ -53,6 +56,7 @@ let reset_fallback_cache () = Hashtbl.clear fallback_cache
 let reset_fallbacks () =
   fallback_counter := 0;
   fallback_decls := [];
+  fallback_asserts := [];
   reset_fallback_cache ()
 
 let fresh_fallback ~kind ~sort =
@@ -86,11 +90,11 @@ let intern_list_index_symbol ~func_s ~arg_s ~sort =
 let intern_card_symbol ~expr_s =
   intern_fallback_symbol ~kind:"card" ~sort:"Int" ~key:expr_s
 
-(** Queue an additional [(assert ...)] alongside the most recently declared
-    fallback constant — useful for soft constraints like non-negativity. *)
+(** Queue an additional [(assert ...)] for late emission after user rule bodies
+    — useful for soft constraints like non-negativity. *)
 let add_fallback_assert assertion_body =
-  fallback_decls :=
-    Printf.sprintf "(assert %s)" assertion_body :: !fallback_decls
+  fallback_asserts :=
+    Printf.sprintf "(assert %s)" assertion_body :: !fallback_asserts
 
 let drain_fallback_decls () =
   let decls = List.rev !fallback_decls in
@@ -98,9 +102,22 @@ let drain_fallback_decls () =
   if decls = [] then ""
   else "\n; --- Fallback constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
-(** Insert accumulated fallback declarations into a finished SMT-LIB2 string. *)
+let drain_fallback_asserts () =
+  let assertions = List.rev !fallback_asserts in
+  fallback_asserts := [];
+  if assertions = [] then ""
+  else
+    "\n; --- Fallback assertions ---\n" ^ String.concat "\n" assertions ^ "\n"
+
+(** Insert accumulated fallback declarations into a finished SMT-LIB2 string,
+    after every user-defined sort that the constants may reference. *)
 let insert_fallback_decls smt2 =
-  Smt_types.splice_before_first_assert smt2 (drain_fallback_decls ())
+  Smt_types.splice_after_type_declarations smt2 (drain_fallback_decls ())
+
+(** Insert accumulated fallback constraints after all declarations and user rule
+    bodies, immediately before the query is checked. *)
+let insert_fallback_asserts smt2 =
+  Smt_types.splice_before_check_sat smt2 (drain_fallback_asserts ())
 
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and
     fallback constants), run the generator, and insert any accumulated
@@ -110,4 +127,9 @@ let with_cond_aux (f : unit -> Smt_types.query) =
   reset_fallbacks ();
   reset_list_search_cache ();
   let q = f () in
-  { q with smt2 = q.smt2 |> insert_cond_aux_decls |> insert_fallback_decls }
+  {
+    q with
+    smt2 =
+      q.smt2 |> insert_cond_aux_decls |> insert_fallback_decls
+      |> insert_fallback_asserts;
+  }

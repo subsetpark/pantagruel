@@ -18,5 +18,7 @@ val intern_list_index_symbol :
 val intern_card_symbol : expr_s:string -> string
 val add_fallback_assert : string -> unit
 val drain_fallback_decls : unit -> string
+val drain_fallback_asserts : unit -> string
 val insert_fallback_decls : string -> string
+val insert_fallback_asserts : string -> string
 val with_cond_aux : (unit -> Smt_types.query) -> Smt_types.query

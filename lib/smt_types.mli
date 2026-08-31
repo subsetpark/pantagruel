@@ -24,6 +24,8 @@ val make_config :
   config
 
 val splice_before_first_assert : string -> string -> string
+val splice_before_check_sat : string -> string -> string
+val splice_after_type_declarations : string -> string -> string
 val compute_domain_bounds : int -> Env.t -> int Env.StringMap.t
 val bound_for : config -> string -> int
 

@@ -1,0 +1,16 @@
+module BugListIndexFallbackSortOrder.
+
+> Regression for #376: list-index fallback constants must be declared only
+> after the user-domain sorts used by their result types.
+
+Value.
+Container.
+items container: Container => [Value].
+---
+all container: Container, index: Nat, index <= #(items container) |
+  (items container) index = (items container) index.
+
+> Keep a bounded instance in the structural regression query: the consistency
+> pass intentionally skips the unbounded-Nat invariant above in some configs.
+all container: Container |
+  (items container) 1 = (items container) 1.
