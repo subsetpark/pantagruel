@@ -62,6 +62,23 @@ let splice_before_first_assert smt2 decls =
     let before, after = split [] lines in
     String.concat "\n" before ^ decls ^ String.concat "\n" after
 
+(** Splice [commands] immediately before the query's first [check-sat] command.
+    This is late enough for assertions that may reference user rule definitions
+    while still ensuring that they constrain the solver query. *)
+let splice_before_check_sat smt2 commands =
+  if commands = "" then smt2
+  else
+    let lines = String.split_on_char '\n' smt2 in
+    let rec split acc = function
+      | [] -> (List.rev acc, [])
+      | line :: rest
+        when String.length line >= 10 && String.sub line 0 10 = "(check-sat" ->
+          (List.rev acc, line :: rest)
+      | line :: rest -> split (line :: acc) rest
+    in
+    let before, after = split [] lines in
+    String.concat "\n" before ^ commands ^ String.concat "\n" after
+
 (** Splice [decls] after the last user-defined sort or datatype declaration.
     Auxiliary constants may use those sorts, so placing them before the first
     assertion is too early when domain axioms precede later sort declarations.
@@ -70,29 +87,89 @@ let splice_before_first_assert smt2 decls =
 let splice_after_type_declarations smt2 decls =
   if decls = "" then smt2
   else
-    let lines = String.split_on_char '\n' smt2 in
-    let is_type_declaration line =
+    let is_type_declaration_at index =
       List.exists
         (fun prefix ->
           let prefix_len = String.length prefix in
-          String.length line >= prefix_len
-          && String.sub line 0 prefix_len = prefix)
+          String.length smt2 - index >= prefix_len
+          && String.sub smt2 index prefix_len = prefix)
         [ "(declare-sort "; "(declare-datatype "; "(declare-datatypes " ]
     in
-    let rec split_after_last_type before_rev last_split = function
-      | [] -> last_split
-      | line :: rest ->
-          let before_rev = line :: before_rev in
-          let last_split =
-            if is_type_declaration line then Some (List.rev before_rev, rest)
-            else last_split
-          in
-          split_after_last_type before_rev last_split rest
+    (* Track balanced top-level commands rather than declaration opener lines:
+       datatype constructors are commonly emitted across multiple lines. *)
+    let len = String.length smt2 in
+    let rec scan index depth in_string in_quoted in_comment current_is_type
+        last_type_end =
+      if index = len then last_type_end
+      else
+        let c = smt2.[index] in
+        if in_comment then
+          scan (index + 1) depth in_string in_quoted (c <> '\n') current_is_type
+            last_type_end
+        else if in_string then
+          if c = '\\' && index + 1 < len then
+            scan (index + 2) depth true in_quoted false current_is_type
+              last_type_end
+          else if c = '"' then
+            (* SMT-LIB escapes a quote inside a string by doubling it. *)
+            if index + 1 < len && smt2.[index + 1] = '"' then
+              scan (index + 2) depth true in_quoted false current_is_type
+                last_type_end
+            else
+              scan (index + 1) depth false in_quoted false current_is_type
+                last_type_end
+          else
+            scan (index + 1) depth true in_quoted false current_is_type
+              last_type_end
+        else if in_quoted then
+          scan (index + 1) depth false (c <> '|') false current_is_type
+            last_type_end
+        else
+          match c with
+          | ';' ->
+              scan (index + 1) depth false false true current_is_type
+                last_type_end
+          | '"' ->
+              scan (index + 1) depth true false false current_is_type
+                last_type_end
+          | '|' ->
+              scan (index + 1) depth false true false current_is_type
+                last_type_end
+          | '(' ->
+              let current_is_type =
+                if depth = 0 then is_type_declaration_at index
+                else current_is_type
+              in
+              scan (index + 1) (depth + 1) false false false current_is_type
+                last_type_end
+          | ')' when depth > 0 ->
+              let depth = depth - 1 in
+              let last_type_end =
+                if depth = 0 && current_is_type then Some (index + 1)
+                else last_type_end
+              in
+              scan (index + 1) depth false false false
+                (if depth = 0 then false else current_is_type)
+                last_type_end
+          | ')' | _ ->
+              scan (index + 1) depth false false false current_is_type
+                last_type_end
     in
-    match split_after_last_type [] None lines with
+    match scan 0 0 false false false false None with
     | None -> splice_before_first_assert smt2 decls
-    | Some (before, after) ->
-        String.concat "\n" before ^ decls ^ String.concat "\n" after
+    | Some split ->
+        let after_start =
+          if
+            split < len
+            && smt2.[split] = '\r'
+            && split + 1 < len
+            && smt2.[split + 1] = '\n'
+          then split + 2
+          else if split < len && smt2.[split] = '\n' then split + 1
+          else split
+        in
+        String.sub smt2 0 split ^ decls
+        ^ String.sub smt2 after_start (len - after_start)
 
 (** Compute per-domain minimum bounds by counting nullary constants. For each
     domain, the bound is max(default_bound, number_of_nullary_constants). *)

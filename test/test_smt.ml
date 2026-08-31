@@ -1456,6 +1456,37 @@ let test_list_index_fallback_follows_user_sorts () =
         failf "list-index fallback query was rejected by the solver: %s" message
     | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
 
+let test_mu_search_assertions_follow_recursive_rule_definitions () =
+  let env, doc =
+    parse_and_collect
+      "module MuRuleOrder.\n\
+       accepts? j: Nat => Bool.\n\
+       ---\n\
+       accepts? j = cond j > 1 => accepts? (j - 1), true => true.\n\
+       (min over each j: Nat, accepts? j | j) >= 1.\n"
+  in
+  let env, doc = Collect.recognize_split_form_bodies env doc in
+  let queries = Smt.generate_queries config_native env doc in
+  let consistency =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  let definition_pos =
+    index_of_substring consistency.smt2
+      ("(define-fun-rec " ^ smt_rule env "accepts?" 1)
+  in
+  let assertion_pos =
+    index_of_substring consistency.smt2 "; --- Fallback assertions ---"
+  in
+  check bool "recursive definition precedes fallback assertions" true
+    (match (definition_pos, assertion_pos) with
+    | Some definition_pos, Some assertion_pos -> definition_pos < assertion_pos
+    | _ -> false);
+  if Solver.solver_available () then
+    match Solver.run_solver ~timeout:5.0 consistency.smt2 with
+    | Solver.SolverError message ->
+        failf "guarded mu-search query was rejected by the solver: %s" message
+    | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
+
 let test_translate_in_zero_bound () =
   (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
      Now produces "false" (nothing in empty domain). *)
@@ -1812,6 +1843,8 @@ let integration_tests =
     test_case "init query content" `Quick test_init_query_content;
     test_case "list-index fallbacks follow user-defined sorts" `Quick
       test_list_index_fallback_follows_user_sorts;
+    test_case "mu-search assertions follow recursive rule definitions" `Quick
+      test_mu_search_assertions_follow_recursive_rule_definitions;
   ]
 
 let value_terms_tests =
@@ -2222,17 +2255,18 @@ let test_mu_search_nat () =
   let result = Smt.translate_expr config env expr in
   check bool "returns fallback constant" true
     (String.length result >= 12 && String.sub result 0 12 = "_mu_fallback");
-  let drained = Smt.drain_fallback_decls () in
+  let declarations = Smt.drain_fallback_decls () in
+  let assertions = Smt.drain_fallback_asserts () in
   check bool "declares fresh Int constant" true
-    (contains drained "_mu_fallback");
+    (contains declarations "_mu_fallback");
   check bool "emits Nat >= 1 on witness" true
-    (contains drained "(>= _mu_fallback_0 1)");
+    (contains assertions "(>= _mu_fallback_0 1)");
   check bool "emits Nat >= 1 on j witness" true
-    (contains drained "(>= _mu_j__mu_fallback_0 1)");
+    (contains assertions "(>= _mu_j__mu_fallback_0 1)");
   check bool "emits forall over Int witness" true
-    (contains drained "(forall ((_mu_j_");
-  check bool "emits (< j r) ordering" true (contains drained "(< _mu_j_");
-  check bool "emits => false closure" true (contains drained "false")
+    (contains assertions "(forall ((_mu_j_");
+  check bool "emits (< j r) ordering" true (contains assertions "(< _mu_j_");
+  check bool "emits => false closure" true (contains assertions "false")
 
 let test_mu_search_nat0 () =
   (* min over each j: Nat0 | j — lower bound 0, no extra guards *)
@@ -2246,7 +2280,8 @@ let test_mu_search_nat0 () =
   let result = Smt.translate_expr config env expr in
   check bool "is fallback constant" true
     (String.length result >= 3 && String.sub result 0 3 = "_mu");
-  let drained = Smt.drain_fallback_decls () in
+  ignore (Smt.drain_fallback_decls ());
+  let drained = Smt.drain_fallback_asserts () in
   check bool "emits Nat0 >= 0 on witness" true
     (contains drained "(>= _mu_fallback_0 0)");
   check bool "emits Nat0 >= 0 on j witness" true
@@ -2263,7 +2298,8 @@ let test_mu_search_int () =
       (Some CombMin) (EVar (Lower "j"))
   in
   let _ = Smt.translate_expr config env expr in
-  let drained = Smt.drain_fallback_decls () in
+  ignore (Smt.drain_fallback_decls ());
+  let drained = Smt.drain_fallback_asserts () in
   check bool "emits forall Int witness" true
     (contains drained "(forall ((_mu_j_");
   (* Regression guard against [type_lower_bound] accidentally treating TyInt
@@ -2299,7 +2335,8 @@ let test_mu_search_guarded_predicate () =
       (Some CombMin) (EVar (Lower "j"))
   in
   let _ = Smt.translate_expr config env expr in
-  let drained = Smt.drain_fallback_decls () in
+  ignore (Smt.drain_fallback_decls ());
+  let drained = Smt.drain_fallback_asserts () in
   check bool "predicate appears applied to r" true
     (contains drained ("(" ^ smt_rule env "active?" 1 ^ " _mu_fallback"));
   check bool "predicate appears applied to j witness" true
@@ -2329,7 +2366,8 @@ let test_mu_search_nested_binder_capture () =
       [ GExpr inner ] (Some CombMin) (EVar (Lower "j"))
   in
   let _ = Smt.translate_expr config env expr in
-  let drained = Smt.drain_fallback_decls () in
+  ignore (Smt.drain_fallback_decls ());
+  let drained = Smt.drain_fallback_asserts () in
   (* Inner binder must still be bound as [j] (or alpha-renamed to avoid
      collision with the outer witness) — never rewritten to the outer
      μ-search witness constant. *)
@@ -2366,7 +2404,8 @@ let test_mu_search_primed_guard_witness () =
       (Some CombMin) (EVar (Lower "j"))
   in
   let _ = Smt.translate_expr config env expr in
-  let drained = Smt.drain_fallback_decls () in
+  ignore (Smt.drain_fallback_decls ());
+  let drained = Smt.drain_fallback_asserts () in
   check bool "witness not primed into _mu_fallback_*_prime" true
     (not (contains drained "_mu_fallback_0_prime"));
   check bool "witness j-binder not primed" true
