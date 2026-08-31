@@ -4,6 +4,8 @@ bug_action_param_shadows_rule.pant	0	0	a1,balance
 bug_card_zero.pant	0	0	dim,v
 bug_list_index_check.pant	0	0	build,seed
 bug_list_index_check.pant	0	1	build,seed
+bug_list_index_fallback_sort_order.pant	0	0	items
+bug_list_index_fallback_sort_order.pant	0	1	items
 bug_nested_binder_collision.pant	0	0	p
 bug_overquantify.pant	0	0	
 bug_rename_app_head.pant	0	0	p

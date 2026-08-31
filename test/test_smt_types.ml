@@ -70,6 +70,31 @@ let public_api_properties =
            let smt2 = "(declare-const x Int)\n(assert (> x 0))\n(check-sat)" in
            let spliced = Smt_types.splice_before_first_assert smt2 decls in
            decls = "" || String.contains spliced '('));
+    test_case "auxiliary declarations follow all user-defined types" `Quick
+      (fun () ->
+        let smt2 =
+          "; header\n\
+           (declare-sort D 0)\n\
+           (declare-const d D)\n\
+           (assert (= d d))\n\
+           (declare-datatype P ((mk_P (field D))))\n\
+           (declare-fun f () P)\n\
+           (assert true)\n"
+        in
+        let decls = "\n; aux\n(declare-const fallback P)\n" in
+        let expected =
+          "; header\n\
+           (declare-sort D 0)\n\
+           (declare-const d D)\n\
+           (assert (= d d))\n\
+           (declare-datatype P ((mk_P (field D))))\n\
+           ; aux\n\
+           (declare-const fallback P)\n\
+           (declare-fun f () P)\n\
+           (assert true)\n"
+        in
+        check string "spliced after datatype" expected
+          (Smt_types.splice_after_type_declarations smt2 decls));
     QCheck_alcotest.to_alcotest
       (QCheck2.Test.make ~name:"sort names cover scalar and composite types"
          ~count:100 (QCheck2.Gen.pair gen_ty gen_ty) (fun (left, right) ->

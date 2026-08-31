@@ -62,6 +62,38 @@ let splice_before_first_assert smt2 decls =
     let before, after = split [] lines in
     String.concat "\n" before ^ decls ^ String.concat "\n" after
 
+(** Splice [decls] after the last user-defined sort or datatype declaration.
+    Auxiliary constants may use those sorts, so placing them before the first
+    assertion is too early when domain axioms precede later sort declarations.
+    If the query declares no user-defined types, fall back to inserting before
+    the first assertion. *)
+let splice_after_type_declarations smt2 decls =
+  if decls = "" then smt2
+  else
+    let lines = String.split_on_char '\n' smt2 in
+    let is_type_declaration line =
+      List.exists
+        (fun prefix ->
+          let prefix_len = String.length prefix in
+          String.length line >= prefix_len
+          && String.sub line 0 prefix_len = prefix)
+        [ "(declare-sort "; "(declare-datatype "; "(declare-datatypes " ]
+    in
+    let rec split_after_last_type before_rev last_split = function
+      | [] -> last_split
+      | line :: rest ->
+          let before_rev = line :: before_rev in
+          let last_split =
+            if is_type_declaration line then Some (List.rev before_rev, rest)
+            else last_split
+          in
+          split_after_last_type before_rev last_split rest
+    in
+    match split_after_last_type [] None lines with
+    | None -> splice_before_first_assert smt2 decls
+    | Some (before, after) ->
+        String.concat "\n" before ^ decls ^ String.concat "\n" after
+
 (** Compute per-domain minimum bounds by counting nullary constants. For each
     domain, the bound is max(default_bound, number_of_nullary_constants). *)
 let compute_domain_bounds default_bound env =

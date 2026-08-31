@@ -30,9 +30,11 @@ let drain_cond_aux_decls () =
   else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
 (** Insert accumulated cond-default declarations into a finished SMT-LIB2
-    string. Must be called after all [translate_*] calls for the query. *)
+    string. Must be called after all [translate_*] calls for the query. The
+    constants are placed after user-defined type declarations because their
+    sorts may be domains or composite datatypes. *)
 let insert_cond_aux_decls smt2 =
-  Smt_types.splice_before_first_assert smt2 (drain_cond_aux_decls ())
+  Smt_types.splice_after_type_declarations smt2 (drain_cond_aux_decls ())
 
 (** Fresh uninterpreted constants for translation fallbacks. When a translation
     site cannot produce a faithful SMT term (e.g. cardinality of a list over an
@@ -98,9 +100,10 @@ let drain_fallback_decls () =
   if decls = [] then ""
   else "\n; --- Fallback constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
-(** Insert accumulated fallback declarations into a finished SMT-LIB2 string. *)
+(** Insert accumulated fallback declarations into a finished SMT-LIB2 string,
+    after every user-defined sort that the constants may reference. *)
 let insert_fallback_decls smt2 =
-  Smt_types.splice_before_first_assert smt2 (drain_fallback_decls ())
+  Smt_types.splice_after_type_declarations smt2 (drain_fallback_decls ())
 
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and
     fallback constants), run the generator, and insert any accumulated

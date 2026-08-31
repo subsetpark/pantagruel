@@ -33,6 +33,16 @@ let contains s sub =
     in
     check 0
 
+let index_of_substring s sub =
+  let slen = String.length s in
+  let sublen = String.length sub in
+  let rec find i =
+    if i > slen - sublen then None
+    else if String.sub s i sublen = sub then Some i
+    else find (i + 1)
+  in
+  if sublen > slen then None else find 0
+
 let smt_var = Smt.sanitize_ident
 let smt_domain = Smt.smt_domain_name
 let smt_rule env name arity = Smt.smt_rule_name env name arity
@@ -1401,6 +1411,51 @@ let test_rule_application_head_not_auto_bound () =
         failf "rule-head scope query was rejected by the solver: %s" message
     | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
 
+let test_list_index_fallback_follows_user_sorts () =
+  let env, doc =
+    parse_and_collect
+      "module FallbackSortOrder.\n\
+       Value.\n\
+       Container.\n\
+       items container: Container => [Value].\n\
+       pairs container: Container => [Value * Value].\n\
+       ---\n\
+       all container: Container |\n\
+       (items container) 1 = (items container) 1.\n\
+       all container: Container |\n\
+       (pairs container) 1 = (pairs container) 1.\n"
+  in
+  let queries = Smt.generate_queries config_native env doc in
+  let consistency =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  let fallback_pos =
+    index_of_substring consistency.smt2 "; --- Fallback constants ---"
+  in
+  let domain_pos =
+    index_of_substring consistency.smt2
+      (Printf.sprintf "(declare-sort %s 0)" (smt_domain "Value"))
+  in
+  let product_pos =
+    index_of_substring consistency.smt2
+      (Printf.sprintf "(declare-datatype %s "
+         (Smt.product_sort_name
+            [ Types.TyDomain "Value"; Types.TyDomain "Value" ]))
+  in
+  check bool "domain sort precedes fallback constants" true
+    (match (domain_pos, fallback_pos) with
+    | Some domain_pos, Some fallback_pos -> domain_pos < fallback_pos
+    | _ -> false);
+  check bool "product sort precedes fallback constants" true
+    (match (product_pos, fallback_pos) with
+    | Some product_pos, Some fallback_pos -> product_pos < fallback_pos
+    | _ -> false);
+  if Solver.solver_available () then
+    match Solver.run_solver ~timeout:5.0 consistency.smt2 with
+    | Solver.SolverError message ->
+        failf "list-index fallback query was rejected by the solver: %s" message
+    | Solver.Sat _ | Solver.Unsat _ | Solver.Unknown _ -> ()
+
 let test_translate_in_zero_bound () =
   (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
      Now produces "false" (nothing in empty domain). *)
@@ -1755,6 +1810,8 @@ let integration_tests =
       test_expensive_gin_uses_quantifier_env;
     test_case "invariant query content" `Quick test_invariant_query_content;
     test_case "init query content" `Quick test_init_query_content;
+    test_case "list-index fallbacks follow user-defined sorts" `Quick
+      test_list_index_fallback_follows_user_sorts;
   ]
 
 let value_terms_tests =

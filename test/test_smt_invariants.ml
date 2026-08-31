@@ -336,6 +336,14 @@ let regression_cases () =
     test_case "bug_rename_app_head.pant — indexed app uses fallback" `Quick
       (test_smt_contains ~native:true "bug_rename_app_head.pant"
          "_list_index_fallback_");
+    test_case "bug_list_index_fallback_sort_order.pant — valid fallback query"
+      `Quick
+      (test_regression_fixture "bug_list_index_fallback_sort_order.pant" []);
+    test_case
+      "bug_list_index_fallback_sort_order.pant — emits list-index fallback"
+      `Quick
+      (test_smt_contains "bug_list_index_fallback_sort_order.pant"
+         "_list_index_fallback_");
     test_case "bug_rename_app_head.pant — binder does not shadow declared xs"
       `Quick
       (test_no_shadowing_forall ~native:true "bug_rename_app_head.pant"
