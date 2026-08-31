@@ -38,6 +38,12 @@ jobs:
         # ownership root doesn't recognize.
         run: git config --global --add safe.directory '*'
 
+      - name: Install SMT solver
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends z3
+          z3 --version
+
       - name: Install dependencies
         run: |
           opam install ./pantagruel.opam --deps-only --with-test --with-doc
