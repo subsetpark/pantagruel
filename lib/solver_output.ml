@@ -21,9 +21,15 @@ let normalize_smt_strings input =
   let rec scan i =
     if i < len then
       if input.[i] = '"' then string_literal (i + 1) (Buffer.create 16)
+      else if input.[i] = ';' then comment i
       else (
         Buffer.add_char out input.[i];
         scan (i + 1))
+  and comment i =
+    if i < len then (
+      Buffer.add_char out input.[i];
+      if input.[i] = '\n' || input.[i] = '\r' then scan (i + 1)
+      else comment (i + 1))
   and string_literal i contents =
     if i >= len then (
       Buffer.add_char out '"';
