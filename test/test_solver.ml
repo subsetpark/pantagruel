@@ -51,6 +51,19 @@ let test_parse_solver_output_sat () =
   | Solver.Unsat _ | Solver.Unknown _ | Solver.SolverError _ ->
       fail "expected Sat"
 
+let test_parse_solver_output_smt_strings () =
+  match
+    Solver.parse_solver_output "sat\n((x \"a\\b\") (y \"say \"\"hi\"\"\"))"
+  with
+  | Solver.Sat values ->
+      check
+        (list (pair string string))
+        "literal backslash and doubled quote"
+        [ ("x", {|"a\\b"|}); ("y", {|"say \"hi\""|}) ]
+        values
+  | Solver.Unsat _ | Solver.Unknown _ | Solver.SolverError _ ->
+      fail "expected Sat"
+
 let test_parse_solver_output_unsat () =
   match Solver.parse_solver_output "unsat\n(a1 a2)" with
   | Solver.Unsat core -> check (list string) "unsat core" [ "a1"; "a2" ] core
@@ -229,6 +242,7 @@ let () =
       ( "parse_solver_output",
         [
           test_case "sat" `Quick test_parse_solver_output_sat;
+          test_case "SMT strings" `Quick test_parse_solver_output_smt_strings;
           test_case "unsat" `Quick test_parse_solver_output_unsat;
           test_case "unknown" `Quick test_parse_solver_output_unknown;
           test_case "error" `Quick test_parse_solver_output_error;

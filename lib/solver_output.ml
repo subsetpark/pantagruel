@@ -13,10 +13,43 @@ type solver_result =
 
 let sexp_to_string = Sexp.to_string
 
+(** SMT-LIB strings contain literal backslashes and escape quotes by doubling
+    them. Convert only string literals to Parsexp's quoting convention. *)
+let normalize_smt_strings input =
+  let len = String.length input in
+  let out = Buffer.create len in
+  let rec scan i =
+    if i < len then
+      if input.[i] = '"' then string_literal (i + 1) (Buffer.create 16)
+      else (
+        Buffer.add_char out input.[i];
+        scan (i + 1))
+  and string_literal i contents =
+    if i >= len then (
+      Buffer.add_char out '"';
+      Buffer.add_string out (String.escaped (Buffer.contents contents)))
+    else if input.[i] = '"' then
+      if i + 1 < len && input.[i + 1] = '"' then (
+        Buffer.add_char contents '"';
+        string_literal (i + 2) contents)
+      else (
+        Buffer.add_char out '"';
+        Buffer.add_string out (String.escaped (Buffer.contents contents));
+        Buffer.add_char out '"';
+        scan (i + 1))
+    else (
+      Buffer.add_char contents input.[i];
+      string_literal (i + 1) contents)
+  in
+  scan 0;
+  Buffer.contents out
+
 (** Try to parse a string as a list of s-expressions. Returns an empty list on
     parse failure. *)
 let parse_sexps s =
-  match Parsexp.Many.parse_string s with Ok sexps -> sexps | Error _ -> []
+  match Parsexp.Many.parse_string (normalize_smt_strings s) with
+  | Ok sexps -> sexps
+  | Error _ -> []
 
 (** Parse a (get-value ...) response. Input is a single sexp: ((term1 value1)
     (term2 value2) ...) Returns a list of (term, value) string pairs. *)
