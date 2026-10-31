@@ -53,13 +53,14 @@ let test_parse_solver_output_sat () =
 
 let test_parse_solver_output_smt_strings () =
   match
-    Solver.parse_solver_output "sat\n((x \"a\\b\") (y \"say \"\"hi\"\"\"))"
+    Solver.parse_solver_output
+      "sat\n((x \"a\\b\") (y \"say \"\"hi\"\"\") (z \"\\\"))"
   with
   | Solver.Sat values ->
       check
         (list (pair string string))
         "literal backslash and doubled quote"
-        [ ("x", {|"a\\b"|}); ("y", {|"say \"hi\""|}) ]
+        [ ("x", {|"a\\b"|}); ("y", {|"say \"hi\""|}); ("z", {|"\\"|}) ]
         values
   | Solver.Unsat _ | Solver.Unknown _ | Solver.SolverError _ ->
       fail "expected Sat"
