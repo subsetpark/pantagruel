@@ -27,7 +27,9 @@ let normalize_smt_strings input =
         scan (i + 1))
   and comment i =
     if i < len then (
-      Buffer.add_char out input.[i];
+      Buffer.add_char out
+        (if input.[i] = '\r' && (i + 1 = len || input.[i + 1] <> '\n') then '\n'
+         else input.[i]);
       if input.[i] = '\n' || input.[i] = '\r' then scan (i + 1)
       else comment (i + 1))
   and string_literal i contents =

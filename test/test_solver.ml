@@ -78,6 +78,13 @@ let test_parse_solver_output_comment_quote () =
   | Solver.Unsat _ | Solver.Unknown _ | Solver.SolverError _ ->
       fail "expected Sat"
 
+let test_parse_solver_output_comment_bare_cr () =
+  match Solver.parse_solver_output "sat\n; note \"\r((x 1))" with
+  | Solver.Sat values ->
+      check (list (pair string string)) "sat values" [ ("x", "1") ] values
+  | Solver.Unsat _ | Solver.Unknown _ | Solver.SolverError _ ->
+      fail "expected Sat"
+
 let test_parse_solver_output_unsat () =
   match Solver.parse_solver_output "unsat\n(a1 a2)" with
   | Solver.Unsat core -> check (list string) "unsat core" [ "a1"; "a2" ] core
@@ -259,6 +266,8 @@ let () =
           test_case "SMT strings" `Quick test_parse_solver_output_smt_strings;
           test_case "comment quote" `Quick
             test_parse_solver_output_comment_quote;
+          test_case "comment bare CR" `Quick
+            test_parse_solver_output_comment_bare_cr;
           test_case "unsat" `Quick test_parse_solver_output_unsat;
           test_case "unknown" `Quick test_parse_solver_output_unknown;
           test_case "error" `Quick test_parse_solver_output_error;
