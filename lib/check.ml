@@ -600,8 +600,30 @@ let collect_all_params (head : declaration located list) =
       | DeclDomain _ | DeclAlias _ -> [])
     head
 
+(** Rule parameters from a chapter head. Unlike [collect_all_params] this leaves
+    action parameters out: an action's parameters name that action's arguments,
+    which mean nothing outside its own chapter. *)
+let collect_rule_params (head : declaration located list) =
+  List.concat_map
+    (fun decl ->
+      match decl.value with
+      | DeclRule { params; _ } -> params
+      | DeclAction _ | DeclClosure _ | DeclDomain _ | DeclAlias _ -> [])
+    head
+
+(** Parameters in scope in a chapter's body: the rule parameters of the next
+    chapter's head (the same one-chapter look-ahead rule names get), then every
+    parameter of this chapter's own head. Callers bind them in this order, so a
+    name declared in both resolves to this chapter's declaration. *)
+let body_params ?next (chapter : chapter) =
+  (match next with Some n -> collect_rule_params n.head | None -> [])
+  @ collect_all_params chapter.head
+
+(** The chapter after the head of [chapters], if any *)
+let next_chapter = function _ :: next :: _ -> Some next | [ _ ] | [] -> None
+
 (** Check a chapter body *)
-let check_chapter_body ~chapter_idx env (chapter : chapter) =
+let check_chapter_body ~chapter_idx ?next env (chapter : chapter) =
   (* Filter environment for visibility in this chapter's body *)
   let env_visible = Env.visible_in_body chapter_idx env in
 
@@ -613,8 +635,8 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
     | None -> env_visible
   in
 
-  (* Add ALL rule/action parameters from this chapter's head to environment *)
-  let all_params = collect_all_params chapter.head in
+  (* Add the parameters visible in this chapter's body to the environment *)
+  let all_params = body_params ?next chapter in
   let env' =
     List.fold_left
       (fun env p ->
@@ -784,7 +806,7 @@ let collect_chapter_guard_warnings ~chapter_idx env chapter =
   let env_visible = Env.visible_in_head chapter_idx env in
   List.concat_map (collect_head_warnings env_visible) chapter.head
 
-let collect_chapter_body_warnings ~chapter_idx env chapter =
+let collect_chapter_body_warnings ~chapter_idx ?next env chapter =
   let env_visible = Env.visible_in_body chapter_idx env in
   let env_with_action =
     match find_action chapter.head with
@@ -803,7 +825,7 @@ let collect_chapter_body_warnings ~chapter_idx env chapter =
             (env, warnings @ new_warnings)
         | None -> (env, warnings))
       (env_with_action, [])
-      (collect_all_params chapter.head)
+      (body_params ?next chapter)
   in
   let ctx = { env = env_with_params; loc = dummy_loc } in
   param_warnings
@@ -818,7 +840,8 @@ let collect_document_warnings env doc =
     | [] -> []
     | chapter :: rest ->
         collect_chapter_guard_warnings ~chapter_idx env chapter
-        @ collect_chapter_body_warnings ~chapter_idx env chapter
+        @ collect_chapter_body_warnings ~chapter_idx
+            ?next:(next_chapter chapters) env chapter
         @ collect (chapter_idx + 1) rest
   in
   collect 0 doc.chapters
@@ -826,13 +849,17 @@ let collect_document_warnings env doc =
 (** Check entire document (Pass 2). Returns Ok with accumulated warnings, or
     Error with the first type error. *)
 let check_document env (doc : document) : (type_error list, type_error) result =
-  let rec check_chapters chapter_idx = function
+  let rec check_chapters chapter_idx chapters =
+    match chapters with
     | [] -> Ok ()
     | chapter :: rest ->
         (* Check guards in chapter head *)
         let* _ = check_chapter_guards ~chapter_idx env chapter in
         (* Check propositions in chapter body *)
-        let* _ = check_chapter_body ~chapter_idx env chapter in
+        let* _ =
+          check_chapter_body ~chapter_idx ?next:(next_chapter chapters) env
+            chapter
+        in
         check_chapters (chapter_idx + 1) rest
   in
   match check_chapters 0 doc.chapters with

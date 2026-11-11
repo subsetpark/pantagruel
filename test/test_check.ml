@@ -218,6 +218,97 @@ all i in items | price i > 0.
 some i in items | price i < 100.
 |}
 
+let test_rule_params_look_ahead () =
+  (* A rule's parameters gloss the body of the chapter before it, as its name
+     does. *)
+  check_ok
+    {|module TEST.
+
+Item.
+---
+price i >= 0.
+
+where
+
+price i: Item => Nat.
+---
+true.
+|}
+
+let test_rule_params_do_not_persist () =
+  (* A parameter is not visible in the body of a later chapter. *)
+  check_fails
+    {|module TEST.
+
+Item.
+price i: Item => Nat.
+---
+true.
+
+where
+
+cost j: Item => Nat.
+---
+price i >= 0.
+|}
+
+let test_rule_params_look_ahead_one_chapter () =
+  check_fails
+    {|module TEST.
+
+Item.
+---
+price i >= 0.
+
+where
+
+Other.
+---
+true.
+
+where
+
+price i: Item => Nat.
+---
+true.
+|}
+
+let test_action_params_do_not_look_ahead () =
+  (* An action's parameters name its own arguments; they are not variables of
+     the chapter before it. *)
+  check_fails
+    {|module TEST.
+
+context Shop.
+Item.
+{Shop} price i: Item => Nat.
+---
+price target >= 0.
+
+where
+
+Shop ~> Reprice @ target: Item.
+---
+price' target = 0.
+|}
+
+let test_own_param_wins_over_look_ahead () =
+  (* Both chapters declare [x]; the first chapter's body sees its own, a Nat. *)
+  check_ok
+    {|module TEST.
+
+Item.
+size x: Nat => Nat.
+---
+size x >= x.
+
+where
+
+price x: Item => Nat.
+---
+price x >= 0.
+|}
+
 let test_rule_params_visible_in_body () =
   (* Rule parameters should be visible in chapter body *)
   check_ok
@@ -2060,6 +2151,15 @@ let () =
           test_case "membership binding" `Quick test_membership_binding;
           test_case "rule params visible" `Quick
             test_rule_params_visible_in_body;
+          test_case "rule params look ahead" `Quick test_rule_params_look_ahead;
+          test_case "rule params do not persist" `Quick
+            test_rule_params_do_not_persist;
+          test_case "rule params look ahead one chapter" `Quick
+            test_rule_params_look_ahead_one_chapter;
+          test_case "action params do not look ahead" `Quick
+            test_action_params_do_not_look_ahead;
+          test_case "own param wins over look-ahead" `Quick
+            test_own_param_wins_over_look_ahead;
           test_case "quantifier scoping" `Quick test_quantifier_scoping;
           test_case "existential" `Quick test_existential;
           test_case "nested quantifiers" `Quick test_nested_quantifiers;

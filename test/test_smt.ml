@@ -439,6 +439,26 @@ let test_nullary_rule () =
        (Printf.sprintf "(declare-const %s %s)" (smt_rule env "nobody" 0)
           (smt_domain "User")))
 
+let test_look_ahead_param_is_quantified () =
+  (* [i] is declared by the next chapter's rule; used free one chapter early it
+     is a universally quantified variable, not an undeclared constant. *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Item.\n\
+       ---\n\
+       price i >= 0.\n\
+       where\n\
+       price i: Item => Nat.\n\
+       ---\n\
+       true.\n"
+  in
+  match[@warning "-4"]
+    Smt_doc.collect_invariants ~env (Smt.classify_chapters doc)
+  with
+  | { Ast.value = Ast.EForall _; _ } :: _ -> ()
+  | _ -> fail "expected the look-ahead parameter to be quantified"
+
 let test_classify_chapters () =
   let env, doc =
     parse_and_collect
@@ -1820,6 +1840,8 @@ let integration_tests =
       `Quick test_non_recursive_rule_emits_existing_shape;
     test_case "nullary rule" `Quick test_nullary_rule;
     test_case "classify chapters" `Quick test_classify_chapters;
+    test_case "look-ahead param is quantified" `Quick
+      test_look_ahead_param_is_quantified;
     test_case "generate queries" `Quick test_generate_queries;
     test_case "contradiction query content" `Quick
       test_contradiction_query_content;

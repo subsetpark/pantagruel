@@ -22,17 +22,22 @@ type chapter_class =
       guards : guard list;
       contexts : string list;
       head_bindings : param list;
-          (** Rule parameters declared in the same chapter head as the action.
-              These are visible in action-body propositions per REFERENCE.md
-              "Forward Declaration Rules" but are not declared as SMT constants
-              (only action params are). Used by [collect_actions] to
-              auto-quantify propositions that reference them, matching the
-              treatment [bind_head_params] gives to invariants. *)
+          (** Rule parameters declared in the same chapter head as the action,
+              then those of the next chapter's head. These are visible in
+              action-body propositions per REFERENCE.md "Forward Declaration
+              Rules" but are not declared as SMT constants (only action params
+              are). Used by [collect_actions] to auto-quantify propositions that
+              reference them, matching the treatment [bind_head_params] gives to
+              invariants. *)
       propositions : expr located list;
       checks : expr located list;
     }
 
-let classify_chapter (chapter : chapter) =
+(** [?next] is the chapter after [chapter]. Its rule parameters are in scope in
+    [chapter]'s body, so they join [head_bindings] after [chapter]'s own:
+    [bind_head_params] keeps the first binding of a name, which makes this
+    chapter's declaration win, as it does in the type checker. *)
+let classify_chapter ?next (chapter : chapter) =
   let action =
     List.find_map
       (fun (decl : declaration located) ->
@@ -42,13 +47,16 @@ let classify_chapter (chapter : chapter) =
         | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in
-  let head_bindings =
+  let rule_params (c : chapter) =
     List.concat_map
       (fun (decl : declaration located) ->
         match decl.value with
         | DeclRule { params; _ } -> params
         | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ -> [])
-      chapter.head
+      c.head
+  in
+  let head_bindings =
+    rule_params chapter @ match next with Some n -> rule_params n | None -> []
   in
   match action with
   | Some (label, params, guards, contexts) ->
@@ -66,7 +74,14 @@ let classify_chapter (chapter : chapter) =
       Invariant
         { head_bindings; propositions = chapter.body; checks = chapter.checks }
 
-let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
+let classify_chapters (doc : document) =
+  let rec go = function
+    | [] -> []
+    | [ chapter ] -> [ classify_chapter chapter ]
+    | chapter :: (next :: _ as rest) ->
+        classify_chapter ~next chapter :: go rest
+  in
+  go doc.chapters
 
 module StringSet = Set.Make (String)
 (** [free_vars e] is the set of [lower_ident] names that appear free in [e].
