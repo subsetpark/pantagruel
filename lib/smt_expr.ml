@@ -721,7 +721,16 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                   (fun (g : guard) ->
                     match g with
                     | GExpr ge ->
-                        let ge = prime_expr ~bound (substitute_vars subst ge) in
+                        (* Prime the declaration in its own binding scope before
+                           inserting actual arguments. Actuals already describe
+                           their state and may be grounded domain elements. *)
+                        let bound =
+                          List.map
+                            (fun (p : param) -> Ast.lower_name p.param_name)
+                            formal_params
+                          @ bound
+                        in
+                        let ge = substitute_vars subst (prime_expr ~bound ge) in
                         walk ge;
                         guards := ge :: !guards
                     | GIn _ | GParam _ -> ())
