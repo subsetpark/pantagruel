@@ -56,7 +56,8 @@ let classify_chapter ?next (chapter : chapter) =
       c.head
   in
   let head_bindings =
-    rule_params chapter @ match next with Some n -> rule_params n | None -> []
+    List.rev (rule_params chapter)
+    @ match next with Some n -> List.rev (rule_params n) | None -> []
   in
   match action with
   | Some (label, params, guards, contexts) ->

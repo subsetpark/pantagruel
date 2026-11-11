@@ -258,7 +258,7 @@ let test_rule_params_look_ahead_one_chapter () =
 
 Item.
 ---
-price i >= 0.
+i in Item.
 
 where
 

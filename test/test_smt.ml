@@ -456,8 +456,45 @@ let test_look_ahead_param_is_quantified () =
   match[@warning "-4"]
     Smt_doc.collect_invariants ~env (Smt.classify_chapters doc)
   with
-  | { Ast.value = Ast.EForall _; _ } :: _ -> ()
+  | { Ast.value = Ast.EForall (mb, metas); _ } :: _ ->
+      let params, _, _ = Ast.unbind_quant mb metas in
+      check (list string) "bound name" [ "i" ]
+        (List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params);
+      check bool "Item type" true
+        (List.map (fun (p : Ast.param) -> p.param_type) params
+        = [ Ast.TName (Ast.Upper "Item") ])
   | _ -> fail "expected the look-ahead parameter to be quantified"
+
+let test_look_ahead_param_precedence () =
+  List.iter
+    (fun (head, next, expected) ->
+      let env, doc =
+        parse_and_collect
+          ("module Test.\nItem.\n" ^ head ^ "\n---\ni >= 0.\nwhere\n" ^ next
+         ^ "\n---\ntrue.\n")
+      in
+      (match Check.check_document env doc with
+      | Ok _ -> ()
+      | Error _ -> fail "precedence example must type-check");
+      match[@warning "-4"]
+        Smt_doc.collect_invariants ~env (Smt.classify_chapters doc)
+      with
+      | { Ast.value = Ast.EForall (mb, metas); _ } :: _ ->
+          let params, _, _ = Ast.unbind_quant mb metas in
+          check bool "winning binding" true
+            (List.map
+               (fun (p : Ast.param) ->
+                 (Ast.lower_name p.param_name, p.param_type))
+               params
+            = [ ("i", Ast.TName (Ast.Upper expected)) ])
+      | _ -> fail "expected quantified parameter")
+    [
+      ("", "first i: Item => Nat.\nlast i: Nat => Nat.", "Nat");
+      ("local i: Nat => Nat.", "remote i: Item => Nat.", "Nat");
+      ( "first i: Item => Nat.\nlast i: Nat => Nat.",
+        "remote i: Item => Nat.",
+        "Nat" );
+    ]
 
 let test_classify_chapters () =
   let env, doc =
@@ -1842,6 +1879,8 @@ let integration_tests =
     test_case "classify chapters" `Quick test_classify_chapters;
     test_case "look-ahead param is quantified" `Quick
       test_look_ahead_param_is_quantified;
+    test_case "look-ahead parameter precedence" `Quick
+      test_look_ahead_param_precedence;
     test_case "generate queries" `Quick test_generate_queries;
     test_case "contradiction query content" `Quick
       test_contradiction_query_content;
@@ -3184,8 +3223,56 @@ let test_cond_exhaustiveness_with_true () =
   in
   check int "one exhaustiveness query" 1 (List.length exh_queries)
 
+let test_action_cond_head_bindings () =
+  let env, doc =
+    parse_and_collect
+      {|module Test.
+Item.
+---
+true.
+where
+~> Choose @ n: Nat, n > 0.
+---
+n = cond i in Item => n, true => 1.
+where
+price i: Item => Nat.
+other n: Item => Nat.
+---
+true.
+|}
+  in
+  let conds = Smt.collect_conds ~env (Smt.classify_chapters doc) in
+  check int "one conditional" 1 (List.length conds);
+  let bindings = (List.hd conds).cond_quantifiers in
+  check (list string) "action shadows head binding" [ "n"; "i" ]
+    (List.concat_map
+       (fun (ps, _) ->
+         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) ps)
+       bindings);
+  check bool "action guard preserved" true
+    (match[@warning "-4"] bindings with
+    | (_, [ Ast.GExpr _ ]) :: _ -> true
+    | _ -> false);
+  let queries =
+    Smt.generate_queries config env doc
+    |> List.filter (fun q -> q.Smt.kind = Smt.CondExhaustiveness)
+  in
+  check int "one exhaustiveness query" 1 (List.length queries);
+  List.iter
+    (fun q ->
+      check int "well-scoped SMT" 0
+        (List.length (Smt_check.check_query q.Smt.smt2));
+      if Solver.solver_available () then
+        match Solver.run_solver ~timeout:5.0 q.Smt.smt2 with
+        | Solver.Unsat _ -> ()
+        | Solver.Sat _ | Solver.Unknown _ | Solver.SolverError _ ->
+            fail "exhaustive action conditional must be unsat")
+    queries
+
 let cond_tests =
   [
+    test_case "action conditional head bindings" `Quick
+      test_action_cond_head_bindings;
     test_case "single arm" `Quick test_cond_single_arm;
     test_case "two arms" `Quick test_cond_two_arms;
     test_case "three arms" `Quick test_cond_three_arms;

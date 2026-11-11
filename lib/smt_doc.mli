@@ -23,6 +23,7 @@ type chapter_class =
 module StringSet : Set.S with type elt = string
 
 val free_vars : ?env:Env.t -> Ast.expr -> StringSet.t
+val param_name_set : Ast.param list -> StringSet.t
 
 val bind_head_params :
   ?env:Env.t ->

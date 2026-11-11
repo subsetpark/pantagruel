@@ -2331,8 +2331,13 @@ let collect_conds ?env chapters : cond_info list =
             ( (fun (p : expr located) ->
                 Smt_doc.bind_head_params ?env head_bindings p),
               propositions @ checks )
-        | Smt_doc.Action { params; guards; propositions; checks; _ } ->
+        | Smt_doc.Action
+            { params; guards; head_bindings; propositions; checks; _ } ->
+            let exclude = Smt_doc.param_name_set params in
             ( (fun (p : expr located) ->
+                let p =
+                  Smt_doc.bind_head_params ?env ~exclude head_bindings p
+                in
                 if params = [] && guards = [] then p
                 else { p with value = Ast.make_forall params guards p.value }),
               propositions @ checks )
