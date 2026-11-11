@@ -789,17 +789,25 @@ Symbols declared in chapter N have different visibility rules:
 |-------------|------------------|-------------------|
 | **Domains/Aliases** | M where M ≥ N | M where M ≥ N - 1 |
 | **Rule names** | M where M ≥ N | M where M ≥ N - 1 |
-| **Rule parameters** | M where M ≥ N | M where M ≥ N |
+| **Rule parameters** | the declaring rule's guards | M where M = N - 1 or M = N |
+| **Action parameters** | the declaring action's guards | M where M = N |
 
 This means:
 - A declaration in chapter 2 is visible in heads of chapters 2, 3, 4, ...
 - A declaration in chapter 2 is visible in bodies of chapters 1, 2, 3, 4, ...
-- Bodies can "look ahead" one chapter for rule names
-- But rule parameters are only visible in the same chapter's body
+- Bodies can "look ahead" one chapter for rule names and for rule parameters
+- Rule parameters do not persist: they are visible in the body of their own
+  chapter and of the chapter before it, and nowhere else
+- Action parameters name that action's arguments and are visible only in the
+  body of their own chapter
 
 For a rule `foo x: T, y: U => R` declared in chapter N:
 - `foo` is visible starting from chapter N-1 body (one chapter look-ahead)
-- `x` and `y` are only visible in chapter N body (same chapter, no look-ahead)
+- `x` and `y` are visible in the bodies of chapters N-1 and N
+
+A parameter used free in a proposition is universally quantified at its
+declared type. When chapters N and N+1 both declare a parameter `x`, a free
+`x` in chapter N's body is chapter N's own.
 
 ### Example
 
