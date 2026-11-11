@@ -2899,6 +2899,32 @@ let test_primed_guard_collection () =
       failf "Expected EApp(EPrimed \"active?\", [EVar \"t\"]) but got %s"
         (Ast.show_expr guard)
 
+let test_primed_guard_nullary_argument () =
+  let env, _ =
+    parse_and_collect
+      {|module NullaryGuard.
+context C.
+Thing.
+{C} current => Thing.
+{C} active? t: Thing => Bool.
+{C} value t: Thing, active? t => Nat0.
+---
+|}
+  in
+  let check_guard label argument expected =
+    let expr = Ast.EApp (EPrimed (Lower "value"), [ argument ]) in
+    let guards = Smt.collect_body_guards env expr in
+    check (list string) label
+      [ Ast.show_expr expected ]
+      (List.map Ast.show_expr guards)
+  in
+  check_guard "value' current keeps current unprimed"
+    (Ast.EVar (Lower "current"))
+    (Ast.EApp (EPrimed (Lower "active?"), [ EVar (Lower "current") ]));
+  check_guard "value' current' keeps current explicitly primed"
+    (Ast.EPrimed (Lower "current"))
+    (Ast.EApp (EPrimed (Lower "active?"), [ EPrimed (Lower "current") ]))
+
 let test_inject_guards_false_skips () =
   (* translate_proposition with inject_guards = false produces no
      implication wrapper even for guarded applications *)
@@ -3134,6 +3160,8 @@ let test_guarded_decl_e2e () =
   ignore doc
 
 let test_guarded_invariant_grounding () =
+  if not (Solver.solver_available ()) then
+    fail "guarded invariant regression requires an SMT solver";
   let source invariant =
     {|module GroundedGuard.
 context C.
@@ -3169,13 +3197,11 @@ all o: U, o != u | val' o = val o.
           check bool "preservation queries exist" true (queries <> []);
           List.iter
             (fun (q : Smt.query) ->
-              if Solver.solver_available () then
-                match Solver.run_solver ~timeout:5.0 q.smt2 with
-                | Solver.Unsat _ -> ()
-                | Solver.Sat _ | Solver.Unknown _ | Solver.SolverError _ ->
-                    failf
-                      "Guarded invariant must be preserved (grounding=%b): %s"
-                      ground_quantifiers q.smt2)
+              match Solver.run_solver ~timeout:5.0 q.smt2 with
+              | Solver.Unsat _ -> ()
+              | Solver.Sat _ | Solver.Unknown _ | Solver.SolverError _ ->
+                  failf "Guarded invariant must be preserved (grounding=%b): %s"
+                    ground_quantifiers q.smt2)
             queries)
         [ true; false ])
     [ "done? u -> val u = 5."; "all u: U | done? u -> val u = 5." ]
@@ -3192,6 +3218,8 @@ let guard_injection_tests =
     test_case "unguarded rule unchanged" `Quick test_unguarded_rule_unchanged;
     test_case "guard substitution" `Quick test_guard_substitution;
     test_case "primed guard collection" `Quick test_primed_guard_collection;
+    test_case "primed guard nullary argument" `Quick
+      test_primed_guard_nullary_argument;
     test_case "inject_guards false skips" `Quick test_inject_guards_false_skips;
     test_case "guarded decl e2e" `Quick test_guarded_decl_e2e;
     test_case "list search injects membership guard" `Quick
